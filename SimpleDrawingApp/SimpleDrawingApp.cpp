@@ -120,7 +120,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
 
             if (GetOpenFileNameA(&ofn)) {
-                LoadImageFromFile(filePath, canvasBitmap, canvasGraphics); // 4. parametre yok artık
+                LoadImageFromFile(filePath, canvasBitmap, canvasGraphics);
                 InvalidateRect(hwnd, NULL, TRUE);
             }
         }

@@ -3,12 +3,12 @@
   "WorkspaceRootPath": "D:\\Projects\\Code\\SimpleDrawingApp\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|solutionrelative:SimpleDrawingApp\\SimpleDrawingApp.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|solutionrelative:SimpleDrawingApp\\SimpleDrawingApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|solutionrelative:SimpleDrawingApp\\SimpleDrawingApp.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{9A7E243C-84AD-4FE1-BBC4-8F5C6F0E9865}|SimpleDrawingApp\\SimpleDrawingApp.vcxproj|D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\ColorPicker.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
@@ -34,7 +34,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 4,
+          "SelectedChildIndex": 5,
           "Children": [
             {
               "$type": "Document",
@@ -86,26 +86,25 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "SimpleDrawingApp.h",
               "DocumentMoniker": "D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.h",
               "RelativeDocumentMoniker": "SimpleDrawingApp\\SimpleDrawingApp.h",
               "ToolTip": "D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.h",
               "RelativeToolTip": "SimpleDrawingApp\\SimpleDrawingApp.h",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAAZAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2025-06-23T01:50:50.145Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-06-23T01:50:50.145Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 0,
               "Title": "SimpleDrawingApp.cpp",
               "DocumentMoniker": "D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.cpp",
               "RelativeDocumentMoniker": "SimpleDrawingApp\\SimpleDrawingApp.cpp",
               "ToolTip": "D:\\Projects\\Code\\SimpleDrawingApp\\SimpleDrawingApp\\SimpleDrawingApp.cpp",
               "RelativeToolTip": "SimpleDrawingApp\\SimpleDrawingApp.cpp",
-              "ViewState": "AgIAAA0AAAAAAAAAAAAkwBsAAAARAAAAAAAAAA==",
+              "ViewState": "AgIAAA0AAAAAAAAAAAAkwCMAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2025-06-23T01:49:48.464Z",
               "EditorCaption": ""
