@@ -258,6 +258,8 @@ static void ResizeCanvas(HWND hwnd) {
 
 static void ClearCanvas(HWND hwnd, bool pushHistory) {
     EnsureCanvas(hwnd);
+    DestroyStrokeLayer();
+    isDrawing = false;
     if (pushHistory) {
         gHistory.Push(canvasBitmap);
     }
@@ -362,6 +364,8 @@ static void DoOpen(HWND hwnd) {
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
 
     if (GetOpenFileNameA(&ofn)) {
+        DestroyStrokeLayer();
+        isDrawing = false;
         if (LoadImageFromFile(filePath, canvasBitmap, canvasGraphics)) {
             ConfigureCanvasGraphics(canvasGraphics);
             ResizeCanvas(hwnd);
@@ -379,6 +383,8 @@ static void DoOpen(HWND hwnd) {
 static void DoNew(HWND hwnd) {
     if (!PromptSaveIfDirty(hwnd)) return;
     EnsureCanvas(hwnd);
+    DestroyStrokeLayer();
+    isDrawing = false;
     canvasGraphics->Clear(GdiplusFromColor(gTheme.canvasBg));
     gHistory.Clear();
     MarkClean(hwnd);
@@ -388,6 +394,8 @@ static void DoNew(HWND hwnd) {
 
 static void DoUndo(HWND hwnd) {
     EnsureCanvas(hwnd);
+    DestroyStrokeLayer();
+    isDrawing = false;
     if (gHistory.Undo(canvasBitmap, canvasGraphics)) {
         MarkDirty(hwnd);
         InvalidateCanvas(hwnd);
@@ -397,6 +405,8 @@ static void DoUndo(HWND hwnd) {
 
 static void DoRedo(HWND hwnd) {
     EnsureCanvas(hwnd);
+    DestroyStrokeLayer();
+    isDrawing = false;
     if (gHistory.Redo(canvasBitmap, canvasGraphics)) {
         MarkDirty(hwnd);
         InvalidateCanvas(hwnd);
