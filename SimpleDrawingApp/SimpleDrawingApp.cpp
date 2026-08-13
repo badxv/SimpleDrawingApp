@@ -661,19 +661,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         break;
     }
     case WM_ERASEBKGND: {
+        // Only paint chrome. Never clear the canvas here — that caused flicker
+        // while the live stroke layer was being composited on each mouse move.
         HDC hdc = (HDC)wParam;
         RECT client = {};
         GetClientRect(hwnd, &client);
         DrawToolbarBackground(hdc, client);
-
-        int toolbarH = 0, statusH = 0;
-        GetChromeMetrics(hwnd, toolbarH, statusH);
-        RECT canvasArea = client;
-        canvasArea.top = toolbarH;
-        canvasArea.bottom -= statusH;
-        HBRUSH white = CreateSolidBrush(gTheme.canvasBg);
-        FillRect(hdc, &canvasArea, white);
-        DeleteObject(white);
         return 1;
     }
     case WM_SIZE:
@@ -890,10 +883,32 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         EnsureCanvas(hwnd);
 
-        Graphics g(hdc);
-        g.DrawImage(canvasBitmap, 0, TOOLBAR_HEIGHT);
-        if (strokeLayer) {
-            DrawStrokeLayerWithOpacity(&g, 0, TOOLBAR_HEIGHT);
+        int toolbarH = 0, statusH = 0;
+        GetChromeMetrics(hwnd, toolbarH, statusH);
+        const int canvasW = client.right - client.left;
+        const int canvasH = client.bottom - client.top - toolbarH - statusH;
+
+        if (canvasW > 0 && canvasH > 0) {
+            // Double-buffer canvas + live stroke so opacity preview doesn't flash.
+            HDC memDC = CreateCompatibleDC(hdc);
+            HBITMAP memBmp = CreateCompatibleBitmap(hdc, canvasW, canvasH);
+            HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
+
+            {
+                Graphics g(memDC);
+                g.Clear(GdiplusFromColor(gTheme.canvasBg));
+                g.SetCompositingMode(CompositingModeSourceOver);
+                g.DrawImage(canvasBitmap, 0, 0);
+                if (strokeLayer) {
+                    DrawStrokeLayerWithOpacity(&g, 0, 0);
+                }
+            }
+
+            BitBlt(hdc, 0, toolbarH, canvasW, canvasH, memDC, 0, 0, SRCCOPY);
+
+            SelectObject(memDC, oldBmp);
+            DeleteObject(memBmp);
+            DeleteDC(memDC);
         }
 
         EndPaint(hwnd, &ps);
