@@ -13,9 +13,11 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 - **Undo / Redo** (stroke & fill history)
 - **New / Clear** with unsaved-change prompts
 - **Save / Open** PNG, JPG, BMP
-- Resizable canvas, mouse capture, status bar
+- **Fixed document canvas** (default 1280×720) with scrollable viewport — resizing the window no longer crops artwork
+- **Canvas Size…** (`Image` menu or `Ctrl+E`) to change document dimensions; open sets size to the loaded image
+- Mouse capture, status bar with live `W × H`
 - Modern light chrome + dark title bar (Windows 10/11)
-- Keyboard shortcuts: `Ctrl+N/O/S`, `Ctrl+Z/Y`
+- Keyboard shortcuts: `Ctrl+N/O/S/E`, `Ctrl+Z/Y`
 
 ## Requirements
 
@@ -48,6 +50,8 @@ cd SimpleDrawingApp
 | Opacity | Slider, box, or `Shift` + mouse wheel |
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
 | Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` |
+| Canvas size | **Image → Canvas Size…** or `Ctrl+E` |
+| Scroll | Scrollbars when the document is larger than the viewport |
 
 ## Project structure
 
@@ -70,6 +74,7 @@ SimpleDrawingApp/
 - [x] Undo / redo
 - [x] Eraser + flood fill
 - [x] Keyboard shortcuts + dirty prompt
+- [x] Fixed document canvas + scroll viewport + Canvas Size
 - [ ] Shape tools (line, rectangle, ellipse)
 - [ ] Selection, zoom, clipboard
 - [ ] Layers and transparency
