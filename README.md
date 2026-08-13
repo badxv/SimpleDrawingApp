@@ -8,7 +8,7 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 
 - **Tools:** Pen, Eraser, Flood Fill
 - **Color:** preset swatches + system color picker
-- **Pen width:** slider / edit box / `[` `]` keys (1–50)
+- **Pen width:** slider / edit box / mouse wheel / `[` `]` keys (1–50)
 - **Undo / Redo** (stroke & fill history)
 - **New / Clear** with unsaved-change prompts
 - **Save / Open** PNG, JPG, BMP
@@ -43,7 +43,7 @@ cd SimpleDrawingApp
 | Erase | Select **Eraser**, drag |
 | Fill | Select **Fill**, click a region |
 | Color | Click a swatch or **Color...** |
-| Width | Slider, box, or `[` / `]` |
+| Width | Slider, box, mouse wheel, or `[` / `]` |
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
 | Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` |
 

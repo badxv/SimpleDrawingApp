@@ -72,6 +72,20 @@ void UpdatePenWidthDisplay() {
     SetWindowTextA(hwndPenWidthBox, buf);
 }
 
+static void AdjustPenWidth(HWND hwnd, int delta) {
+    int next = penWidth + delta;
+    if (next < 1) next = 1;
+    if (next > 50) next = 50;
+    if (next == penWidth) return;
+
+    penWidth = next;
+    if (hwndSlider) {
+        SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
+    }
+    UpdatePenWidthDisplay();
+    UpdateStatusBar(hwnd);
+}
+
 void UpdateWindowTitle(HWND hwnd) {
     char title[128];
     sprintf_s(title, "Simple Drawing App%s", documentDirty ? " *" : "");
@@ -649,22 +663,21 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         break;
     }
+    case WM_MOUSEWHEEL: {
+        // Middle-mouse wheel: scroll up = thicker, scroll down = thinner
+        const int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+        const int steps = wheelDelta / WHEEL_DELTA;
+        if (steps != 0) {
+            AdjustPenWidth(hwnd, steps);
+        }
+        return 0;
+    }
     case WM_KEYDOWN: {
         if (wParam == VK_OEM_4) { // [
-            if (penWidth > 1) {
-                --penWidth;
-                SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
-                UpdatePenWidthDisplay();
-                UpdateStatusBar(hwnd);
-            }
+            AdjustPenWidth(hwnd, -1);
         }
         else if (wParam == VK_OEM_6) { // ]
-            if (penWidth < 50) {
-                ++penWidth;
-                SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
-                UpdatePenWidthDisplay();
-                UpdateStatusBar(hwnd);
-            }
+            AdjustPenWidth(hwnd, 1);
         }
         break;
     }
