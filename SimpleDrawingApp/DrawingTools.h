@@ -20,7 +20,8 @@ struct AppTheme {
 };
 
 // 4-connected flood fill on a 32bpp ARGB bitmap.
-bool FloodFillCanvas(Gdiplus::Bitmap* bitmap, int x, int y, COLORREF fillColor);
+// alpha 0-255 blends fillColor over existing pixels.
+bool FloodFillCanvas(Gdiplus::Bitmap* bitmap, int x, int y, COLORREF fillColor, BYTE alpha = 255);
 
 COLORREF ColorFromGdiplus(Gdiplus::Color c);
 Gdiplus::Color GdiplusFromColor(COLORREF c, BYTE alpha = 255);

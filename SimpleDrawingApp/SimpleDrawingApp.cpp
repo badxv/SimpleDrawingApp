@@ -25,7 +25,7 @@ using namespace Gdiplus;
 
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
-constexpr int TOOLBAR_HEIGHT = 58;
+constexpr int TOOLBAR_HEIGHT = 92;
 constexpr int STATUS_HEIGHT = 24;
 
 const COLORREF kSwatches[8] = {
@@ -47,6 +47,8 @@ HACCEL gAccel = nullptr;
 
 HWND hwndSlider = nullptr;
 HWND hwndPenWidthBox = nullptr;
+HWND hwndOpacitySlider = nullptr;
+HWND hwndOpacityBox = nullptr;
 HWND hwndStatus = nullptr;
 HWND hwndToolButtons[3] = {};
 HWND hwndSwatches[8] = {};
@@ -62,14 +64,29 @@ ULONG_PTR gdiplusToken = 0;
 
 COLORREF penColor = RGB(0, 0, 0);
 int penWidth = 5;
+int penOpacity = 100; // percent 1-100
 DrawTool currentTool = DrawTool::Pen;
 bool documentDirty = false;
+
+static BYTE OpacityToAlpha() {
+    int pct = penOpacity;
+    if (pct < 1) pct = 1;
+    if (pct > 100) pct = 100;
+    return static_cast<BYTE>((pct * 255 + 50) / 100);
+}
 
 void UpdatePenWidthDisplay() {
     if (!hwndPenWidthBox) return;
     char buf[16];
     sprintf_s(buf, "%d", penWidth);
     SetWindowTextA(hwndPenWidthBox, buf);
+}
+
+void UpdateOpacityDisplay() {
+    if (!hwndOpacityBox) return;
+    char buf[16];
+    sprintf_s(buf, "%d", penOpacity);
+    SetWindowTextA(hwndOpacityBox, buf);
 }
 
 static void AdjustPenWidth(HWND hwnd, int delta) {
@@ -83,6 +100,20 @@ static void AdjustPenWidth(HWND hwnd, int delta) {
         SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
     }
     UpdatePenWidthDisplay();
+    UpdateStatusBar(hwnd);
+}
+
+static void AdjustOpacity(HWND hwnd, int delta) {
+    int next = penOpacity + delta;
+    if (next < 1) next = 1;
+    if (next > 100) next = 100;
+    if (next == penOpacity) return;
+
+    penOpacity = next;
+    if (hwndOpacitySlider) {
+        SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
+    }
+    UpdateOpacityDisplay();
     UpdateStatusBar(hwnd);
 }
 
@@ -110,7 +141,7 @@ void UpdateStatusBar(HWND hwnd) {
     char part2[64];
     sprintf_s(part0, "Tool: %s", toolName);
     sprintf_s(part1, "Size: %d x %d", cw, ch);
-    sprintf_s(part2, "Width: %d  %s", penWidth, documentDirty ? "Modified" : "Saved");
+    sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");
 
     SendMessageA(hwndStatus, SB_SETTEXTA, 0, (LPARAM)part0);
     SendMessageA(hwndStatus, SB_SETTEXTA, 1, (LPARAM)part1);
@@ -364,7 +395,10 @@ static void DrawStrokeSegment(int x0, int y0, int x1, int y1) {
     if (!canvasGraphics) return;
 
     COLORREF strokeColor = (currentTool == DrawTool::Eraser) ? gTheme.canvasBg : penColor;
-    Pen pen(GdiplusFromColor(strokeColor), static_cast<REAL>(penWidth));
+    const BYTE alpha = (currentTool == DrawTool::Eraser && penOpacity >= 100)
+        ? 255
+        : OpacityToAlpha();
+    Pen pen(GdiplusFromColor(strokeColor, alpha), static_cast<REAL>(penWidth));
     pen.SetStartCap(LineCapRound);
     pen.SetEndCap(LineCapRound);
     pen.SetLineJoin(LineJoinRound);
@@ -389,51 +423,78 @@ static HWND CreateToolbarButton(HWND parent, int id, const char* label, int x, i
 }
 
 static void CreateToolbar(HWND hwnd) {
-    int x = 12;
-    const int y = 14;
-    const int h = 30;
+    const int h = 28;
     const int toolW = 64;
+    const int y1 = 8;
+    const int y2 = 50;
 
-    hwndToolButtons[0] = CreateToolbarButton(hwnd, IDC_TOOL_PEN, "Pen", x, y, toolW, h, true); x += toolW + 6;
-    hwndToolButtons[1] = CreateToolbarButton(hwnd, IDC_TOOL_ERASER, "Eraser", x, y, toolW + 8, h, true); x += toolW + 14;
-    hwndToolButtons[2] = CreateToolbarButton(hwnd, IDC_TOOL_FILL, "Fill", x, y, toolW, h, true); x += toolW + 16;
+    int x = 12;
+    hwndToolButtons[0] = CreateToolbarButton(hwnd, IDC_TOOL_PEN, "Pen", x, y1, toolW, h, true); x += toolW + 6;
+    hwndToolButtons[1] = CreateToolbarButton(hwnd, IDC_TOOL_ERASER, "Eraser", x, y1, toolW + 8, h, true); x += toolW + 14;
+    hwndToolButtons[2] = CreateToolbarButton(hwnd, IDC_TOOL_FILL, "Fill", x, y1, toolW, h, true); x += toolW + 16;
 
     for (int i = 0; i < 8; ++i) {
         hwndSwatches[i] = CreateWindowA("BUTTON", "",
             WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_OWNERDRAW,
-            x, y + 4, 22, 22,
+            x, y1 + 3, 22, 22,
             hwnd, (HMENU)(INT_PTR)(IDC_SWATCH0 + i), GetModuleHandle(NULL), NULL);
         x += 26;
     }
     x += 8;
 
-    hwndActionButtons[0] = CreateToolbarButton(hwnd, IDC_COLOR_BUTTON, "Color...", x, y, 72, h, false);
-    x += 80;
+    hwndActionButtons[0] = CreateToolbarButton(hwnd, IDC_COLOR_BUTTON, "Color...", x, y1, 72, h, false);
+    x += 84;
+    hwndActionButtons[1] = CreateToolbarButton(hwnd, IDC_NEW_BUTTON, "New", x, y1, 52, h, false); x += 58;
+    hwndActionButtons[2] = CreateToolbarButton(hwnd, IDC_UNDO_BUTTON, "Undo", x, y1, 52, h, false); x += 58;
+    hwndActionButtons[3] = CreateToolbarButton(hwnd, IDC_REDO_BUTTON, "Redo", x, y1, 52, h, false); x += 58;
+    hwndActionButtons[4] = CreateToolbarButton(hwnd, IDC_CLEAR_BUTTON, "Clear", x, y1, 52, h, false); x += 58;
+    hwndActionButtons[5] = CreateToolbarButton(hwnd, IDC_SAVE_BUTTON, "Save", x, y1, 52, h, false); x += 58;
+    hwndActionButtons[6] = CreateToolbarButton(hwnd, IDC_LOAD_BUTTON, "Open", x, y1, 52, h, false);
+
+    // Row 2: size + opacity
+    x = 12;
+    HWND sizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
+        x, y2 + 4, 34, 20, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(sizeLabel);
+    x += 38;
 
     hwndSlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
         WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        x, y - 2, 140, 34,
+        x, y2 - 2, 150, 32,
         hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 50));
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
-    x += 148;
+    x += 158;
 
     hwndPenWidthBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
-        x, y + 2, 40, 24,
+        x, y2 + 2, 40, 24,
         hwnd, (HMENU)(INT_PTR)IDC_WIDTH_EDIT, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndPenWidthBox);
-    x += 52;
+    x += 56;
 
-    hwndActionButtons[1] = CreateToolbarButton(hwnd, IDC_NEW_BUTTON, "New", x, y, 52, h, false); x += 58;
-    hwndActionButtons[2] = CreateToolbarButton(hwnd, IDC_UNDO_BUTTON, "Undo", x, y, 52, h, false); x += 58;
-    hwndActionButtons[3] = CreateToolbarButton(hwnd, IDC_REDO_BUTTON, "Redo", x, y, 52, h, false); x += 58;
-    hwndActionButtons[4] = CreateToolbarButton(hwnd, IDC_CLEAR_BUTTON, "Clear", x, y, 52, h, false); x += 58;
-    hwndActionButtons[5] = CreateToolbarButton(hwnd, IDC_SAVE_BUTTON, "Save", x, y, 52, h, false); x += 58;
-    hwndActionButtons[6] = CreateToolbarButton(hwnd, IDC_LOAD_BUTTON, "Open", x, y, 52, h, false);
+    HWND opacityLabel = CreateWindowA("STATIC", "Opacity", WS_CHILD | WS_VISIBLE,
+        x, y2 + 4, 54, 20, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(opacityLabel);
+    x += 58;
+
+    hwndOpacitySlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
+        WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
+        x, y2 - 2, 150, 32,
+        hwnd, NULL, GetModuleHandle(NULL), NULL);
+    SendMessage(hwndOpacitySlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
+    SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
+    x += 158;
+
+    hwndOpacityBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
+        x, y2 + 2, 44, 24,
+        hwnd, (HMENU)(INT_PTR)IDC_OPACITY_EDIT, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(hwndOpacityBox);
 
     SetActiveTool(DrawTool::Pen);
     UpdatePenWidthDisplay();
+    UpdateOpacityDisplay();
 }
 
 static void DrawToolbarBackground(HDC hdc, const RECT& client) {
@@ -529,6 +590,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             UpdatePenWidthDisplay();
             UpdateStatusBar(hwnd);
         }
+        else if ((HWND)lParam == hwndOpacitySlider) {
+            penOpacity = static_cast<int>(SendMessage(hwndOpacitySlider, TBM_GETPOS, 0, 0));
+            UpdateOpacityDisplay();
+            UpdateStatusBar(hwnd);
+        }
         break;
     }
     case WM_MOUSEMOVE: {
@@ -553,7 +619,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         if (currentTool == DrawTool::Fill) {
             gHistory.Push(canvasBitmap);
-            if (FloodFillCanvas(canvasBitmap, canvasX, canvasY, penColor)) {
+            if (FloodFillCanvas(canvasBitmap, canvasX, canvasY, penColor, OpacityToAlpha())) {
                 MarkDirty(hwnd);
                 InvalidateCanvas(hwnd);
             }
@@ -593,6 +659,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (val >= 1 && val <= 50) {
                 penWidth = val;
                 SendMessage(hwndSlider, TBM_SETPOS, TRUE, val);
+                UpdateStatusBar(hwnd);
+            }
+            break;
+        }
+
+        if (cmdId == IDC_OPACITY_EDIT && notifyCode == EN_CHANGE) {
+            char buf[16];
+            GetWindowTextA(hwndOpacityBox, buf, sizeof(buf));
+            int val = atoi(buf);
+            if (val >= 1 && val <= 100) {
+                penOpacity = val;
+                SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, val);
                 UpdateStatusBar(hwnd);
             }
             break;
@@ -664,11 +742,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         break;
     }
     case WM_MOUSEWHEEL: {
-        // Middle-mouse wheel: scroll up = thicker, scroll down = thinner
         const int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
         const int steps = wheelDelta / WHEEL_DELTA;
         if (steps != 0) {
-            AdjustPenWidth(hwnd, steps);
+            // Shift+wheel adjusts opacity; plain wheel adjusts size
+            if ((GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0) {
+                AdjustOpacity(hwnd, steps * 5);
+            }
+            else {
+                AdjustPenWidth(hwnd, steps);
+            }
         }
         return 0;
     }
