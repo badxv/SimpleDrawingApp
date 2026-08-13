@@ -1,7 +1,8 @@
 ﻿#pragma once
 #include <windows.h>
 #include <gdiplus.h>
-#include "resource.h"
+#include "Resource.h"
+
 using namespace Gdiplus;
 
 extern COLORREF penColor;

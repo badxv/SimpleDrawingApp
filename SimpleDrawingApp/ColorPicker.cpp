@@ -1,8 +1,10 @@
 #include "ColorPicker.h"
-#include <commdlg.h>  // ChooseColor API
+#include <commdlg.h>
+
+#pragma comment(lib, "Comdlg32.lib")
 
 COLORREF ColorPicker::PickColor(HWND owner, COLORREF initialColor) {
-    CHOOSECOLOR cc = { sizeof(cc) };
+    CHOOSECOLORA cc = { sizeof(cc) };
     static COLORREF customColors[16] = { 0 };
 
     cc.hwndOwner = owner;
@@ -10,9 +12,9 @@ COLORREF ColorPicker::PickColor(HWND owner, COLORREF initialColor) {
     cc.rgbResult = initialColor;
     cc.Flags = CC_RGBINIT | CC_FULLOPEN;
 
-    if (ChooseColor(&cc)) {
+    if (ChooseColorA(&cc)) {
         return cc.rgbResult;
     }
 
-    return initialColor; 
+    return initialColor;
 }
