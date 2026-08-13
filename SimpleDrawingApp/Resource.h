@@ -9,13 +9,37 @@
 #define IDD_ABOUTBOX			103
 #define IDM_ABOUT				104
 #define IDM_EXIT				105
+#define IDM_NEW					106
+#define IDM_OPEN				110
+#define IDM_SAVE				111
+#define IDM_UNDO				112
+#define IDM_REDO				113
+#define IDM_CLEAR				114
 #define IDI_SIMPLEDRAWINGAPP			107
 #define IDI_SMALL				108
 #define IDC_SIMPLEDRAWINGAPP			109
 #define IDC_MYICON				2
-#define IDC_SAVE_BUTTON			1001
-#define IDC_LOAD_BUTTON			1002
-#define IDC_COLOR_BUTTON		1003
+
+#define IDC_TOOL_PEN			1001
+#define IDC_TOOL_ERASER			1002
+#define IDC_TOOL_FILL			1003
+#define IDC_SAVE_BUTTON			1004
+#define IDC_LOAD_BUTTON			1005
+#define IDC_COLOR_BUTTON		1006
+#define IDC_NEW_BUTTON			1007
+#define IDC_UNDO_BUTTON			1008
+#define IDC_REDO_BUTTON			1009
+#define IDC_CLEAR_BUTTON		1010
+#define IDC_WIDTH_EDIT			1011
+#define IDC_SWATCH0				1020
+#define IDC_SWATCH1				1021
+#define IDC_SWATCH2				1022
+#define IDC_SWATCH3				1023
+#define IDC_SWATCH4				1024
+#define IDC_SWATCH5				1025
+#define IDC_SWATCH6				1026
+#define IDC_SWATCH7				1027
+
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif
@@ -27,7 +51,7 @@
 #define _APS_NO_MFC					130
 #define _APS_NEXT_RESOURCE_VALUE	129
 #define _APS_NEXT_COMMAND_VALUE		32771
-#define _APS_NEXT_CONTROL_VALUE		1004
-#define _APS_NEXT_SYMED_VALUE		110
+#define _APS_NEXT_CONTROL_VALUE		1030
+#define _APS_NEXT_SYMED_VALUE		115
 #endif
 #endif

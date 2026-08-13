@@ -1,22 +1,20 @@
 # Simple Drawing App
 
-A lightweight freehand drawing app for Windows, built with native **Win32** and **GDI+**.
+A lightweight drawing app for Windows, built with native **Win32** and **GDI+**.
 
-Sketch with a pen, adjust color and thickness, then save or load images — no frameworks, no installers beyond Visual Studio.
+Sketch with pen, eraser, and fill tools; undo your work; save or load images — no heavy frameworks.
 
 ## Features
 
-- Freehand drawing with antialiased strokes and round pen tips
-- Pen width control (slider + numeric box, 1–50)
-- System color picker
-- Save / load **PNG**, **JPG**, and **BMP**
-- Resizable canvas (content preserved on window resize)
-- Mouse capture for continuous strokes outside the window
-- Simple menu: **File → Exit**, **Help → About**
-
-## Screenshots
-
-> Screenshots coming soon. Run the app locally and feel free to contribute images under `docs/`.
+- **Tools:** Pen, Eraser, Flood Fill
+- **Color:** preset swatches + system color picker
+- **Pen width:** slider / edit box / `[` `]` keys (1–50)
+- **Undo / Redo** (stroke & fill history)
+- **New / Clear** with unsaved-change prompts
+- **Save / Open** PNG, JPG, BMP
+- Resizable canvas, mouse capture, status bar
+- Modern light chrome + dark title bar (Windows 10/11)
+- Keyboard shortcuts: `Ctrl+N/O/S`, `Ctrl+Z/Y`
 
 ## Requirements
 
@@ -25,70 +23,58 @@ Sketch with a pen, adjust color and thickness, then save or load images — no f
 | OS | Windows 10 or later |
 | IDE | Visual Studio 2022 (v143 toolset) |
 | SDK | Windows 10 SDK |
-| Language | C++ (Win32, MultiByte / ANSI APIs) |
 
 ## Build
 
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/badxv/SimpleDrawingApp.git
-   cd SimpleDrawingApp
-   ```
-
-2. Open `SimpleDrawingApp.sln` in Visual Studio.
-
-3. Select **Debug | x64** (or **Release | x64**).
-
-4. Build with **Ctrl+Shift+B**, or run with **F5**.
-
-Output binary (Debug):
-
-```text
-x64\Debug\SimpleDrawingApp.exe
+```bash
+git clone https://github.com/badxv/SimpleDrawingApp.git
+cd SimpleDrawingApp
 ```
+
+1. Open `SimpleDrawingApp.sln` in Visual Studio  
+2. Select **Debug | x64** (or **Release | x64**)  
+3. Build (**Ctrl+Shift+B**) or run (**F5**)
 
 ## Usage
 
 | Action | How |
 |--------|-----|
-| Draw | Drag with the left mouse button on the canvas (below the toolbar) |
-| Pen width | Move the slider or type a value in the edit box |
-| Color | Click **Color** |
-| Save | Click **Save**, choose PNG / JPG / BMP |
-| Load | Click **Load**, pick an image file |
-| About | **Help → About** |
-| Exit | **File → Exit** |
+| Draw | Select **Pen**, drag on the canvas |
+| Erase | Select **Eraser**, drag |
+| Fill | Select **Fill**, click a region |
+| Color | Click a swatch or **Color...** |
+| Width | Slider, box, or `[` / `]` |
+| Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
+| Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` |
 
 ## Project structure
 
 ```text
 SimpleDrawingApp/
 ├── SimpleDrawingApp.sln
+├── README.md
 └── SimpleDrawingApp/
-    ├── SimpleDrawingApp.cpp   # Window, toolbar, drawing loop
-    ├── SimpleDrawingApp.h
-    ├── FileManager.cpp/.h     # Image save / load (GDI+)
-    ├── ColorPicker.cpp/.h     # ChooseColor dialog
-    ├── Resource.h / .rc       # Menu, About dialog, icons
-    └── framework.h
+    ├── SimpleDrawingApp.cpp   # Window, toolbar, input
+    ├── CanvasHistory.*        # Undo / redo snapshots
+    ├── DrawingTools.*         # Tool enum + flood fill
+    ├── FileManager.*          # Image save / load
+    ├── ColorPicker.*          # ChooseColor dialog
+    └── Resource.h / .rc       # Menu, accelerators, About
 ```
 
 ## Roadmap
 
-Planned improvements inspired by classic Paint and modern open-source editors (Pinta, RPaint, Win11 Paint):
-
-- [ ] Modern toolbar UI and status bar
-- [ ] Undo / redo
-- [ ] Eraser and flood fill
+- [x] Modern toolbar + status bar
+- [x] Undo / redo
+- [x] Eraser + flood fill
+- [x] Keyboard shortcuts + dirty prompt
 - [ ] Shape tools (line, rectangle, ellipse)
-- [ ] Keyboard shortcuts (Ctrl+S, Ctrl+Z, …)
-- [ ] Selection, zoom, and clipboard
-- [ ] Layers and transparency (later)
+- [ ] Selection, zoom, clipboard
+- [ ] Layers and transparency
 
 ## Contributing
 
-Issues and pull requests are welcome. For larger changes, open an issue first so we can align on scope.
+Issues and pull requests are welcome. Prefer small, focused changes.
 
 ## License
 
