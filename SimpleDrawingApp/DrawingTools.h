@@ -1,6 +1,8 @@
 #pragma once
-#include <gdiplus.h>
+
 #include <windows.h>
+#include <objidl.h>
+#include <gdiplus.h>
 
 enum class DrawTool {
     Pen = 0,
