@@ -8,6 +8,7 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 
 - **Tools:** Pen, Eraser, Flood Fill
 - **Color:** preset swatches + system color picker
+- **Opacity:** 1–100% for pen, eraser, and fill (`Shift` + mouse wheel)
 - **Pen width:** slider / edit box / mouse wheel / `[` `]` keys (1–50)
 - **Undo / Redo** (stroke & fill history)
 - **New / Clear** with unsaved-change prompts
@@ -44,6 +45,7 @@ cd SimpleDrawingApp
 | Fill | Select **Fill**, click a region |
 | Color | Click a swatch or **Color...** |
 | Width | Slider, box, mouse wheel, or `[` / `]` |
+| Opacity | Slider, box, or `Shift` + mouse wheel |
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
 | Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` |
 

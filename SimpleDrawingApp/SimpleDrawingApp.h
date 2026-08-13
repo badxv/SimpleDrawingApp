@@ -10,6 +10,7 @@ using namespace Gdiplus;
 
 extern COLORREF penColor;
 extern int penWidth;
+extern int penOpacity;
 extern DrawTool currentTool;
 extern bool documentDirty;
 
