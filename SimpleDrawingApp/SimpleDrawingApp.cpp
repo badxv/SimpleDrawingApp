@@ -395,10 +395,7 @@ static void DrawStrokeSegment(int x0, int y0, int x1, int y1) {
     if (!canvasGraphics) return;
 
     COLORREF strokeColor = (currentTool == DrawTool::Eraser) ? gTheme.canvasBg : penColor;
-    const BYTE alpha = (currentTool == DrawTool::Eraser && penOpacity >= 100)
-        ? 255
-        : OpacityToAlpha();
-    Pen pen(GdiplusFromColor(strokeColor, alpha), static_cast<REAL>(penWidth));
+    Pen pen(GdiplusFromColor(strokeColor, OpacityToAlpha()), static_cast<REAL>(penWidth));
     pen.SetStartCap(LineCapRound);
     pen.SetEndCap(LineCapRound);
     pen.SetLineJoin(LineJoinRound);
