@@ -56,9 +56,13 @@ HWND hwndActionButtons[7] = {};
 
 POINT lastPoint = {};
 bool isDrawing = false;
+bool suppressEditNotify = false;
 
 Bitmap* canvasBitmap = nullptr;
 Graphics* canvasGraphics = nullptr;
+Bitmap* strokeLayer = nullptr;
+Graphics* strokeGraphics = nullptr;
+WNDPROC gOldTrackbarProc = nullptr;
 ULONG_PTR gdiplusToken = 0;
 }
 
@@ -79,14 +83,18 @@ void UpdatePenWidthDisplay() {
     if (!hwndPenWidthBox) return;
     char buf[16];
     sprintf_s(buf, "%d", penWidth);
+    suppressEditNotify = true;
     SetWindowTextA(hwndPenWidthBox, buf);
+    suppressEditNotify = false;
 }
 
 void UpdateOpacityDisplay() {
     if (!hwndOpacityBox) return;
     char buf[16];
     sprintf_s(buf, "%d", penOpacity);
+    suppressEditNotify = true;
     SetWindowTextA(hwndOpacityBox, buf);
+    suppressEditNotify = false;
 }
 
 static void AdjustPenWidth(HWND hwnd, int delta) {
@@ -219,6 +227,11 @@ static void EnsureCanvas(HWND hwnd) {
 }
 
 static void ResizeCanvas(HWND hwnd) {
+    if (isDrawing) {
+        isDrawing = false;
+        CommitStrokeLayer();
+    }
+
     int width = 0, height = 0;
     GetCanvasSize(hwnd, width, height);
 
@@ -391,15 +404,88 @@ static void DoRedo(HWND hwnd) {
     }
 }
 
-static void DrawStrokeSegment(int x0, int y0, int x1, int y1) {
-    if (!canvasGraphics) return;
+static void DestroyStrokeLayer() {
+    delete strokeGraphics;
+    delete strokeLayer;
+    strokeGraphics = nullptr;
+    strokeLayer = nullptr;
+}
 
+static void BeginStrokeLayer() {
+    DestroyStrokeLayer();
+    if (!canvasBitmap) return;
+
+    const int width = static_cast<int>(canvasBitmap->GetWidth());
+    const int height = static_cast<int>(canvasBitmap->GetHeight());
+    strokeLayer = new Bitmap(width, height, PixelFormat32bppARGB);
+    strokeGraphics = Graphics::FromImage(strokeLayer);
+    strokeGraphics->Clear(Color(0, 0, 0, 0));
+    strokeGraphics->SetSmoothingMode(SmoothingModeAntiAlias);
+    strokeGraphics->SetCompositingMode(CompositingModeSourceOver);
+}
+
+static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
+    if (!target) return;
+
+    // Draw fully opaque ink onto the stroke layer; opacity is applied once when compositing.
     COLORREF strokeColor = (currentTool == DrawTool::Eraser) ? gTheme.canvasBg : penColor;
-    Pen pen(GdiplusFromColor(strokeColor, OpacityToAlpha()), static_cast<REAL>(penWidth));
+    Pen pen(GdiplusFromColor(strokeColor, 255), static_cast<REAL>(penWidth));
     pen.SetStartCap(LineCapRound);
     pen.SetEndCap(LineCapRound);
     pen.SetLineJoin(LineJoinRound);
-    canvasGraphics->DrawLine(&pen, x0, y0, x1, y1);
+    target->DrawLine(&pen, x0, y0, x1, y1);
+}
+
+static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
+    if (!strokeLayer || !dest) return;
+
+    const REAL alpha = static_cast<REAL>(OpacityToAlpha()) / 255.0f;
+    ColorMatrix matrix = {
+        1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, alpha, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    ImageAttributes attrs;
+    attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+
+    const int width = static_cast<int>(strokeLayer->GetWidth());
+    const int height = static_cast<int>(strokeLayer->GetHeight());
+    dest->DrawImage(
+        strokeLayer,
+        Rect(destX, destY, width, height),
+        0, 0, width, height,
+        UnitPixel,
+        &attrs);
+}
+
+static void CommitStrokeLayer() {
+    if (!strokeLayer || !canvasGraphics) {
+        DestroyStrokeLayer();
+        return;
+    }
+    DrawStrokeLayerWithOpacity(canvasGraphics, 0, 0);
+    DestroyStrokeLayer();
+}
+
+static LRESULT CALLBACK TrackbarWheelProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_MOUSEWHEEL) {
+        HWND parent = GetParent(hwnd);
+        if (parent) {
+            return SendMessageA(parent, WM_MOUSEWHEEL, wParam, lParam);
+        }
+    }
+    return CallWindowProcA(gOldTrackbarProc, hwnd, msg, wParam, lParam);
+}
+
+static void SubclassTrackbarWheel(HWND trackbar) {
+    if (!trackbar) return;
+    WNDPROC prev = (WNDPROC)SetWindowLongPtrA(trackbar, GWLP_WNDPROC, (LONG_PTR)TrackbarWheelProc);
+    if (!gOldTrackbarProc) {
+        gOldTrackbarProc = prev;
+    }
 }
 
 static void LayoutStatusParts(HWND hwnd) {
@@ -461,6 +547,7 @@ static void CreateToolbar(HWND hwnd) {
         hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 50));
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
+    SubclassTrackbarWheel(hwndSlider);
     x += 158;
 
     hwndPenWidthBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
@@ -481,6 +568,7 @@ static void CreateToolbar(HWND hwnd) {
         hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndOpacitySlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
+    SubclassTrackbarWheel(hwndOpacitySlider);
     x += 158;
 
     hwndOpacityBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
@@ -595,11 +683,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         break;
     }
     case WM_MOUSEMOVE: {
-        if (isDrawing && canvasGraphics &&
+        if (isDrawing && strokeGraphics &&
             (currentTool == DrawTool::Pen || currentTool == DrawTool::Eraser)) {
             int canvasX = 0, canvasY = 0;
             if (ClientToCanvas(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), canvasX, canvasY)) {
-                DrawStrokeSegment(lastPoint.x, lastPoint.y, canvasX, canvasY);
+                DrawStrokeOnto(strokeGraphics, lastPoint.x, lastPoint.y, canvasX, canvasY);
                 lastPoint.x = canvasX;
                 lastPoint.y = canvasY;
                 InvalidateCanvas(hwnd);
@@ -624,10 +712,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
 
         gHistory.Push(canvasBitmap);
+        BeginStrokeLayer();
         isDrawing = true;
         lastPoint.x = canvasX;
         lastPoint.y = canvasY;
-        DrawStrokeSegment(canvasX, canvasY, canvasX, canvasY);
+        DrawStrokeOnto(strokeGraphics, canvasX, canvasY, canvasX, canvasY);
         SetCapture(hwnd);
         MarkDirty(hwnd);
         InvalidateCanvas(hwnd);
@@ -636,20 +725,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_LBUTTONUP:
         if (isDrawing) {
             isDrawing = false;
+            CommitStrokeLayer();
             if (GetCapture() == hwnd) {
                 ReleaseCapture();
             }
+            InvalidateCanvas(hwnd);
             UpdateStatusBar(hwnd);
         }
         break;
     case WM_CAPTURECHANGED:
-        isDrawing = false;
+        if (isDrawing) {
+            isDrawing = false;
+            CommitStrokeLayer();
+            InvalidateCanvas(hwnd);
+        }
         break;
     case WM_COMMAND: {
         const int cmdId = LOWORD(wParam);
         const int notifyCode = HIWORD(wParam);
 
         if (cmdId == IDC_WIDTH_EDIT && notifyCode == EN_CHANGE) {
+            if (suppressEditNotify) break;
             char buf[16];
             GetWindowTextA(hwndPenWidthBox, buf, sizeof(buf));
             int val = atoi(buf);
@@ -662,6 +758,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
 
         if (cmdId == IDC_OPACITY_EDIT && notifyCode == EN_CHANGE) {
+            if (suppressEditNotify) break;
             char buf[16];
             GetWindowTextA(hwndOpacityBox, buf, sizeof(buf));
             int val = atoi(buf);
@@ -779,6 +876,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         Graphics g(hdc);
         g.DrawImage(canvasBitmap, 0, TOOLBAR_HEIGHT);
+        if (strokeLayer) {
+            DrawStrokeLayerWithOpacity(&g, 0, TOOLBAR_HEIGHT);
+        }
 
         EndPaint(hwnd, &ps);
         break;
@@ -787,6 +887,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         if (GetCapture() == hwnd) {
             ReleaseCapture();
         }
+        DestroyStrokeLayer();
         gHistory.Clear();
         delete canvasGraphics;
         delete canvasBitmap;
