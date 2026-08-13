@@ -688,17 +688,15 @@ static void CommitStrokeLayer() {
 
 static int ScrollByMessage(HWND hwnd, int bar, WPARAM wParam, int current, int maxScroll) {
     int pos = current;
+    // SB_LINELEFT/SB_LINEUP (and similar H/V pairs) share the same numeric values.
     switch (LOWORD(wParam)) {
-    case SB_LINELEFT:
-    case SB_LINEUP:
+    case SB_LINELEFT: // also SB_LINEUP
         pos -= 16;
         break;
-    case SB_LINERIGHT:
-    case SB_LINEDOWN:
+    case SB_LINERIGHT: // also SB_LINEDOWN
         pos += 16;
         break;
-    case SB_PAGELEFT:
-    case SB_PAGEUP: {
+    case SB_PAGELEFT: { // also SB_PAGEUP
         SCROLLINFO si = {};
         si.cbSize = sizeof(si);
         si.fMask = SIF_PAGE;
@@ -706,8 +704,7 @@ static int ScrollByMessage(HWND hwnd, int bar, WPARAM wParam, int current, int m
         pos -= static_cast<int>(si.nPage);
         break;
     }
-    case SB_PAGERIGHT:
-    case SB_PAGEDOWN: {
+    case SB_PAGERIGHT: { // also SB_PAGEDOWN
         SCROLLINFO si = {};
         si.cbSize = sizeof(si);
         si.fMask = SIF_PAGE;
@@ -724,12 +721,10 @@ static int ScrollByMessage(HWND hwnd, int bar, WPARAM wParam, int current, int m
         pos = si.nTrackPos;
         break;
     }
-    case SB_TOP:
-    case SB_LEFT:
+    case SB_TOP: // also SB_LEFT
         pos = 0;
         break;
-    case SB_BOTTOM:
-    case SB_RIGHT:
+    case SB_BOTTOM: // also SB_RIGHT
         pos = maxScroll;
         break;
     default:
