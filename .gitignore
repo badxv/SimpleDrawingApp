@@ -1,3 +1,6 @@
+# Linux cross-compile output (scripts/build-linux.sh)
+build-linux/
+
 # Visual Studio / local IDE (do not commit)
 .vs/
 *.user
