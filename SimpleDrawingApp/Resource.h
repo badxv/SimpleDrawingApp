@@ -2,7 +2,7 @@
 // Microsoft Visual C++ generated include file.
 // Used by SimpleDrawingApp.rc
 
-#define IDS_APP_TITLE			103
+#define IDS_APP_TITLE			101
 
 #define IDR_MAINFRAME			128
 #define IDD_SIMPLEDRAWINGAPP_DIALOG	102
@@ -13,6 +13,9 @@
 #define IDI_SMALL				108
 #define IDC_SIMPLEDRAWINGAPP			109
 #define IDC_MYICON				2
+#define IDC_SAVE_BUTTON			1001
+#define IDC_LOAD_BUTTON			1002
+#define IDC_COLOR_BUTTON		1003
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif
