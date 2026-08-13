@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <objidl.h>
 #include <gdiplus.h>
 
 bool SaveBitmapToFile(HWND hwnd, const char* filename);
