@@ -214,6 +214,12 @@ static void ConfigureCanvasGraphics(Graphics* g) {
     g->SetCompositingMode(CompositingModeSourceOver);
 }
 
+static void DestroyStrokeLayer();
+static void CommitStrokeLayer();
+static void BeginStrokeLayer();
+static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1);
+static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY);
+
 static void EnsureCanvas(HWND hwnd) {
     if (canvasBitmap) return;
 
