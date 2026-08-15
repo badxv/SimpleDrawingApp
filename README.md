@@ -6,19 +6,21 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 
 ## Features
 
-- **Tools:** Pen, Eraser, Flood Fill, Line, Rectangle, Ellipse
+- **Tools:** Pen, Eraser, Flood Fill, Line, Rectangle, Ellipse, Select
 - **Color:** preset swatches + system color picker
 - **Opacity:** 1–100% for pen, eraser, fill, and shapes (`Shift` + mouse wheel)
 - **Pen width:** slider / edit box / mouse wheel / `[` `]` keys (1–50)
 - **Shapes:** click-drag preview; hold `Shift` for square / circle / axis-aligned or 45° lines
+- **Selection:** rectangular marquee, move, Delete; **Cut / Copy / Paste** (`Ctrl+X/C/V`)
+- **Zoom:** `Ctrl` + mouse wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
 - **Undo / Redo** (stroke & fill history)
 - **New / Clear** with unsaved-change prompts
 - **Save / Open** PNG, JPG, BMP
 - **Fixed document canvas** (default 1280×720) with scrollable viewport — resizing the window no longer crops artwork
 - **Canvas Size…** (`Image` menu or `Ctrl+E`) to change document dimensions; open sets size to the loaded image
-- Mouse capture, status bar with live `W × H`
+- Mouse capture, status bar with live size + zoom
 - Modern light chrome + dark title bar (Windows 10/11)
-- Keyboard shortcuts: `Ctrl+N/O/S/E`, `Ctrl+Z/Y`
+- Keyboard shortcuts: `Ctrl+N/O/S/E/A/X/C/V`, `Ctrl+Z/Y`, `Del`, `Esc`
 
 ## Requirements
 
@@ -47,6 +49,9 @@ cd SimpleDrawingApp
 | Erase | Select **Eraser**, drag |
 | Fill | Select **Fill**, click a region |
 | Line / Rect / Ellipse | Select the tool, click-drag (`Shift` constrains) |
+| Select / move | **Select**, drag a marquee; drag inside to move |
+| Cut / Copy / Paste | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` (or Edit menu) |
+| Zoom | `Ctrl` + mouse wheel, or **View** menu |
 | Color | Click a swatch or **Color...** |
 | Width | Slider, box, mouse wheel, or `[` / `]` |
 | Opacity | Slider, box, or `Shift` + mouse wheel |
@@ -78,7 +83,7 @@ SimpleDrawingApp/
 - [x] Keyboard shortcuts + dirty prompt
 - [x] Fixed document canvas + scroll viewport + Canvas Size
 - [x] Shape tools (line, rectangle, ellipse)
-- [ ] Selection, zoom, clipboard
+- [x] Selection, zoom, clipboard
 - [ ] Layers and transparency
 
 ## Contributing

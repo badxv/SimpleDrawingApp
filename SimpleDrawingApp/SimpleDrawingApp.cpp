@@ -15,6 +15,8 @@
 #include <dwmapi.h>
 #include <string>
 #include <cstdio>
+#include <cmath>
+#include <algorithm>
 
 #pragma comment(lib, "Comctl32.lib")
 #pragma comment(lib, "Comdlg32.lib")
@@ -33,6 +35,9 @@ constexpr int DEFAULT_DOC_HEIGHT = 720;
 constexpr int MIN_DOC_SIZE = 1;
 constexpr int MAX_DOC_SIZE = 10000;
 constexpr COLORREF WORKSPACE_COLOR = RGB(180, 180, 180);
+constexpr float ZOOM_MIN = 0.25f;
+constexpr float ZOOM_MAX = 8.0f;
+constexpr float ZOOM_STEP = 1.25f;
 
 const COLORREF kSwatches[8] = {
     RGB(0, 0, 0),
@@ -71,7 +76,7 @@ HWND hwndPenWidthBox = nullptr;
 HWND hwndOpacitySlider = nullptr;
 HWND hwndOpacityBox = nullptr;
 HWND hwndStatus = nullptr;
-HWND hwndToolButtons[6] = {};
+HWND hwndToolButtons[7] = {};
 HWND hwndSwatches[8] = {};
 HWND hwndActionButtons[7] = {};
 
@@ -84,6 +89,26 @@ int docWidth = DEFAULT_DOC_WIDTH;
 int docHeight = DEFAULT_DOC_HEIGHT;
 int scrollX = 0;
 int scrollY = 0;
+float zoomFactor = 1.0f;
+
+struct SelectionState {
+    bool hasMarquee = false;
+    bool isFloating = false;
+    bool creating = false;
+    bool moving = false;
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+    int anchorX = 0;
+    int anchorY = 0;
+    int grabDX = 0;
+    int grabDY = 0;
+    Bitmap* floatBmp = nullptr;
+};
+
+SelectionState gSel;
+Bitmap* gClipboardBmp = nullptr;
 
 Bitmap* canvasBitmap = nullptr;
 Graphics* canvasGraphics = nullptr;
@@ -167,12 +192,15 @@ void UpdateStatusBar(HWND hwnd) {
     else if (currentTool == DrawTool::Line) toolName = "Line";
     else if (currentTool == DrawTool::Rectangle) toolName = "Rectangle";
     else if (currentTool == DrawTool::Ellipse) toolName = "Ellipse";
+    else if (currentTool == DrawTool::Select) toolName = "Select";
+
+    const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
 
     char part0[64];
     char part1[64];
-    char part2[64];
+    char part2[80];
     sprintf_s(part0, "Tool: %s", toolName);
-    sprintf_s(part1, "Size: %d x %d", docWidth, docHeight);
+    sprintf_s(part1, "Size: %d x %d  %d%%", docWidth, docHeight, zoomPct);
     sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");
 
     SendMessageA(hwndStatus, SB_SETTEXTA, 0, (LPARAM)part0);
@@ -201,7 +229,7 @@ static void ApplyUiFont(HWND control) {
 
 static void SetActiveTool(DrawTool tool) {
     currentTool = tool;
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 7; ++i) {
         if (!hwndToolButtons[i]) continue;
         const bool selected = (static_cast<int>(tool) == i);
         SendMessageA(hwndToolButtons[i], BM_SETCHECK, selected ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -235,6 +263,7 @@ static void UpdateScrollBars();
 static void SyncDocSizeFromBitmap();
 static void InvalidateCanvas();
 static void LayoutViewport(HWND hwnd);
+static void ClearSelection(bool stampFloating);
 static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink);
 static INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -266,24 +295,26 @@ static void UpdateScrollBars() {
     GetClientRect(hwndViewport, &rc);
     const int viewW = rc.right - rc.left;
     const int viewH = rc.bottom - rc.top;
+    const int contentW = std::max(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
+    const int contentH = std::max(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
 
     SCROLLINFO si = {};
     si.cbSize = sizeof(si);
     si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
 
     si.nMin = 0;
-    si.nMax = (docWidth > 1) ? (docWidth - 1) : 0;
+    si.nMax = (contentW > 1) ? (contentW - 1) : 0;
     si.nPage = (viewW > 0) ? static_cast<UINT>(viewW) : 1;
-    if (scrollX > docWidth - viewW) scrollX = (docWidth > viewW) ? (docWidth - viewW) : 0;
+    if (scrollX > contentW - viewW) scrollX = (contentW > viewW) ? (contentW - viewW) : 0;
     if (scrollX < 0) scrollX = 0;
     si.nPos = scrollX;
     SetScrollInfo(hwndViewport, SB_HORZ, &si, TRUE);
     scrollX = GetScrollPos(hwndViewport, SB_HORZ);
 
     si.nMin = 0;
-    si.nMax = (docHeight > 1) ? (docHeight - 1) : 0;
+    si.nMax = (contentH > 1) ? (contentH - 1) : 0;
     si.nPage = (viewH > 0) ? static_cast<UINT>(viewH) : 1;
-    if (scrollY > docHeight - viewH) scrollY = (docHeight > viewH) ? (docHeight - viewH) : 0;
+    if (scrollY > contentH - viewH) scrollY = (contentH > viewH) ? (contentH - viewH) : 0;
     if (scrollY < 0) scrollY = 0;
     si.nPos = scrollY;
     SetScrollInfo(hwndViewport, SB_VERT, &si, TRUE);
@@ -336,6 +367,7 @@ static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHist
         CommitStrokeLayer();
     }
     DestroyStrokeLayer();
+    ClearSelection(false);
 
     if (pushHistory) {
         gHistory.Push(canvasBitmap);
@@ -371,6 +403,7 @@ static void ClearCanvas(HWND hwnd, bool pushHistory) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
+    ClearSelection(false);
     if (pushHistory) {
         gHistory.Push(canvasBitmap);
     }
@@ -380,18 +413,337 @@ static void ClearCanvas(HWND hwnd, bool pushHistory) {
 }
 
 static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
-    docX = localX + scrollX;
-    docY = localY + scrollY;
+    if (zoomFactor <= 0.0f) return false;
+    docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
+    docY = static_cast<int>(std::floor((localY + scrollY) / zoomFactor));
     if (docX < 0 || docY < 0 || docX >= docWidth || docY >= docHeight) {
         return false;
     }
     return true;
 }
 
+static void ViewportToDocumentUnclamped(int localX, int localY, int& docX, int& docY) {
+    if (zoomFactor <= 0.0f) {
+        docX = 0;
+        docY = 0;
+        return;
+    }
+    docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
+    docY = static_cast<int>(std::floor((localY + scrollY) / zoomFactor));
+}
+
 static void InvalidateCanvas() {
     if (hwndViewport) {
         InvalidateRect(hwndViewport, NULL, FALSE);
     }
+}
+
+static int ScaledContentWidth() {
+    return std::max(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
+}
+
+static int ScaledContentHeight() {
+    return std::max(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
+}
+
+static void DestroySelFloat() {
+    delete gSel.floatBmp;
+    gSel.floatBmp = nullptr;
+    gSel.isFloating = false;
+}
+
+static void ClearSelection(bool stampFloating) {
+    if (stampFloating && gSel.isFloating && gSel.floatBmp && canvasGraphics) {
+        canvasGraphics->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+    }
+    DestroySelFloat();
+    gSel.hasMarquee = false;
+    gSel.creating = false;
+    gSel.moving = false;
+    gSel.x = gSel.y = gSel.w = gSel.h = 0;
+}
+
+static void NormalizeSelRect(int x0, int y0, int x1, int y1, int& x, int& y, int& w, int& h) {
+    int left = (x0 < x1) ? x0 : x1;
+    int top = (y0 < y1) ? y0 : y1;
+    int right = (x0 > x1) ? x0 : x1;
+    int bottom = (y0 > y1) ? y0 : y1;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > docWidth) right = docWidth;
+    if (bottom > docHeight) bottom = docHeight;
+    x = left;
+    y = top;
+    w = right - left;
+    h = bottom - top;
+}
+
+static bool SelectionHitTest(int docX, int docY) {
+    if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return false;
+    return docX >= gSel.x && docY >= gSel.y
+        && docX < gSel.x + gSel.w && docY < gSel.y + gSel.h;
+}
+
+static Bitmap* CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
+    if (!src || w < 1 || h < 1) return nullptr;
+    Bitmap* out = new Bitmap(w, h, PixelFormat32bppARGB);
+    Graphics g(out);
+    g.Clear(Color(0, 0, 0, 0));
+    g.DrawImage(src, Rect(0, 0, w, h), x, y, w, h, UnitPixel);
+    return out;
+}
+
+static void LiftSelection() {
+    if (!gSel.hasMarquee || gSel.isFloating || !canvasBitmap || !canvasGraphics) return;
+    if (gSel.w < 1 || gSel.h < 1) return;
+
+    DestroySelFloat();
+    gSel.floatBmp = CloneBitmapRect(canvasBitmap, gSel.x, gSel.y, gSel.w, gSel.h);
+    if (!gSel.floatBmp) return;
+
+    SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
+    canvasGraphics->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+    gSel.isFloating = true;
+}
+
+static void StampFloatingSelection() {
+    if (!gSel.isFloating || !gSel.floatBmp || !canvasGraphics) return;
+    canvasGraphics->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+    DestroySelFloat();
+}
+
+static Bitmap* CaptureSelectionPixels() {
+    if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return nullptr;
+    if (gSel.isFloating && gSel.floatBmp) {
+        return CloneBitmapRect(gSel.floatBmp, 0, 0, gSel.w, gSel.h);
+    }
+    return CloneBitmapRect(canvasBitmap, gSel.x, gSel.y, gSel.w, gSel.h);
+}
+
+static void SetInternalClipboard(Bitmap* bmp) {
+    delete gClipboardBmp;
+    gClipboardBmp = bmp;
+}
+
+static bool CopyBitmapToWinClipboard(Bitmap* bmp) {
+    if (!bmp) return false;
+    HBITMAP hbm = nullptr;
+    if (bmp->GetHBITMAP(Color(255, 255, 255, 255), &hbm) != Ok || !hbm) {
+        return false;
+    }
+    if (!OpenClipboard(nullptr)) {
+        DeleteObject(hbm);
+        return false;
+    }
+    EmptyClipboard();
+    if (!SetClipboardData(CF_BITMAP, hbm)) {
+        DeleteObject(hbm);
+        CloseClipboard();
+        return false;
+    }
+    CloseClipboard();
+    return true;
+}
+
+static Bitmap* BitmapFromWinClipboard() {
+    if (!OpenClipboard(nullptr)) return nullptr;
+    HANDLE handle = GetClipboardData(CF_BITMAP);
+    Bitmap* out = nullptr;
+    if (handle) {
+        out = new Bitmap(static_cast<HBITMAP>(handle), nullptr);
+        if (out && out->GetLastStatus() != Ok) {
+            delete out;
+            out = nullptr;
+        }
+    }
+    CloseClipboard();
+    return out;
+}
+
+static void SetZoomAtViewportPoint(HWND hwnd, float newZoom, int localX, int localY) {
+    if (newZoom < ZOOM_MIN) newZoom = ZOOM_MIN;
+    if (newZoom > ZOOM_MAX) newZoom = ZOOM_MAX;
+    if (std::fabs(newZoom - zoomFactor) < 0.0001f) return;
+
+    const float docX = (localX + scrollX) / zoomFactor;
+    const float docY = (localY + scrollY) / zoomFactor;
+    zoomFactor = newZoom;
+    scrollX = static_cast<int>(std::lround(docX * zoomFactor)) - localX;
+    scrollY = static_cast<int>(std::lround(docY * zoomFactor)) - localY;
+    UpdateScrollBars();
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+}
+
+static void ZoomByFactor(HWND hwnd, float factor) {
+    if (!hwndViewport) {
+        zoomFactor *= factor;
+        if (zoomFactor < ZOOM_MIN) zoomFactor = ZOOM_MIN;
+        if (zoomFactor > ZOOM_MAX) zoomFactor = ZOOM_MAX;
+        UpdateScrollBars();
+        InvalidateCanvas();
+        UpdateStatusBar(hwnd);
+        return;
+    }
+    RECT rc = {};
+    GetClientRect(hwndViewport, &rc);
+    const int cx = (rc.right - rc.left) / 2;
+    const int cy = (rc.bottom - rc.top) / 2;
+    SetZoomAtViewportPoint(hwnd, zoomFactor * factor, cx, cy);
+}
+
+static void ZoomToActual(HWND hwnd) {
+    if (!hwndViewport) {
+        zoomFactor = 1.0f;
+        UpdateScrollBars();
+        InvalidateCanvas();
+        UpdateStatusBar(hwnd);
+        return;
+    }
+    RECT rc = {};
+    GetClientRect(hwndViewport, &rc);
+    SetZoomAtViewportPoint(hwnd, 1.0f, (rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2);
+}
+
+static void ZoomToFit(HWND hwnd) {
+    if (!hwndViewport || docWidth < 1 || docHeight < 1) return;
+    RECT rc = {};
+    GetClientRect(hwndViewport, &rc);
+    const int viewW = std::max(1, static_cast<int>(rc.right - rc.left));
+    const int viewH = std::max(1, static_cast<int>(rc.bottom - rc.top));
+    const float zx = static_cast<float>(viewW) / static_cast<float>(docWidth);
+    const float zy = static_cast<float>(viewH) / static_cast<float>(docHeight);
+    float z = (zx < zy) ? zx : zy;
+    if (z < ZOOM_MIN) z = ZOOM_MIN;
+    if (z > ZOOM_MAX) z = ZOOM_MAX;
+    zoomFactor = z;
+    scrollX = 0;
+    scrollY = 0;
+    UpdateScrollBars();
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+}
+
+static void DrawSelectionOverlay(Graphics* g) {
+    if (!g) return;
+    if (!gSel.hasMarquee && !gSel.creating) return;
+    if (gSel.w < 1 || gSel.h < 1) return;
+
+    if (gSel.isFloating && gSel.floatBmp) {
+        g->DrawImage(
+            gSel.floatBmp,
+            RectF(
+                gSel.x * zoomFactor,
+                gSel.y * zoomFactor,
+                gSel.w * zoomFactor,
+                gSel.h * zoomFactor));
+    }
+
+    Pen dash(Color(255, 0, 0, 0), 1.0f);
+    dash.SetDashStyle(DashStyleDash);
+    g->DrawRectangle(
+        &dash,
+        RectF(
+            gSel.x * zoomFactor,
+            gSel.y * zoomFactor,
+            std::max(1.0f, gSel.w * zoomFactor),
+            std::max(1.0f, gSel.h * zoomFactor)));
+
+    Pen dash2(Color(255, 255, 255, 255), 1.0f);
+    dash2.SetDashStyle(DashStyleDash);
+    dash2.SetDashOffset(4.0f);
+    g->DrawRectangle(
+        &dash2,
+        RectF(
+            gSel.x * zoomFactor,
+            gSel.y * zoomFactor,
+            std::max(1.0f, gSel.w * zoomFactor),
+            std::max(1.0f, gSel.h * zoomFactor)));
+}
+
+static void DoCopy(HWND hwnd) {
+    Bitmap* shot = CaptureSelectionPixels();
+    if (!shot) return;
+    SetInternalClipboard(CloneBitmapRect(shot, 0, 0, static_cast<int>(shot->GetWidth()), static_cast<int>(shot->GetHeight())));
+    CopyBitmapToWinClipboard(shot);
+    delete shot;
+    (void)hwnd;
+}
+
+static void DoDeleteSelection(HWND hwnd) {
+    if (!gSel.hasMarquee) return;
+    EnsureCanvas(hwnd);
+    gHistory.Push(canvasBitmap);
+    if (gSel.isFloating) {
+        DestroySelFloat();
+        gSel.hasMarquee = false;
+        gSel.w = gSel.h = 0;
+    }
+    else {
+        SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
+        canvasGraphics->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+        gSel.hasMarquee = false;
+        gSel.w = gSel.h = 0;
+    }
+    MarkDirty(hwnd);
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+}
+
+static void DoCut(HWND hwnd) {
+    if (!gSel.hasMarquee) return;
+    DoCopy(hwnd);
+    DoDeleteSelection(hwnd);
+}
+
+static void DoPaste(HWND hwnd) {
+    EnsureCanvas(hwnd);
+    Bitmap* src = nullptr;
+    if (gClipboardBmp) {
+        src = CloneBitmapRect(
+            gClipboardBmp, 0, 0,
+            static_cast<int>(gClipboardBmp->GetWidth()),
+            static_cast<int>(gClipboardBmp->GetHeight()));
+    }
+    if (!src) {
+        src = BitmapFromWinClipboard();
+    }
+    if (!src) return;
+
+    ClearSelection(true);
+    SetActiveTool(DrawTool::Select);
+
+    const int w = static_cast<int>(src->GetWidth());
+    const int h = static_cast<int>(src->GetHeight());
+    int pasteX = static_cast<int>(std::floor(scrollX / zoomFactor));
+    int pasteY = static_cast<int>(std::floor(scrollY / zoomFactor));
+    if (pasteX < 0) pasteX = 0;
+    if (pasteY < 0) pasteY = 0;
+
+    gHistory.Push(canvasBitmap);
+    gSel.hasMarquee = true;
+    gSel.isFloating = true;
+    gSel.floatBmp = src;
+    gSel.x = pasteX;
+    gSel.y = pasteY;
+    gSel.w = w;
+    gSel.h = h;
+    MarkDirty(hwnd);
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+}
+
+static void DoSelectAll(HWND hwnd) {
+    EnsureCanvas(hwnd);
+    ClearSelection(true);
+    SetActiveTool(DrawTool::Select);
+    gSel.hasMarquee = true;
+    gSel.x = 0;
+    gSel.y = 0;
+    gSel.w = docWidth;
+    gSel.h = docHeight;
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
 }
 
 static void EnableDarkTitleBar(HWND hwnd) {
@@ -565,6 +917,7 @@ static void DoOpen(HWND hwnd) {
     if (GetOpenFileNameA(&ofn)) {
         DestroyStrokeLayer();
         isDrawing = false;
+        ClearSelection(false);
         if (LoadImageFromFile(filePath, canvasBitmap, canvasGraphics)) {
             ConfigureCanvasGraphics(canvasGraphics);
             SyncDocSizeFromBitmap();
@@ -587,6 +940,7 @@ static void DoNew(HWND hwnd) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
+    ClearSelection(false);
     // Keep current document size; clear content only (Paint-like New).
     canvasGraphics->Clear(GdiplusFromColor(gTheme.canvasBg));
     gHistory.Clear();
@@ -599,6 +953,7 @@ static void DoUndo(HWND hwnd) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
+    ClearSelection(false);
     if (gHistory.Undo(canvasBitmap, canvasGraphics)) {
         ConfigureCanvasGraphics(canvasGraphics);
         SyncDocSizeFromBitmap();
@@ -613,6 +968,7 @@ static void DoRedo(HWND hwnd) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
+    ClearSelection(false);
     if (gHistory.Redo(canvasBitmap, canvasGraphics)) {
         ConfigureCanvasGraphics(canvasGraphics);
         SyncDocSizeFromBitmap();
@@ -821,7 +1177,8 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     case WM_HSCROLL: {
         RECT rc = {};
         GetClientRect(hwnd, &rc);
-        const int maxScroll = (docWidth > rc.right) ? (docWidth - rc.right) : 0;
+        const int contentW = ScaledContentWidth();
+        const int maxScroll = (contentW > rc.right) ? (contentW - rc.right) : 0;
         const int newPos = ScrollByMessage(hwnd, SB_HORZ, wParam, scrollX, maxScroll);
         if (newPos != scrollX) {
             scrollX = newPos;
@@ -833,7 +1190,8 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     case WM_VSCROLL: {
         RECT rc = {};
         GetClientRect(hwnd, &rc);
-        const int maxScroll = (docHeight > rc.bottom) ? (docHeight - rc.bottom) : 0;
+        const int contentH = ScaledContentHeight();
+        const int maxScroll = (contentH > rc.bottom) ? (contentH - rc.bottom) : 0;
         const int newPos = ScrollByMessage(hwnd, SB_VERT, wParam, scrollY, maxScroll);
         if (newPos != scrollY) {
             scrollY = newPos;
@@ -854,10 +1212,44 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         if (!parent) break;
         EnsureCanvas(parent);
 
+        const int localX = GET_X_LPARAM(lParam);
+        const int localY = GET_Y_LPARAM(lParam);
         int docX = 0, docY = 0;
-        if (!ViewportToDocument(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), docX, docY)) {
+        ViewportToDocumentUnclamped(localX, localY, docX, docY);
+
+        if (currentTool == DrawTool::Select) {
+            if (SelectionHitTest(docX, docY)) {
+                gHistory.Push(canvasBitmap);
+                if (!gSel.isFloating) {
+                    LiftSelection();
+                }
+                gSel.moving = true;
+                gSel.creating = false;
+                gSel.grabDX = docX - gSel.x;
+                gSel.grabDY = docY - gSel.y;
+                SetCapture(hwnd);
+                MarkDirty(parent);
+                InvalidateCanvas();
+            }
+            else {
+                ClearSelection(true);
+                gSel.creating = true;
+                gSel.moving = false;
+                gSel.hasMarquee = true;
+                gSel.anchorX = docX;
+                gSel.anchorY = docY;
+                NormalizeSelRect(docX, docY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
+                SetCapture(hwnd);
+                InvalidateCanvas();
+            }
             break;
         }
+
+        if (!ViewportToDocument(localX, localY, docX, docY)) {
+            break;
+        }
+
+        ClearSelection(true);
 
         if (currentTool == DrawTool::Fill) {
             gHistory.Push(canvasBitmap);
@@ -889,12 +1281,25 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         break;
     }
     case WM_MOUSEMOVE: {
-        if (!isDrawing || !strokeGraphics) break;
-
+        const int localX = GET_X_LPARAM(lParam);
+        const int localY = GET_Y_LPARAM(lParam);
         int docX = 0, docY = 0;
-        if (!ViewportToDocument(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), docX, docY)) {
+        ViewportToDocumentUnclamped(localX, localY, docX, docY);
+
+        if (gSel.creating) {
+            NormalizeSelRect(gSel.anchorX, gSel.anchorY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
+            InvalidateCanvas();
             break;
         }
+        if (gSel.moving && gSel.isFloating) {
+            gSel.x = docX - gSel.grabDX;
+            gSel.y = docY - gSel.grabDY;
+            InvalidateCanvas();
+            break;
+        }
+
+        if (!isDrawing || !strokeGraphics) break;
+        if (!ViewportToDocument(localX, localY, docX, docY)) break;
 
         if (IsFreehandTool(currentTool)) {
             DrawStrokeOnto(strokeGraphics, lastPoint.x, lastPoint.y, docX, docY);
@@ -909,6 +1314,25 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         break;
     }
     case WM_LBUTTONUP:
+        if (gSel.creating) {
+            gSel.creating = false;
+            if (gSel.w < 2 || gSel.h < 2) {
+                gSel.hasMarquee = false;
+                gSel.w = gSel.h = 0;
+            }
+            if (GetCapture() == hwnd) ReleaseCapture();
+            InvalidateCanvas();
+            break;
+        }
+        if (gSel.moving) {
+            gSel.moving = false;
+            if (GetCapture() == hwnd) ReleaseCapture();
+            InvalidateCanvas();
+            if (HWND parent = GetParent(hwnd)) {
+                UpdateStatusBar(parent);
+            }
+            break;
+        }
         if (isDrawing) {
             isDrawing = false;
             CommitStrokeLayer();
@@ -922,6 +1346,18 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         }
         break;
     case WM_CAPTURECHANGED:
+        if (gSel.creating) {
+            gSel.creating = false;
+            if (gSel.w < 2 || gSel.h < 2) {
+                gSel.hasMarquee = false;
+                gSel.w = gSel.h = 0;
+            }
+            InvalidateCanvas();
+        }
+        if (gSel.moving) {
+            gSel.moving = false;
+            InvalidateCanvas();
+        }
         if (isDrawing) {
             isDrawing = false;
             CommitStrokeLayer();
@@ -951,12 +1387,41 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                 Graphics g(memDC);
                 g.Clear(Color(255, GetRValue(WORKSPACE_COLOR), GetGValue(WORKSPACE_COLOR), GetBValue(WORKSPACE_COLOR)));
                 g.SetCompositingMode(CompositingModeSourceOver);
+                g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+                g.SetPixelOffsetMode(PixelOffsetModeHalf);
+
+                const int scaledW = ScaledContentWidth();
+                const int scaledH = ScaledContentHeight();
+                const Rect dest(-scrollX, -scrollY, scaledW, scaledH);
+
                 if (canvasBitmap) {
-                    g.DrawImage(canvasBitmap, -scrollX, -scrollY);
+                    g.DrawImage(canvasBitmap, dest);
                 }
                 if (strokeLayer) {
-                    DrawStrokeLayerWithOpacity(&g, -scrollX, -scrollY);
+                    const REAL alpha = static_cast<REAL>(OpacityToAlpha()) / 255.0f;
+                    ColorMatrix matrix = {
+                        1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, alpha, 0.0f,
+                        0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+                    };
+                    ImageAttributes attrs;
+                    attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+                    g.DrawImage(
+                        strokeLayer,
+                        dest,
+                        0, 0,
+                        static_cast<int>(strokeLayer->GetWidth()),
+                        static_cast<int>(strokeLayer->GetHeight()),
+                        UnitPixel,
+                        &attrs);
                 }
+
+                // Selection overlay in document space via transform.
+                g.ResetTransform();
+                g.TranslateTransform(static_cast<REAL>(-scrollX), static_cast<REAL>(-scrollY));
+                DrawSelectionOverlay(&g);
             }
 
             BitBlt(hdc, 0, 0, viewW, viewH, memDC, 0, 0, SRCCOPY);
@@ -1038,12 +1503,13 @@ static void CreateToolbar(HWND hwnd) {
     hwndActionButtons[5] = CreateToolbarButton(hwnd, IDC_SAVE_BUTTON, "Save", x, y1, 52, h, false); x += 58;
     hwndActionButtons[6] = CreateToolbarButton(hwnd, IDC_LOAD_BUTTON, "Open", x, y1, 52, h, false);
 
-    // Row 2: shape tools + size + opacity
+    // Row 2: select + shape tools + size + opacity
     x = 12;
+    hwndToolButtons[6] = CreateToolbarButton(hwnd, IDC_TOOL_SELECT, "Select", x, y2, toolW + 4, h, true); x += toolW + 10;
     hwndToolButtons[3] = CreateToolbarButton(hwnd, IDC_TOOL_LINE, "Line", x, y2, toolW, h, true); x += toolW + 6;
     hwndToolButtons[4] = CreateToolbarButton(hwnd, IDC_TOOL_RECT, "Rect", x, y2, toolW, h, true); x += toolW + 6;
     hwndToolButtons[5] = CreateToolbarButton(hwnd, IDC_TOOL_ELLIPSE, "Ellipse", x, y2, toolW + 8, h, true);
-    x += toolW + 24;
+    x += toolW + 20;
 
     HWND sizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
         x, y2 + 4, 34, 20, hwnd, NULL, GetModuleHandle(NULL), NULL);
@@ -1235,28 +1701,65 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         switch (cmdId) {
         case IDC_TOOL_PEN:
+            ClearSelection(true);
             SetActiveTool(DrawTool::Pen);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_ERASER:
+            ClearSelection(true);
             SetActiveTool(DrawTool::Eraser);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_FILL:
+            ClearSelection(true);
             SetActiveTool(DrawTool::Fill);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_LINE:
+            ClearSelection(true);
             SetActiveTool(DrawTool::Line);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_RECT:
+            ClearSelection(true);
             SetActiveTool(DrawTool::Rectangle);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_ELLIPSE:
+            ClearSelection(true);
             SetActiveTool(DrawTool::Ellipse);
             UpdateStatusBar(hwnd);
+            break;
+        case IDC_TOOL_SELECT:
+            SetActiveTool(DrawTool::Select);
+            UpdateStatusBar(hwnd);
+            break;
+        case IDM_CUT:
+            DoCut(hwnd);
+            break;
+        case IDM_COPY:
+            DoCopy(hwnd);
+            break;
+        case IDM_PASTE:
+            DoPaste(hwnd);
+            break;
+        case IDM_DELETE_SEL:
+            DoDeleteSelection(hwnd);
+            break;
+        case IDM_SELECT_ALL:
+            DoSelectAll(hwnd);
+            break;
+        case IDM_ZOOM_IN:
+            ZoomByFactor(hwnd, ZOOM_STEP);
+            break;
+        case IDM_ZOOM_OUT:
+            ZoomByFactor(hwnd, 1.0f / ZOOM_STEP);
+            break;
+        case IDM_ZOOM_100:
+            ZoomToActual(hwnd);
+            break;
+        case IDM_ZOOM_FIT:
+            ZoomToFit(hwnd);
             break;
         case IDC_COLOR_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
@@ -1309,7 +1812,26 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         const int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
         const int steps = wheelDelta / WHEEL_DELTA;
         if (steps != 0) {
-            if ((GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0) {
+            const bool ctrlDown = ((GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL) != 0)
+                || (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            const bool shiftDown = ((GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0)
+                || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            if (ctrlDown) {
+                // Zoom toward cursor when possible.
+                POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+                if (hwndViewport) {
+                    ScreenToClient(hwndViewport, &pt);
+                    float factor = 1.0f;
+                    for (int i = 0; i < (steps > 0 ? steps : -steps); ++i) {
+                        factor *= (steps > 0) ? ZOOM_STEP : (1.0f / ZOOM_STEP);
+                    }
+                    SetZoomAtViewportPoint(hwnd, zoomFactor * factor, pt.x, pt.y);
+                }
+                else {
+                    ZoomByFactor(hwnd, (steps > 0) ? ZOOM_STEP : (1.0f / ZOOM_STEP));
+                }
+            }
+            else if (shiftDown) {
                 AdjustOpacity(hwnd, steps * 5);
             }
             else {
@@ -1319,6 +1841,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
     case WM_KEYDOWN: {
+        if (wParam == VK_ESCAPE) {
+            ClearSelection(true);
+            InvalidateCanvas();
+            UpdateStatusBar(hwnd);
+            break;
+        }
         if (wParam == VK_OEM_4) { // [
             AdjustPenWidth(hwnd, -1);
         }
@@ -1347,6 +1875,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             ReleaseCapture();
         }
         DestroyStrokeLayer();
+        ClearSelection(false);
+        delete gClipboardBmp;
+        gClipboardBmp = nullptr;
         gHistory.Clear();
         delete canvasGraphics;
         delete canvasBitmap;

@@ -17,6 +17,15 @@
 #define IDM_REDO				113
 #define IDM_CLEAR				114
 #define IDM_CANVAS_SIZE			116
+#define IDM_CUT					117
+#define IDM_COPY				118
+#define IDM_PASTE				119
+#define IDM_DELETE_SEL			120
+#define IDM_SELECT_ALL			121
+#define IDM_ZOOM_IN				122
+#define IDM_ZOOM_OUT			123
+#define IDM_ZOOM_100			124
+#define IDM_ZOOM_FIT			125
 #define IDI_SIMPLEDRAWINGAPP			107
 #define IDI_SMALL				108
 #define IDC_SIMPLEDRAWINGAPP			109
@@ -48,6 +57,7 @@
 #define IDC_TOOL_LINE			1028
 #define IDC_TOOL_RECT			1029
 #define IDC_TOOL_ELLIPSE		1030
+#define IDC_TOOL_SELECT			1031
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
@@ -60,7 +70,7 @@
 #define _APS_NO_MFC					130
 #define _APS_NEXT_RESOURCE_VALUE	130
 #define _APS_NEXT_COMMAND_VALUE		32771
-#define _APS_NEXT_CONTROL_VALUE		1031
+#define _APS_NEXT_CONTROL_VALUE		1032
 #define _APS_NEXT_SYMED_VALUE		117
 #endif
 #endif
