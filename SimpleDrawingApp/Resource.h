@@ -45,6 +45,9 @@
 #define IDC_SWATCH5				1025
 #define IDC_SWATCH6				1026
 #define IDC_SWATCH7				1027
+#define IDC_TOOL_LINE			1028
+#define IDC_TOOL_RECT			1029
+#define IDC_TOOL_ELLIPSE		1030
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
@@ -57,7 +60,7 @@
 #define _APS_NO_MFC					130
 #define _APS_NEXT_RESOURCE_VALUE	130
 #define _APS_NEXT_COMMAND_VALUE		32771
-#define _APS_NEXT_CONTROL_VALUE		1030
+#define _APS_NEXT_CONTROL_VALUE		1031
 #define _APS_NEXT_SYMED_VALUE		117
 #endif
 #endif

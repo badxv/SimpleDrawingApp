@@ -7,8 +7,21 @@
 enum class DrawTool {
     Pen = 0,
     Eraser = 1,
-    Fill = 2
+    Fill = 2,
+    Line = 3,
+    Rectangle = 4,
+    Ellipse = 5
 };
+
+inline bool IsFreehandTool(DrawTool tool) {
+    return tool == DrawTool::Pen || tool == DrawTool::Eraser;
+}
+
+inline bool IsShapeTool(DrawTool tool) {
+    return tool == DrawTool::Line
+        || tool == DrawTool::Rectangle
+        || tool == DrawTool::Ellipse;
+}
 
 struct AppTheme {
     COLORREF chromeBg = RGB(243, 243, 243);

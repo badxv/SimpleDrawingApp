@@ -6,10 +6,11 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 
 ## Features
 
-- **Tools:** Pen, Eraser, Flood Fill
+- **Tools:** Pen, Eraser, Flood Fill, Line, Rectangle, Ellipse
 - **Color:** preset swatches + system color picker
-- **Opacity:** 1–100% for pen, eraser, and fill (`Shift` + mouse wheel)
+- **Opacity:** 1–100% for pen, eraser, fill, and shapes (`Shift` + mouse wheel)
 - **Pen width:** slider / edit box / mouse wheel / `[` `]` keys (1–50)
+- **Shapes:** click-drag preview; hold `Shift` for square / circle / axis-aligned or 45° lines
 - **Undo / Redo** (stroke & fill history)
 - **New / Clear** with unsaved-change prompts
 - **Save / Open** PNG, JPG, BMP
@@ -45,6 +46,7 @@ cd SimpleDrawingApp
 | Draw | Select **Pen**, drag on the canvas |
 | Erase | Select **Eraser**, drag |
 | Fill | Select **Fill**, click a region |
+| Line / Rect / Ellipse | Select the tool, click-drag (`Shift` constrains) |
 | Color | Click a swatch or **Color...** |
 | Width | Slider, box, mouse wheel, or `[` / `]` |
 | Opacity | Slider, box, or `Shift` + mouse wheel |
@@ -75,7 +77,7 @@ SimpleDrawingApp/
 - [x] Eraser + flood fill
 - [x] Keyboard shortcuts + dirty prompt
 - [x] Fixed document canvas + scroll viewport + Canvas Size
-- [ ] Shape tools (line, rectangle, ellipse)
+- [x] Shape tools (line, rectangle, ellipse)
 - [ ] Selection, zoom, clipboard
 - [ ] Layers and transparency
 
