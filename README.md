@@ -116,6 +116,7 @@ SimpleDrawingApp/
 - [x] Layers and transparency
 - [x] Icon tool rail + atelier chrome layout
 - [x] Fresco washes + chrome motion (compass, tool pulse)
+- [x] Idle chrome motion without draw/resize flicker (cached fresco + overlay)
 
 ## Contributing
 
