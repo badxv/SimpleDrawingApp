@@ -115,6 +115,7 @@ SimpleDrawingApp/
 - [x] Selection, zoom, clipboard
 - [x] Layers and transparency
 - [x] Icon tool rail + atelier chrome layout
+- [x] Fresco washes + chrome motion (compass, tool pulse)
 
 ## Contributing
 
