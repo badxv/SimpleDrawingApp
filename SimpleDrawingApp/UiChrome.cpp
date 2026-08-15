@@ -1,5 +1,6 @@
 #include "UiChrome.h"
 #include "Resource.h"
+#include <cmath>
 
 using namespace Gdiplus;
 
@@ -53,10 +54,84 @@ bool IsIconControlId(int controlId) {
     }
 }
 
+bool IsToolRailControlId(int controlId) {
+    switch (controlId) {
+    case IDC_TOOL_PEN:
+    case IDC_TOOL_ERASER:
+    case IDC_TOOL_FILL:
+    case IDC_TOOL_SELECT:
+    case IDC_TOOL_LINE:
+    case IDC_TOOL_RECT:
+    case IDC_TOOL_ELLIPSE:
+    case IDC_COLOR_BUTTON:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void StrokeStyle(Pen& pen) {
     pen.SetStartCap(LineCapRound);
     pen.SetEndCap(LineCapRound);
     pen.SetLineJoin(LineJoinRound);
+}
+
+void DrawFrescoPanel(Graphics& g, const RectF& bounds, Color top, Color bottom, bool vertical) {
+    if (bounds.Width < 1.0f || bounds.Height < 1.0f) return;
+    LinearGradientBrush brush(
+        bounds,
+        top,
+        bottom,
+        vertical ? LinearGradientModeVertical : LinearGradientModeHorizontal);
+    g.FillRectangle(&brush, bounds);
+}
+
+void DrawFrescoGrain(Graphics& g, const RectF& bounds, Color grain) {
+    if (bounds.Width < 8.0f || bounds.Height < 8.0f) return;
+    Pen pen(grain, 1.0f);
+    // Sparse diagonal hatch — parchment suggestion, not a grid.
+    const REAL step = 18.0f;
+    const REAL x0 = bounds.X;
+    const REAL y0 = bounds.Y;
+    const REAL x1 = bounds.X + bounds.Width;
+    const REAL y1 = bounds.Y + bounds.Height;
+    for (REAL t = -bounds.Height; t < bounds.Width + bounds.Height; t += step) {
+        g.DrawLine(&pen, x0 + t, y0, x0 + t + bounds.Height, y1);
+    }
+    // Soft vignette corners.
+    SolidBrush wash(Color(18, grain.GetR(), grain.GetG(), grain.GetB()));
+    g.FillRectangle(&wash, RectF(x0, y0, bounds.Width, 6.0f));
+    g.FillRectangle(&wash, RectF(x0, y1 - 6.0f, bounds.Width, 6.0f));
+}
+
+void DrawBrandCompass(Graphics& g, float cx, float cy, float radius, Color gold, float angleDeg) {
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    Pen ring(gold, 1.5f);
+    StrokeStyle(ring);
+    g.DrawEllipse(&ring, cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+
+    // Inner tick ring.
+    Pen soft(Color(140, gold.GetR(), gold.GetG(), gold.GetB()), 1.0f);
+    g.DrawEllipse(&soft, cx - radius * 0.62f, cy - radius * 0.62f, radius * 1.24f, radius * 1.24f);
+
+    const REAL rad = angleDeg * 3.14159265f / 180.0f;
+    const REAL c = cosf(rad);
+    const REAL s = sinf(rad);
+    auto rot = [&](float x, float y) -> PointF {
+        return PointF(cx + x * c - y * s, cy + x * s + y * c);
+    };
+
+    Pen needle(gold, 1.6f);
+    StrokeStyle(needle);
+    PointF n0 = rot(0.0f, -radius * 0.78f);
+    PointF n1 = rot(0.0f, radius * 0.55f);
+    PointF e0 = rot(-radius * 0.55f, 0.0f);
+    PointF e1 = rot(radius * 0.55f, 0.0f);
+    g.DrawLine(&needle, n0, n1);
+    g.DrawLine(&needle, e0, e1);
+
+    SolidBrush hub(gold);
+    g.FillEllipse(&hub, cx - 2.2f, cy - 2.2f, 4.4f, 4.4f);
 }
 
 void DrawUiIcon(Graphics& g, UiIcon icon, const RectF& b, Color color) {
@@ -198,49 +273,76 @@ void DrawUiIcon(Graphics& g, UiIcon icon, const RectF& b, Color color) {
     }
 }
 
-void PaintIconButton(const DRAWITEMSTRUCT* dis, COLORREF chromeBg, COLORREF accent, COLORREF text, COLORREF selectedBg) {
+void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     if (!dis) return;
 
     bool checked = (dis->itemState & ODS_CHECKED) != 0;
     if (dis->hwndItem && (SendMessageA(dis->hwndItem, BM_GETCHECK, 0, 0) == BST_CHECKED)) {
         checked = true;
     }
-    const bool selected = (dis->itemState & ODS_SELECTED) != 0 || checked;
+    const bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+    const bool selected = pressed || checked;
     const bool hot = (dis->itemState & ODS_HOTLIGHT) != 0;
     const bool disabled = (dis->itemState & ODS_DISABLED) != 0;
 
-    COLORREF bg = chromeBg;
-    if (selected) bg = selectedBg;
-    else if (hot) bg = RGB(
-        (GetRValue(chromeBg) * 3 + GetRValue(selectedBg)) / 4,
-        (GetGValue(chromeBg) * 3 + GetGValue(selectedBg)) / 4,
-        (GetBValue(chromeBg) * 3 + GetBValue(selectedBg)) / 4);
+    COLORREF bg = opts.chromeBg;
+    if (selected) {
+        const int pulse = static_cast<int>(opts.pulse * 18.0f);
+        bg = RGB(
+            (GetRValue(opts.selectedBg) + pulse > 255) ? 255 : GetRValue(opts.selectedBg) + pulse,
+            (GetGValue(opts.selectedBg) + pulse / 2 > 255) ? 255 : GetGValue(opts.selectedBg) + pulse / 2,
+            GetBValue(opts.selectedBg));
+    }
+    else if (hot) {
+        bg = RGB(
+            (GetRValue(opts.chromeBg) * 3 + GetRValue(opts.selectedBg)) / 4,
+            (GetGValue(opts.chromeBg) * 3 + GetGValue(opts.selectedBg)) / 4,
+            (GetBValue(opts.chromeBg) * 3 + GetBValue(opts.selectedBg)) / 4);
+    }
 
     HBRUSH fill = CreateSolidBrush(bg);
     FillRect(dis->hDC, &dis->rcItem, fill);
     DeleteObject(fill);
 
-    if (selected) {
-        HPEN border = CreatePen(PS_SOLID, 1, accent);
-        HGDIOBJ old = SelectObject(dis->hDC, border);
-        HGDIOBJ oldBr = SelectObject(dis->hDC, GetStockObject(NULL_BRUSH));
-        Rectangle(dis->hDC,
-            dis->rcItem.left, dis->rcItem.top,
-            dis->rcItem.right, dis->rcItem.bottom);
-        SelectObject(dis->hDC, oldBr);
-        SelectObject(dis->hDC, old);
-        DeleteObject(border);
-    }
-
     Graphics g(dis->hDC);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
-    const Color ink = disabled
-        ? Color(255, 150, 140, 125)
-        : Color(255, GetRValue(text), GetGValue(text), GetBValue(text));
+
+    if (selected) {
+        const BYTE alpha = static_cast<BYTE>(130 + static_cast<int>(opts.pulse * 110.0f));
+        Pen border(Color(alpha, GetRValue(opts.accent), GetGValue(opts.accent), GetBValue(opts.accent)), 1.6f);
+        const REAL inset = 0.5f;
+        g.DrawRectangle(&border, RectF(
+            static_cast<REAL>(dis->rcItem.left) + inset,
+            static_cast<REAL>(dis->rcItem.top) + inset,
+            static_cast<REAL>(dis->rcItem.right - dis->rcItem.left) - inset * 2.0f,
+            static_cast<REAL>(dis->rcItem.bottom - dis->rcItem.top) - inset * 2.0f));
+    }
+
     RectF bounds(
         static_cast<REAL>(dis->rcItem.left),
         static_cast<REAL>(dis->rcItem.top),
         static_cast<REAL>(dis->rcItem.right - dis->rcItem.left),
         static_cast<REAL>(dis->rcItem.bottom - dis->rcItem.top));
-    DrawUiIcon(g, UiIconFromControlId(static_cast<int>(dis->CtlID)), bounds, ink);
+
+    float scale = opts.pressScale;
+    if (scale < 0.85f) scale = 0.85f;
+    if (scale > 1.12f) scale = 1.12f;
+    if (scale != 1.0f) {
+        const REAL cx = bounds.X + bounds.Width * 0.5f;
+        const REAL cy = bounds.Y + bounds.Height * 0.5f;
+        Matrix m;
+        m.Translate(cx, cy);
+        m.Scale(scale, scale);
+        m.Translate(-cx, -cy);
+        g.SetTransform(&m);
+    }
+
+    const UiIcon icon = UiIconFromControlId(static_cast<int>(dis->CtlID));
+    Color ink = disabled
+        ? Color(255, 150, 140, 125)
+        : Color(255, GetRValue(opts.text), GetGValue(opts.text), GetBValue(opts.text));
+    if (icon == UiIcon::Color && opts.useColorFill) {
+        ink = Color(255, GetRValue(opts.colorFill), GetGValue(opts.colorFill), GetBValue(opts.colorFill));
+    }
+    DrawUiIcon(g, icon, bounds, ink);
 }
