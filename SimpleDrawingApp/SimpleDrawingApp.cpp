@@ -37,7 +37,7 @@ constexpr int BOTTOMBAR_HEIGHT = 44;
 constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 176;
 constexpr int ICON_BTN = 34;
-constexpr int WELL_FRAME = 3;
+constexpr int WELL_FRAME = 14; // mount band for hairline + Renaissance ornaments
 constexpr int BRAND_STRIP_W = 156;
 constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
@@ -2078,16 +2078,16 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
 
     const Color bronze(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
     const Color rim(255, GetRValue(gTheme.wellRim), GetGValue(gTheme.wellRim), GetBValue(gTheme.wellRim));
-    const Color shadow(55, 40, 32, 24);
+    const Color gilt(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
 
-    // Canvas well frame (parent margin around viewport).
+    // Canvas mount: thin hairline + Renaissance corner/edge line-work.
     RectF well(
         static_cast<REAL>(chrome.railW),
         static_cast<REAL>(chrome.topH),
         static_cast<REAL>(width - chrome.railW - chrome.layerW),
         static_cast<REAL>(height - chrome.topH - chrome.bottomH - chrome.statusH));
     if (well.Width > 8 && well.Height > 8) {
-        DrawCanvasWell(g, well, rim, shadow);
+        DrawCanvasWell(g, well, rim, gilt);
     }
 
     // Thin HUD plates on instrument zones.
