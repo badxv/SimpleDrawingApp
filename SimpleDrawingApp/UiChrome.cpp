@@ -320,6 +320,48 @@ void DrawUiIcon(Graphics& g, UiIcon icon, const RectF& b, Color color) {
     }
 }
 
+void DrawHudCornerTicks(Graphics& g, const RectF& bounds, Color bronze, float tick) {
+    Pen pen(bronze, 1.2f);
+    StrokeStyle(pen);
+    const REAL x0 = bounds.X;
+    const REAL y0 = bounds.Y;
+    const REAL x1 = bounds.X + bounds.Width;
+    const REAL y1 = bounds.Y + bounds.Height;
+    g.DrawLine(&pen, x0, y0, x0 + tick, y0);
+    g.DrawLine(&pen, x0, y0, x0, y0 + tick);
+    g.DrawLine(&pen, x1, y0, x1 - tick, y0);
+    g.DrawLine(&pen, x1, y0, x1, y0 + tick);
+    g.DrawLine(&pen, x0, y1, x0 + tick, y1);
+    g.DrawLine(&pen, x0, y1, x0, y1 - tick);
+    g.DrawLine(&pen, x1, y1, x1 - tick, y1);
+    g.DrawLine(&pen, x1, y1, x1, y1 - tick);
+}
+
+void DrawHudPlate(Graphics& g, const RectF& bounds, Color fill, Color bronze, bool filled) {
+    if (filled) {
+        SolidBrush brush(fill);
+        g.FillRectangle(&brush, bounds);
+    }
+    Pen outer(bronze, 1.15f);
+    Pen inner(Color(90, bronze.GetR(), bronze.GetG(), bronze.GetB()), 1.0f);
+    g.DrawRectangle(&outer, bounds);
+    if (bounds.Width > 6 && bounds.Height > 6) {
+        g.DrawRectangle(&inner, RectF(bounds.X + 2.0f, bounds.Y + 2.0f, bounds.Width - 4.0f, bounds.Height - 4.0f));
+    }
+    DrawHudCornerTicks(g, bounds, bronze, 6.0f);
+}
+
+void DrawCanvasWell(Graphics& g, const RectF& bounds, Color rim, Color shadow) {
+    // Soft outer shadow (atelier recess).
+    SolidBrush sh(shadow);
+    g.FillRectangle(&sh, RectF(bounds.X + 2.0f, bounds.Y + 2.0f, bounds.Width, bounds.Height));
+    Pen p1(rim, 1.4f);
+    Pen p2(Color(160, rim.GetR(), rim.GetG(), rim.GetB()), 1.0f);
+    g.DrawRectangle(&p1, bounds);
+    g.DrawRectangle(&p2, RectF(bounds.X + 1.5f, bounds.Y + 1.5f, bounds.Width - 3.0f, bounds.Height - 3.0f));
+    DrawHudCornerTicks(g, bounds, rim, 9.0f);
+}
+
 void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     if (!dis) return;
 
@@ -332,48 +374,49 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     const bool hot = (dis->itemState & ODS_HOTLIGHT) != 0;
     const bool disabled = (dis->itemState & ODS_DISABLED) != 0;
 
-    COLORREF bg = opts.chromeBg;
-    if (selected) {
-        const int pulse = static_cast<int>(opts.pulse * 18.0f);
-        bg = RGB(
-            (GetRValue(opts.selectedBg) + pulse > 255) ? 255 : GetRValue(opts.selectedBg) + pulse,
-            (GetGValue(opts.selectedBg) + pulse / 2 > 255) ? 255 : GetGValue(opts.selectedBg) + pulse / 2,
-            GetBValue(opts.selectedBg));
-    }
-    else if (hot) {
-        bg = RGB(
-            (GetRValue(opts.chromeBg) * 3 + GetRValue(opts.selectedBg)) / 4,
-            (GetGValue(opts.chromeBg) * 3 + GetGValue(opts.selectedBg)) / 4,
-            (GetBValue(opts.chromeBg) * 3 + GetBValue(opts.selectedBg)) / 4);
-    }
-
-    HBRUSH fill = CreateSolidBrush(bg);
-    FillRect(dis->hDC, &dis->rcItem, fill);
-    DeleteObject(fill);
-
-    Graphics g(dis->hDC);
-    g.SetSmoothingMode(SmoothingModeAntiAlias);
-
-    if (selected) {
-        const BYTE alpha = static_cast<BYTE>(130 + static_cast<int>(opts.pulse * 110.0f));
-        Pen border(Color(alpha, GetRValue(opts.accent), GetGValue(opts.accent), GetBValue(opts.accent)), 1.6f);
-        const REAL inset = 0.5f;
-        g.DrawRectangle(&border, RectF(
-            static_cast<REAL>(dis->rcItem.left) + inset,
-            static_cast<REAL>(dis->rcItem.top) + inset,
-            static_cast<REAL>(dis->rcItem.right - dis->rcItem.left) - inset * 2.0f,
-            static_cast<REAL>(dis->rcItem.bottom - dis->rcItem.top) - inset * 2.0f));
-    }
-
     RectF bounds(
         static_cast<REAL>(dis->rcItem.left),
         static_cast<REAL>(dis->rcItem.top),
         static_cast<REAL>(dis->rcItem.right - dis->rcItem.left),
         static_cast<REAL>(dis->rcItem.bottom - dis->rcItem.top));
 
+    Graphics g(dis->hDC);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetCompositingMode(CompositingModeSourceCopy);
+
+    // Always paint chrome behind so we never flash system button face (90s look).
+    {
+        SolidBrush base(Color(255, GetRValue(opts.chromeBg), GetGValue(opts.chromeBg), GetBValue(opts.chromeBg)));
+        g.FillRectangle(&base, bounds);
+    }
+    g.SetCompositingMode(CompositingModeSourceOver);
+
+    if (selected || hot || pressed) {
+        const Color top = selected
+            ? Color(255, GetRValue(opts.selectedBg), GetGValue(opts.selectedBg), GetBValue(opts.selectedBg))
+            : Color(255, GetRValue(opts.elevated), GetGValue(opts.elevated), GetBValue(opts.elevated));
+        const Color bot = selected
+            ? Color(255,
+                (GetRValue(opts.selectedBg) * 3 + GetRValue(opts.accent)) / 4,
+                (GetGValue(opts.selectedBg) * 3 + GetGValue(opts.accent)) / 4,
+                (GetBValue(opts.selectedBg) * 3 + GetBValue(opts.accent)) / 4)
+            : Color(255, GetRValue(opts.chromeBg), GetGValue(opts.chromeBg), GetBValue(opts.chromeBg));
+        LinearGradientBrush wash(bounds, top, bot, LinearGradientModeVertical);
+        g.FillRectangle(&wash, bounds);
+
+        const Color bronze(255, GetRValue(opts.accent), GetGValue(opts.accent), GetBValue(opts.accent));
+        const Color deep(255, GetRValue(opts.accentDeep), GetGValue(opts.accentDeep), GetBValue(opts.accentDeep));
+        Pen rim(selected ? deep : bronze, selected ? 1.5f : 1.1f);
+        g.DrawRectangle(&rim, RectF(bounds.X + 0.5f, bounds.Y + 0.5f, bounds.Width - 1.0f, bounds.Height - 1.0f));
+        if (selected) {
+            Pen inner(Color(static_cast<BYTE>(100 + static_cast<int>(opts.pulse * 80)), bronze.GetR(), bronze.GetG(), bronze.GetB()), 1.0f);
+            g.DrawRectangle(&inner, RectF(bounds.X + 2.0f, bounds.Y + 2.0f, bounds.Width - 4.0f, bounds.Height - 4.0f));
+        }
+    }
+
     float scale = opts.pressScale;
-    if (scale < 0.85f) scale = 0.85f;
-    if (scale > 1.12f) scale = 1.12f;
+    if (scale < 0.88f) scale = 0.88f;
+    if (scale > 1.10f) scale = 1.10f;
     if (scale != 1.0f) {
         const REAL cx = bounds.X + bounds.Width * 0.5f;
         const REAL cy = bounds.Y + bounds.Height * 0.5f;
@@ -388,8 +431,12 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     Color ink = disabled
         ? Color(255, 150, 140, 125)
         : Color(255, GetRValue(opts.text), GetGValue(opts.text), GetBValue(opts.text));
+    if (selected) {
+        ink = Color(255, GetRValue(opts.accentDeep), GetGValue(opts.accentDeep), GetBValue(opts.accentDeep));
+    }
     if (icon == UiIcon::Color && opts.useColorFill) {
         ink = Color(255, GetRValue(opts.colorFill), GetGValue(opts.colorFill), GetBValue(opts.colorFill));
     }
     DrawUiIcon(g, icon, bounds, ink);
 }
+
