@@ -71,11 +71,12 @@ HWND hwndPenWidthBox = nullptr;
 HWND hwndOpacitySlider = nullptr;
 HWND hwndOpacityBox = nullptr;
 HWND hwndStatus = nullptr;
-HWND hwndToolButtons[3] = {};
+HWND hwndToolButtons[6] = {};
 HWND hwndSwatches[8] = {};
 HWND hwndActionButtons[7] = {};
 
 POINT lastPoint = {};
+POINT shapeStart = {};
 bool isDrawing = false;
 bool suppressEditNotify = false;
 
@@ -163,6 +164,9 @@ void UpdateStatusBar(HWND hwnd) {
     const char* toolName = "Pen";
     if (currentTool == DrawTool::Eraser) toolName = "Eraser";
     else if (currentTool == DrawTool::Fill) toolName = "Fill";
+    else if (currentTool == DrawTool::Line) toolName = "Line";
+    else if (currentTool == DrawTool::Rectangle) toolName = "Rectangle";
+    else if (currentTool == DrawTool::Ellipse) toolName = "Ellipse";
 
     char part0[64];
     char part1[64];
@@ -197,11 +201,10 @@ static void ApplyUiFont(HWND control) {
 
 static void SetActiveTool(DrawTool tool) {
     currentTool = tool;
-    const int ids[3] = { IDC_TOOL_PEN, IDC_TOOL_ERASER, IDC_TOOL_FILL };
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 6; ++i) {
+        if (!hwndToolButtons[i]) continue;
         const bool selected = (static_cast<int>(tool) == i);
         SendMessageA(hwndToolButtons[i], BM_SETCHECK, selected ? BST_CHECKED : BST_UNCHECKED, 0);
-        (void)ids;
     }
 }
 
@@ -652,6 +655,78 @@ static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     target->DrawLine(&pen, x0, y0, x1, y1);
 }
 
+static void ConstrainShapeEnd(int x0, int y0, int& x1, int& y1) {
+    const int dx = x1 - x0;
+    const int dy = y1 - y0;
+    const int adx = (dx < 0) ? -dx : dx;
+    const int ady = (dy < 0) ? -dy : dy;
+
+    if (currentTool == DrawTool::Line) {
+        // Snap to horizontal, vertical, or 45-degree.
+        if (adx * 2 < ady) {
+            x1 = x0;
+        }
+        else if (ady * 2 < adx) {
+            y1 = y0;
+        }
+        else {
+            const int s = (adx < ady) ? adx : ady;
+            x1 = x0 + ((dx >= 0) ? s : -s);
+            y1 = y0 + ((dy >= 0) ? s : -s);
+        }
+        return;
+    }
+
+    // Square / circle: equal abs extents from start.
+    const int s = (adx > ady) ? adx : ady;
+    x1 = x0 + ((dx >= 0) ? s : -s);
+    y1 = y0 + ((dy >= 0) ? s : -s);
+}
+
+static void DrawShapeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
+    if (!target) return;
+
+    Pen pen(GdiplusFromColor(penColor, 255), static_cast<REAL>(penWidth));
+    pen.SetStartCap(LineCapRound);
+    pen.SetEndCap(LineCapRound);
+    pen.SetLineJoin(LineJoinRound);
+
+    if (currentTool == DrawTool::Line) {
+        target->DrawLine(&pen, x0, y0, x1, y1);
+        return;
+    }
+
+    int left = (x0 < x1) ? x0 : x1;
+    int top = (y0 < y1) ? y0 : y1;
+    int right = (x0 > x1) ? x0 : x1;
+    int bottom = (y0 > y1) ? y0 : y1;
+    int width = right - left;
+    int height = bottom - top;
+    if (width < 1) width = 1;
+    if (height < 1) height = 1;
+
+    Rect bounds(left, top, width, height);
+    if (currentTool == DrawTool::Rectangle) {
+        target->DrawRectangle(&pen, bounds);
+    }
+    else if (currentTool == DrawTool::Ellipse) {
+        target->DrawEllipse(&pen, bounds);
+    }
+}
+
+static void RedrawShapePreview(int endX, int endY, bool shiftConstrained) {
+    if (!strokeGraphics) return;
+    int x1 = endX;
+    int y1 = endY;
+    if (shiftConstrained) {
+        ConstrainShapeEnd(shapeStart.x, shapeStart.y, x1, y1);
+    }
+    strokeGraphics->Clear(Color(0, 0, 0, 0));
+    DrawShapeOnto(strokeGraphics, shapeStart.x, shapeStart.y, x1, y1);
+    lastPoint.x = x1;
+    lastPoint.y = y1;
+}
+
 static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
     if (!strokeLayer || !dest) return;
 
@@ -798,22 +873,38 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         isDrawing = true;
         lastPoint.x = docX;
         lastPoint.y = docY;
-        DrawStrokeOnto(strokeGraphics, docX, docY, docX, docY);
+        shapeStart.x = docX;
+        shapeStart.y = docY;
+
+        if (IsFreehandTool(currentTool)) {
+            DrawStrokeOnto(strokeGraphics, docX, docY, docX, docY);
+        }
+        else if (IsShapeTool(currentTool)) {
+            RedrawShapePreview(docX, docY, (wParam & MK_SHIFT) != 0);
+        }
+
         SetCapture(hwnd);
         MarkDirty(parent);
         InvalidateCanvas();
         break;
     }
     case WM_MOUSEMOVE: {
-        if (isDrawing && strokeGraphics &&
-            (currentTool == DrawTool::Pen || currentTool == DrawTool::Eraser)) {
-            int docX = 0, docY = 0;
-            if (ViewportToDocument(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), docX, docY)) {
-                DrawStrokeOnto(strokeGraphics, lastPoint.x, lastPoint.y, docX, docY);
-                lastPoint.x = docX;
-                lastPoint.y = docY;
-                InvalidateCanvas();
-            }
+        if (!isDrawing || !strokeGraphics) break;
+
+        int docX = 0, docY = 0;
+        if (!ViewportToDocument(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), docX, docY)) {
+            break;
+        }
+
+        if (IsFreehandTool(currentTool)) {
+            DrawStrokeOnto(strokeGraphics, lastPoint.x, lastPoint.y, docX, docY);
+            lastPoint.x = docX;
+            lastPoint.y = docY;
+            InvalidateCanvas();
+        }
+        else if (IsShapeTool(currentTool)) {
+            RedrawShapePreview(docX, docY, (wParam & MK_SHIFT) != 0);
+            InvalidateCanvas();
         }
         break;
     }
@@ -920,7 +1011,7 @@ static HWND CreateToolbarButton(HWND parent, int id, const char* label, int x, i
 
 static void CreateToolbar(HWND hwnd) {
     const int h = 28;
-    const int toolW = 64;
+    const int toolW = 56;
     const int y1 = 8;
     const int y2 = 50;
 
@@ -947,8 +1038,13 @@ static void CreateToolbar(HWND hwnd) {
     hwndActionButtons[5] = CreateToolbarButton(hwnd, IDC_SAVE_BUTTON, "Save", x, y1, 52, h, false); x += 58;
     hwndActionButtons[6] = CreateToolbarButton(hwnd, IDC_LOAD_BUTTON, "Open", x, y1, 52, h, false);
 
-    // Row 2: size + opacity
+    // Row 2: shape tools + size + opacity
     x = 12;
+    hwndToolButtons[3] = CreateToolbarButton(hwnd, IDC_TOOL_LINE, "Line", x, y2, toolW, h, true); x += toolW + 6;
+    hwndToolButtons[4] = CreateToolbarButton(hwnd, IDC_TOOL_RECT, "Rect", x, y2, toolW, h, true); x += toolW + 6;
+    hwndToolButtons[5] = CreateToolbarButton(hwnd, IDC_TOOL_ELLIPSE, "Ellipse", x, y2, toolW + 8, h, true);
+    x += toolW + 24;
+
     HWND sizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
         x, y2 + 4, 34, 20, hwnd, NULL, GetModuleHandle(NULL), NULL);
     ApplyUiFont(sizeLabel);
@@ -956,12 +1052,12 @@ static void CreateToolbar(HWND hwnd) {
 
     hwndSlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
         WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        x, y2 - 2, 150, 32,
+        x, y2 - 2, 140, 32,
         hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 50));
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
     SubclassTrackbarWheel(hwndSlider);
-    x += 158;
+    x += 148;
 
     hwndPenWidthBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
@@ -977,12 +1073,12 @@ static void CreateToolbar(HWND hwnd) {
 
     hwndOpacitySlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
         WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        x, y2 - 2, 150, 32,
+        x, y2 - 2, 140, 32,
         hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndOpacitySlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
     SubclassTrackbarWheel(hwndOpacitySlider);
-    x += 158;
+    x += 148;
 
     hwndOpacityBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
@@ -1148,6 +1244,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         case IDC_TOOL_FILL:
             SetActiveTool(DrawTool::Fill);
+            UpdateStatusBar(hwnd);
+            break;
+        case IDC_TOOL_LINE:
+            SetActiveTool(DrawTool::Line);
+            UpdateStatusBar(hwnd);
+            break;
+        case IDC_TOOL_RECT:
+            SetActiveTool(DrawTool::Rectangle);
+            UpdateStatusBar(hwnd);
+            break;
+        case IDC_TOOL_ELLIPSE:
+            SetActiveTool(DrawTool::Ellipse);
             UpdateStatusBar(hwnd);
             break;
         case IDC_COLOR_BUTTON: {
