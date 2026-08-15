@@ -2,7 +2,29 @@
 
 A lightweight drawing app for Windows, built with native **Win32** and **GDI+**.
 
-Sketch with pen, eraser, and fill tools; undo your work; save or load images — no heavy frameworks.
+Sketch with pen, eraser, fill, shapes, and layers — no heavy frameworks.
+
+<p align="center">
+  <img src="docs/media/hero.jpg" alt="Simple Drawing App" width="860" />
+</p>
+
+<p align="center">
+  <img src="docs/media/app-window.png" alt="App window with layers panel" width="860" />
+</p>
+
+### Sample artwork
+
+Made with the same building blocks the app exposes — gradients, ellipses, polygons, lines, and layered silhouettes:
+
+<p align="center">
+  <img src="docs/media/demo-canvas.jpg" alt="Sample landscape drawing" width="860" />
+</p>
+
+### Demo
+
+<video src="docs/media/demo.mp4" controls width="860"></video>
+
+> If the video does not play inline on GitHub mobile, download [`docs/media/demo.mp4`](docs/media/demo.mp4).
 
 ## Features
 
@@ -68,6 +90,7 @@ cd SimpleDrawingApp
 SimpleDrawingApp/
 ├── SimpleDrawingApp.sln
 ├── README.md
+├── docs/media/                # README screenshots + demo video
 └── SimpleDrawingApp/
     ├── SimpleDrawingApp.cpp   # Window, toolbar, input
     ├── CanvasHistory.*        # Legacy single-bitmap undo (unused by UI)
