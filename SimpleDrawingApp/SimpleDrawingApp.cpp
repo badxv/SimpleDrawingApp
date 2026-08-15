@@ -7,6 +7,7 @@
 #include "LayerHistory.h"
 #include "LayerStack.h"
 #include "DrawingTools.h"
+#include "UiChrome.h"
 #include "Resource.h"
 
 #include <commctrl.h>
@@ -28,14 +29,18 @@ using namespace Gdiplus;
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
-constexpr int TOOLBAR_HEIGHT = 92;
+constexpr int TOPBAR_HEIGHT = 44;
+constexpr int TOOL_RAIL_WIDTH = 52;
+constexpr int BOTTOMBAR_HEIGHT = 40;
 constexpr int STATUS_HEIGHT = 24;
-constexpr int LAYER_PANEL_WIDTH = 176;
+constexpr int LAYER_PANEL_WIDTH = 168;
+constexpr int ICON_BTN = 32;
 constexpr int DEFAULT_DOC_WIDTH = 1280;
 constexpr int DEFAULT_DOC_HEIGHT = 720;
 constexpr int MIN_DOC_SIZE = 1;
 constexpr int MAX_DOC_SIZE = 10000;
-constexpr COLORREF WORKSPACE_COLOR = RGB(180, 180, 180);
+// Fallback; runtime uses gTheme.workspace.
+constexpr COLORREF WORKSPACE_COLOR = RGB(168, 158, 146);
 constexpr float ZOOM_MIN = 0.25f;
 constexpr float ZOOM_MAX = 8.0f;
 constexpr float ZOOM_STEP = 1.25f;
@@ -69,14 +74,19 @@ AppTheme gTheme;
 LayerStack gLayers;
 LayerHistory gHistory;
 HFONT gUiFont = nullptr;
+HFONT gBrandFont = nullptr;
 HBRUSH gChromeBrush = nullptr;
+HBRUSH gChromeDeepBrush = nullptr;
 HACCEL gAccel = nullptr;
+HWND hwndTooltip = nullptr;
 
 HWND hwndViewport = nullptr;
 HWND hwndSlider = nullptr;
 HWND hwndPenWidthBox = nullptr;
 HWND hwndOpacitySlider = nullptr;
 HWND hwndOpacityBox = nullptr;
+HWND hwndSizeLabel = nullptr;
+HWND hwndOpacityLabel = nullptr;
 HWND hwndStatus = nullptr;
 HWND hwndLayerList = nullptr;
 HWND hwndLayerAdd = nullptr;
@@ -87,7 +97,7 @@ HWND hwndLayerVisible = nullptr;
 HWND hwndLayerOpacity = nullptr;
 HWND hwndToolButtons[7] = {};
 HWND hwndSwatches[8] = {};
-HWND hwndActionButtons[7] = {};
+HWND hwndActionButtons[7] = {}; // 0 Color, 1 New, 2 Undo, 3 Redo, 4 Clear, 5 Save, 6 Open
 
 POINT lastPoint = {};
 POINT shapeStart = {};
@@ -248,19 +258,34 @@ static void SetActiveTool(DrawTool tool) {
         if (!hwndToolButtons[i]) continue;
         const bool selected = (static_cast<int>(tool) == i);
         SendMessageA(hwndToolButtons[i], BM_SETCHECK, selected ? BST_CHECKED : BST_UNCHECKED, 0);
+        InvalidateRect(hwndToolButtons[i], NULL, FALSE);
     }
 }
 
-static void GetChromeMetrics(HWND hwnd, int& toolbarH, int& statusH) {
-    toolbarH = TOOLBAR_HEIGHT;
-    statusH = STATUS_HEIGHT;
+struct ChromeLayout {
+    int topH = TOPBAR_HEIGHT;
+    int railW = TOOL_RAIL_WIDTH;
+    int bottomH = BOTTOMBAR_HEIGHT;
+    int statusH = STATUS_HEIGHT;
+    int layerW = LAYER_PANEL_WIDTH;
+};
+
+static ChromeLayout GetChromeLayout(HWND hwnd) {
+    ChromeLayout layout;
     if (hwndStatus) {
         RECT sb = {};
         GetWindowRect(hwndStatus, &sb);
-        statusH = sb.bottom - sb.top;
-        if (statusH < 1) statusH = STATUS_HEIGHT;
+        layout.statusH = sb.bottom - sb.top;
+        if (layout.statusH < 1) layout.statusH = STATUS_HEIGHT;
     }
     (void)hwnd;
+    return layout;
+}
+
+static void GetChromeMetrics(HWND hwnd, int& toolbarH, int& statusH) {
+    const ChromeLayout layout = GetChromeLayout(hwnd);
+    toolbarH = layout.topH;
+    statusH = layout.statusH + layout.bottomH;
 }
 
 static void ConfigureCanvasGraphics(Graphics* g) {
@@ -282,6 +307,7 @@ static void DestroyCompositeCache();
 static Bitmap* GetCompositeBitmap();
 static void LayoutViewport(HWND hwnd);
 static void LayoutLayerPanel(HWND hwnd);
+static void LayoutChromeControls(HWND hwnd);
 static void RefreshLayerList();
 static void ClearSelection(bool stampFloating);
 static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink);
@@ -361,56 +387,119 @@ static void UpdateScrollBars() {
 static void LayoutViewport(HWND hwnd) {
     if (!hwndViewport) return;
 
-    int toolbarH = 0, statusH = 0;
-    GetChromeMetrics(hwnd, toolbarH, statusH);
-
+    const ChromeLayout chrome = GetChromeLayout(hwnd);
     RECT client = {};
     GetClientRect(hwnd, &client);
-    const int x = 0;
-    const int y = toolbarH;
-    const int w = MaxInt(1, client.right - client.left - LAYER_PANEL_WIDTH);
-    int h = client.bottom - client.top - toolbarH - statusH;
+
+    const int x = chrome.railW;
+    const int y = chrome.topH;
+    const int w = MaxInt(1, client.right - client.left - chrome.railW - chrome.layerW);
+    int h = client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH;
     if (h < 1) h = 1;
 
     MoveWindow(hwndViewport, x, y, w, h, TRUE);
     LayoutLayerPanel(hwnd);
+    LayoutChromeControls(hwnd);
     UpdateScrollBars();
 }
 
 static void LayoutLayerPanel(HWND hwnd) {
     if (!hwndLayerList) return;
 
-    int toolbarH = 0, statusH = 0;
-    GetChromeMetrics(hwnd, toolbarH, statusH);
-
+    const ChromeLayout chrome = GetChromeLayout(hwnd);
     RECT client = {};
     GetClientRect(hwnd, &client);
-    const int panelX = client.right - LAYER_PANEL_WIDTH;
-    const int panelY = toolbarH;
-    const int panelH = MaxInt(1, client.bottom - client.top - toolbarH - statusH);
+    const int panelX = client.right - chrome.layerW;
+    const int panelY = chrome.topH;
+    const int panelH = MaxInt(1, client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH);
 
-    const int btnH = 26;
+    const int btn = 28;
     const int pad = 8;
     int y = panelY + pad;
 
-    if (hwndLayerAdd) MoveWindow(hwndLayerAdd, panelX + pad, y, 36, btnH, TRUE);
-    if (hwndLayerDel) MoveWindow(hwndLayerDel, panelX + pad + 40, y, 36, btnH, TRUE);
-    if (hwndLayerUp) MoveWindow(hwndLayerUp, panelX + pad + 80, y, 36, btnH, TRUE);
-    if (hwndLayerDown) MoveWindow(hwndLayerDown, panelX + pad + 120, y, 36, btnH, TRUE);
-    y += btnH + 6;
+    if (hwndLayerAdd) MoveWindow(hwndLayerAdd, panelX + pad, y, btn, btn, TRUE);
+    if (hwndLayerDel) MoveWindow(hwndLayerDel, panelX + pad + btn + 4, y, btn, btn, TRUE);
+    if (hwndLayerUp) MoveWindow(hwndLayerUp, panelX + pad + (btn + 4) * 2, y, btn, btn, TRUE);
+    if (hwndLayerDown) MoveWindow(hwndLayerDown, panelX + pad + (btn + 4) * 3, y, btn, btn, TRUE);
+    y += btn + 8;
 
     if (hwndLayerVisible) {
-        MoveWindow(hwndLayerVisible, panelX + pad, y, LAYER_PANEL_WIDTH - pad * 2, btnH, TRUE);
+        MoveWindow(hwndLayerVisible, panelX + pad, y, chrome.layerW - pad * 2, 22, TRUE);
     }
-    y += btnH + 6;
+    y += 28;
 
-    const int listH = MaxInt(60, panelH - (y - panelY) - 56);
-    MoveWindow(hwndLayerList, panelX + pad, y, LAYER_PANEL_WIDTH - pad * 2, listH, TRUE);
+    const int listH = MaxInt(60, panelH - (y - panelY) - 48);
+    MoveWindow(hwndLayerList, panelX + pad, y, chrome.layerW - pad * 2, listH, TRUE);
     y += listH + 6;
 
     if (hwndLayerOpacity) {
-        MoveWindow(hwndLayerOpacity, panelX + pad, y, LAYER_PANEL_WIDTH - pad * 2, 30, TRUE);
+        MoveWindow(hwndLayerOpacity, panelX + pad, y, chrome.layerW - pad * 2, 28, TRUE);
     }
+}
+
+static void LayoutChromeControls(HWND hwnd) {
+    const ChromeLayout chrome = GetChromeLayout(hwnd);
+    RECT client = {};
+    GetClientRect(hwnd, &client);
+    const int right = client.right - client.left;
+
+    // Top bar: undo/redo left-of-center actions; doc actions on the right.
+    const int topY = (chrome.topH - ICON_BTN) / 2;
+    int x = 150; // leave room for brand wordmark
+    if (hwndActionButtons[2]) MoveWindow(hwndActionButtons[2], x, topY, ICON_BTN, ICON_BTN, TRUE); // Undo
+    x += ICON_BTN + 4;
+    if (hwndActionButtons[3]) MoveWindow(hwndActionButtons[3], x, topY, ICON_BTN, ICON_BTN, TRUE); // Redo
+    x += ICON_BTN + 10;
+    if (hwndActionButtons[4]) MoveWindow(hwndActionButtons[4], x, topY, ICON_BTN, ICON_BTN, TRUE); // Clear
+
+    x = right - chrome.layerW - (ICON_BTN + 4) * 3 - 12;
+    if (hwndActionButtons[1]) MoveWindow(hwndActionButtons[1], x, topY, ICON_BTN, ICON_BTN, TRUE); // New
+    x += ICON_BTN + 4;
+    if (hwndActionButtons[6]) MoveWindow(hwndActionButtons[6], x, topY, ICON_BTN, ICON_BTN, TRUE); // Open
+    x += ICON_BTN + 4;
+    if (hwndActionButtons[5]) MoveWindow(hwndActionButtons[5], x, topY, ICON_BTN, ICON_BTN, TRUE); // Save
+
+    // Left tool rail (top → bottom).
+    const int railX = (chrome.railW - ICON_BTN) / 2;
+    int y = chrome.topH + 10;
+    const int order[7] = { 0, 1, 2, 6, 3, 4, 5 }; // Pen Eraser Fill Select Line Rect Ellipse
+    for (int i = 0; i < 7; ++i) {
+        const int idx = order[i];
+        if (hwndToolButtons[idx]) {
+            MoveWindow(hwndToolButtons[idx], railX, y, ICON_BTN, ICON_BTN, TRUE);
+        }
+        y += ICON_BTN + 6;
+        if (i == 2 || i == 3) y += 6; // group spacing
+    }
+
+    y += 4;
+    if (hwndActionButtons[0]) {
+        MoveWindow(hwndActionButtons[0], railX, y, ICON_BTN, ICON_BTN, TRUE); // Color
+    }
+    y += ICON_BTN + 8;
+
+    for (int i = 0; i < 8; ++i) {
+        const int col = i % 2;
+        const int row = i / 2;
+        if (hwndSwatches[i]) {
+            MoveWindow(hwndSwatches[i],
+                8 + col * 20,
+                y + row * 20,
+                18, 18, TRUE);
+        }
+    }
+
+    // Bottom bar under canvas: size + opacity.
+    const int bottomY = client.bottom - chrome.statusH - chrome.bottomH;
+    const int bottomX = chrome.railW + 12;
+    if (hwndSizeLabel) MoveWindow(hwndSizeLabel, bottomX, bottomY + 10, 34, 18, TRUE);
+    if (hwndSlider) MoveWindow(hwndSlider, bottomX + 36, bottomY + 4, 150, 30, TRUE);
+    if (hwndPenWidthBox) MoveWindow(hwndPenWidthBox, bottomX + 194, bottomY + 8, 40, 22, TRUE);
+    if (hwndOpacityLabel) MoveWindow(hwndOpacityLabel, bottomX + 250, bottomY + 10, 54, 18, TRUE);
+    if (hwndOpacitySlider) MoveWindow(hwndOpacitySlider, bottomX + 306, bottomY + 4, 150, 30, TRUE);
+    if (hwndOpacityBox) MoveWindow(hwndOpacityBox, bottomX + 464, bottomY + 8, 40, 22, TRUE);
+
+    (void)hwnd;
 }
 
 static void RefreshLayerList() {
@@ -1597,7 +1686,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
             {
                 Graphics g(memDC);
-                g.Clear(Color(255, GetRValue(WORKSPACE_COLOR), GetGValue(WORKSPACE_COLOR), GetBValue(WORKSPACE_COLOR)));
+                g.Clear(Color(255, GetRValue(gTheme.workspace), GetGValue(gTheme.workspace), GetBValue(gTheme.workspace)));
                 g.SetCompositingMode(CompositingModeSourceOver);
                 g.SetInterpolationMode(InterpolationModeNearestNeighbor);
                 g.SetPixelOffsetMode(PixelOffsetModeHalf);
@@ -1679,90 +1768,88 @@ static void LayoutStatusParts(HWND hwnd) {
     SendMessageA(hwndStatus, SB_SETPARTS, 3, (LPARAM)parts);
 }
 
-static HWND CreateToolbarButton(HWND parent, int id, const char* label, int x, int y, int w, int h, bool pushLike) {
-    const DWORD style = WS_TABSTOP | WS_VISIBLE | WS_CHILD |
-        (pushLike ? (BS_PUSHLIKE | BS_AUTOCHECKBOX) : BS_PUSHBUTTON);
-    HWND btn = CreateWindowA("BUTTON", label, style, x, y, w, h, parent, (HMENU)(INT_PTR)id, GetModuleHandle(NULL), NULL);
-    ApplyUiFont(btn);
+static HWND CreateIconButton(HWND parent, int id, const char* tooltip, bool pushLike) {
+    const DWORD style = WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_OWNERDRAW |
+        (pushLike ? (BS_PUSHLIKE | BS_CHECKBOX) : BS_PUSHBUTTON);
+    HWND btn = CreateWindowA("BUTTON", "", style,
+        0, 0, ICON_BTN, ICON_BTN,
+        parent, (HMENU)(INT_PTR)id, GetModuleHandle(NULL), NULL);
+    if (hwndTooltip && btn && tooltip && tooltip[0]) {
+        TOOLINFOA ti = {};
+        ti.cbSize = sizeof(ti);
+        ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        ti.hwnd = parent;
+        ti.uId = (UINT_PTR)btn;
+        ti.lpszText = const_cast<char*>(tooltip);
+        SendMessageA(hwndTooltip, TTM_ADDTOOLA, 0, (LPARAM)&ti);
+    }
     return btn;
 }
 
 static void CreateToolbar(HWND hwnd) {
-    const int h = 28;
-    const int toolW = 56;
-    const int y1 = 8;
-    const int y2 = 50;
+    hwndTooltip = CreateWindowExA(0, TOOLTIPS_CLASSA, NULL,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    if (hwndTooltip) {
+        SendMessageA(hwndTooltip, TTM_SETMAXTIPWIDTH, 0, 240);
+    }
 
-    int x = 12;
-    hwndToolButtons[0] = CreateToolbarButton(hwnd, IDC_TOOL_PEN, "Pen", x, y1, toolW, h, true); x += toolW + 6;
-    hwndToolButtons[1] = CreateToolbarButton(hwnd, IDC_TOOL_ERASER, "Eraser", x, y1, toolW + 8, h, true); x += toolW + 14;
-    hwndToolButtons[2] = CreateToolbarButton(hwnd, IDC_TOOL_FILL, "Fill", x, y1, toolW, h, true); x += toolW + 16;
+    // Tools (left rail)
+    hwndToolButtons[0] = CreateIconButton(hwnd, IDC_TOOL_PEN, "Pen", true);
+    hwndToolButtons[1] = CreateIconButton(hwnd, IDC_TOOL_ERASER, "Eraser", true);
+    hwndToolButtons[2] = CreateIconButton(hwnd, IDC_TOOL_FILL, "Fill", true);
+    hwndToolButtons[6] = CreateIconButton(hwnd, IDC_TOOL_SELECT, "Select", true);
+    hwndToolButtons[3] = CreateIconButton(hwnd, IDC_TOOL_LINE, "Line", true);
+    hwndToolButtons[4] = CreateIconButton(hwnd, IDC_TOOL_RECT, "Rectangle", true);
+    hwndToolButtons[5] = CreateIconButton(hwnd, IDC_TOOL_ELLIPSE, "Ellipse", true);
 
     for (int i = 0; i < 8; ++i) {
         hwndSwatches[i] = CreateWindowA("BUTTON", "",
             WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_OWNERDRAW,
-            x, y1 + 3, 22, 22,
+            0, 0, 18, 18,
             hwnd, (HMENU)(INT_PTR)(IDC_SWATCH0 + i), GetModuleHandle(NULL), NULL);
-        x += 26;
     }
-    x += 8;
 
-    hwndActionButtons[0] = CreateToolbarButton(hwnd, IDC_COLOR_BUTTON, "Color...", x, y1, 72, h, false);
-    x += 84;
-    hwndActionButtons[1] = CreateToolbarButton(hwnd, IDC_NEW_BUTTON, "New", x, y1, 52, h, false); x += 58;
-    hwndActionButtons[2] = CreateToolbarButton(hwnd, IDC_UNDO_BUTTON, "Undo", x, y1, 52, h, false); x += 58;
-    hwndActionButtons[3] = CreateToolbarButton(hwnd, IDC_REDO_BUTTON, "Redo", x, y1, 52, h, false); x += 58;
-    hwndActionButtons[4] = CreateToolbarButton(hwnd, IDC_CLEAR_BUTTON, "Clear", x, y1, 52, h, false); x += 58;
-    hwndActionButtons[5] = CreateToolbarButton(hwnd, IDC_SAVE_BUTTON, "Save", x, y1, 52, h, false); x += 58;
-    hwndActionButtons[6] = CreateToolbarButton(hwnd, IDC_LOAD_BUTTON, "Open", x, y1, 52, h, false);
+    // Actions
+    hwndActionButtons[0] = CreateIconButton(hwnd, IDC_COLOR_BUTTON, "Color…", false);
+    hwndActionButtons[1] = CreateIconButton(hwnd, IDC_NEW_BUTTON, "New (Ctrl+N)", false);
+    hwndActionButtons[2] = CreateIconButton(hwnd, IDC_UNDO_BUTTON, "Undo (Ctrl+Z)", false);
+    hwndActionButtons[3] = CreateIconButton(hwnd, IDC_REDO_BUTTON, "Redo (Ctrl+Y)", false);
+    hwndActionButtons[4] = CreateIconButton(hwnd, IDC_CLEAR_BUTTON, "Clear canvas", false);
+    hwndActionButtons[5] = CreateIconButton(hwnd, IDC_SAVE_BUTTON, "Save (Ctrl+S)", false);
+    hwndActionButtons[6] = CreateIconButton(hwnd, IDC_LOAD_BUTTON, "Open (Ctrl+O)", false);
 
-    // Row 2: select + shape tools + size + opacity
-    x = 12;
-    hwndToolButtons[6] = CreateToolbarButton(hwnd, IDC_TOOL_SELECT, "Select", x, y2, toolW + 4, h, true); x += toolW + 10;
-    hwndToolButtons[3] = CreateToolbarButton(hwnd, IDC_TOOL_LINE, "Line", x, y2, toolW, h, true); x += toolW + 6;
-    hwndToolButtons[4] = CreateToolbarButton(hwnd, IDC_TOOL_RECT, "Rect", x, y2, toolW, h, true); x += toolW + 6;
-    hwndToolButtons[5] = CreateToolbarButton(hwnd, IDC_TOOL_ELLIPSE, "Ellipse", x, y2, toolW + 8, h, true);
-    x += toolW + 20;
-
-    HWND sizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
-        x, y2 + 4, 34, 20, hwnd, NULL, GetModuleHandle(NULL), NULL);
-    ApplyUiFont(sizeLabel);
-    x += 38;
+    // Bottom inspectors
+    hwndSizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
+        0, 0, 34, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(hwndSizeLabel);
 
     hwndSlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
         WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        x, y2 - 2, 140, 32,
-        hwnd, NULL, GetModuleHandle(NULL), NULL);
+        0, 0, 150, 30, hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 50));
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
     SubclassTrackbarWheel(hwndSlider);
-    x += 148;
 
     hwndPenWidthBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
-        x, y2 + 2, 40, 24,
-        hwnd, (HMENU)(INT_PTR)IDC_WIDTH_EDIT, GetModuleHandle(NULL), NULL);
+        0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_WIDTH_EDIT, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndPenWidthBox);
-    x += 56;
 
-    HWND opacityLabel = CreateWindowA("STATIC", "Opacity", WS_CHILD | WS_VISIBLE,
-        x, y2 + 4, 54, 20, hwnd, NULL, GetModuleHandle(NULL), NULL);
-    ApplyUiFont(opacityLabel);
-    x += 58;
+    hwndOpacityLabel = CreateWindowA("STATIC", "Opacity", WS_CHILD | WS_VISIBLE,
+        0, 0, 54, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(hwndOpacityLabel);
 
     hwndOpacitySlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
         WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        x, y2 - 2, 140, 32,
-        hwnd, NULL, GetModuleHandle(NULL), NULL);
+        0, 0, 150, 30, hwnd, NULL, GetModuleHandle(NULL), NULL);
     SendMessage(hwndOpacitySlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
     SubclassTrackbarWheel(hwndOpacitySlider);
-    x += 148;
 
     hwndOpacityBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
-        x, y2 + 2, 44, 24,
-        hwnd, (HMENU)(INT_PTR)IDC_OPACITY_EDIT, GetModuleHandle(NULL), NULL);
+        0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_OPACITY_EDIT, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndOpacityBox);
 
     SetActiveTool(DrawTool::Pen);
@@ -1771,34 +1858,73 @@ static void CreateToolbar(HWND hwnd) {
 }
 
 static void DrawToolbarBackground(HDC hdc, const RECT& client) {
-    RECT toolbar = client;
-    toolbar.bottom = TOOLBAR_HEIGHT;
-    FillRect(hdc, &toolbar, gChromeBrush);
+    const ChromeLayout chrome = GetChromeLayout(nullptr);
+
+    RECT top = client;
+    top.bottom = chrome.topH;
+    FillRect(hdc, &top, gChromeBrush);
+
+    RECT rail = client;
+    rail.top = chrome.topH;
+    rail.right = chrome.railW;
+    rail.bottom = client.bottom - chrome.statusH;
+    FillRect(hdc, &rail, gChromeDeepBrush ? gChromeDeepBrush : gChromeBrush);
+
+    RECT bottom = client;
+    bottom.top = client.bottom - chrome.statusH - chrome.bottomH;
+    bottom.bottom = client.bottom - chrome.statusH;
+    bottom.left = chrome.railW;
+    bottom.right = client.right - chrome.layerW;
+    FillRect(hdc, &bottom, gChromeBrush);
 
     RECT panel = client;
-    panel.left = client.right - LAYER_PANEL_WIDTH;
-    panel.top = TOOLBAR_HEIGHT;
+    panel.left = client.right - chrome.layerW;
+    panel.top = chrome.topH;
+    panel.bottom = client.bottom - chrome.statusH;
     FillRect(hdc, &panel, gChromeBrush);
 
     HPEN pen = CreatePen(PS_SOLID, 1, gTheme.chromeLine);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
-    MoveToEx(hdc, 0, TOOLBAR_HEIGHT - 1, NULL);
-    LineTo(hdc, client.right, TOOLBAR_HEIGHT - 1);
-    MoveToEx(hdc, panel.left, TOOLBAR_HEIGHT, NULL);
-    LineTo(hdc, panel.left, client.bottom);
+    MoveToEx(hdc, 0, chrome.topH - 1, NULL);
+    LineTo(hdc, client.right, chrome.topH - 1);
+    MoveToEx(hdc, chrome.railW - 1, chrome.topH, NULL);
+    LineTo(hdc, chrome.railW - 1, client.bottom - chrome.statusH);
+    MoveToEx(hdc, panel.left, chrome.topH, NULL);
+    LineTo(hdc, panel.left, client.bottom - chrome.statusH);
+    MoveToEx(hdc, chrome.railW, bottom.top, NULL);
+    LineTo(hdc, panel.left, bottom.top);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
+
+    // Brand wordmark + small bronze compass mark.
+    {
+        Graphics g(hdc);
+        g.SetSmoothingMode(SmoothingModeAntiAlias);
+        const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
+        Pen ring(gold, 1.4f);
+        g.DrawEllipse(&ring, 14, 10, 22, 22);
+        g.DrawLine(&ring, 25.0f, 12.0f, 25.0f, 30.0f);
+        g.DrawLine(&ring, 16.0f, 21.0f, 34.0f, 21.0f);
+    }
+    {
+        HFONT brand = gBrandFont ? gBrandFont : gUiFont;
+        HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, gTheme.text);
+        TextOutA(hdc, 44, 12, "Atelier", 7);
+        if (oldFont) SelectObject(hdc, oldFont);
+    }
 }
 
 static void CreateLayerPanel(HWND hwnd) {
-    hwndLayerAdd = CreateToolbarButton(hwnd, IDC_LAYER_ADD, "+", 0, 0, 36, 26, false);
-    hwndLayerDel = CreateToolbarButton(hwnd, IDC_LAYER_DEL, "-", 0, 0, 36, 26, false);
-    hwndLayerUp = CreateToolbarButton(hwnd, IDC_LAYER_UP, "Up", 0, 0, 36, 26, false);
-    hwndLayerDown = CreateToolbarButton(hwnd, IDC_LAYER_DOWN, "Dn", 0, 0, 36, 26, false);
+    hwndLayerAdd = CreateIconButton(hwnd, IDC_LAYER_ADD, "Add layer", false);
+    hwndLayerDel = CreateIconButton(hwnd, IDC_LAYER_DEL, "Delete layer", false);
+    hwndLayerUp = CreateIconButton(hwnd, IDC_LAYER_UP, "Move layer up", false);
+    hwndLayerDown = CreateIconButton(hwnd, IDC_LAYER_DOWN, "Move layer down", false);
 
     hwndLayerVisible = CreateWindowA("BUTTON", "Visible",
         WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
-        0, 0, 100, 26, hwnd, (HMENU)(INT_PTR)IDC_LAYER_VISIBLE, GetModuleHandle(NULL), NULL);
+        0, 0, 100, 22, hwnd, (HMENU)(INT_PTR)IDC_LAYER_VISIBLE, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndLayerVisible);
 
     hwndLayerList = CreateWindowExA(WS_EX_CLIENTEDGE, "LISTBOX", "",
@@ -1808,7 +1934,7 @@ static void CreateLayerPanel(HWND hwnd) {
 
     hwndLayerOpacity = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
         WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        0, 0, 100, 30, hwnd, (HMENU)(INT_PTR)IDC_LAYER_OPACITY, GetModuleHandle(NULL), NULL);
+        0, 0, 100, 28, hwnd, (HMENU)(INT_PTR)IDC_LAYER_OPACITY, GetModuleHandle(NULL), NULL);
     SendMessage(hwndLayerOpacity, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndLayerOpacity, TBM_SETPOS, TRUE, 100);
     SubclassTrackbarWheel(hwndLayerOpacity);
@@ -1823,10 +1949,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         InitCommonControlsEx(&icex);
 
         gUiFont = CreateFontA(
-            -14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Segoe UI");
+        gBrandFont = CreateFontA(
+            -16, 0, 0, 0, FW_NORMAL, TRUE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Georgia");
         gChromeBrush = CreateSolidBrush(gTheme.chromeBg);
+        gChromeDeepBrush = CreateSolidBrush(gTheme.chromeDeep);
 
         CreateToolbar(hwnd);
         CreateLayerPanel(hwnd);
@@ -1840,7 +1971,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             VIEWPORT_CLASS_NAME,
             "",
             WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | WS_CLIPCHILDREN,
-            0, TOOLBAR_HEIGHT, 100, 100,
+            TOOL_RAIL_WIDTH, TOPBAR_HEIGHT, 100, 100,
             hwnd,
             NULL,
             GetModuleHandle(NULL),
@@ -1863,6 +1994,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_DRAWITEM: {
         const DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (!dis) break;
         if (dis->CtlID >= IDC_SWATCH0 && dis->CtlID <= IDC_SWATCH7) {
             const int index = dis->CtlID - IDC_SWATCH0;
             HBRUSH fill = CreateSolidBrush(kSwatches[index]);
@@ -1877,6 +2009,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             SelectObject(dis->hDC, oldBrush);
             SelectObject(dis->hDC, oldPen);
             DeleteObject(border);
+            return TRUE;
+        }
+        if (IsIconControlId(static_cast<int>(dis->CtlID))) {
+            const int id = static_cast<int>(dis->CtlID);
+            const bool onRail =
+                (id >= IDC_TOOL_PEN && id <= IDC_TOOL_FILL)
+                || id == IDC_TOOL_LINE || id == IDC_TOOL_RECT || id == IDC_TOOL_ELLIPSE
+                || id == IDC_TOOL_SELECT || id == IDC_COLOR_BUTTON;
+            const COLORREF btnBg = onRail ? gTheme.chromeDeep : gTheme.chromeBg;
+            PaintIconButton(dis, btnBg, gTheme.accent, gTheme.text, gTheme.toolSelectedBg);
             return TRUE;
         }
         break;
@@ -2211,9 +2353,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DeleteObject(gUiFont);
             gUiFont = nullptr;
         }
+        if (gBrandFont) {
+            DeleteObject(gBrandFont);
+            gBrandFont = nullptr;
+        }
         if (gChromeBrush) {
             DeleteObject(gChromeBrush);
             gChromeBrush = nullptr;
+        }
+        if (gChromeDeepBrush) {
+            DeleteObject(gChromeDeepBrush);
+            gChromeDeepBrush = nullptr;
         }
         PostQuitMessage(0);
         return 0;
