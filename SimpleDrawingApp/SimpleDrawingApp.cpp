@@ -36,6 +36,7 @@ constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 168;
 constexpr int ICON_BTN = 32;
 constexpr UINT_PTR IDT_UI_ANIM = 42;
+constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr int DEFAULT_DOC_WIDTH = 1280;
 constexpr int DEFAULT_DOC_HEIGHT = 720;
 constexpr int MIN_DOC_SIZE = 1;
@@ -80,10 +81,13 @@ HBRUSH gChromeBrush = nullptr;
 HBRUSH gChromeDeepBrush = nullptr;
 HACCEL gAccel = nullptr;
 HWND hwndTooltip = nullptr;
-float gUiPulse = 0.0f;       // 0..1 sine breath for selected tool / compass
-float gUiCompassAngle = 0.0f;
+float gUiPulse = 0.0f;       // brief tool-flash only (not continuous)
+float gUiCompassAngle = -18.0f; // static compass angle (no continuous spin)
 float gToolFlash = 0.0f;     // 1 → 0 after tool switch
-DWORD gUiAnimTick = 0;
+Bitmap* gChromeCache = nullptr;
+int gChromeCacheW = 0;
+int gChromeCacheH = 0;
+int gChromeCacheStatusH = -1;
 
 HWND hwndViewport = nullptr;
 HWND hwndSlider = nullptr;
@@ -262,6 +266,12 @@ static void SetActiveTool(DrawTool tool) {
     currentTool = tool;
     if (changed) {
         gToolFlash = 1.0f;
+        gUiPulse = 1.0f;
+        // Short-lived timer only while the tool flash decays — never a continuous 30fps loop.
+        if (hwndToolButtons[0]) {
+            HWND main = GetParent(hwndToolButtons[0]);
+            if (main) SetTimer(main, IDT_UI_ANIM, 50, NULL);
+        }
     }
     for (int i = 0; i < 7; ++i) {
         if (!hwndToolButtons[i]) continue;
@@ -271,18 +281,19 @@ static void SetActiveTool(DrawTool tool) {
     }
 }
 
-static void InvalidateChromeAnim(HWND hwnd) {
-    if (!hwnd) return;
-    RECT brand = { 0, 0, 140, TOPBAR_HEIGHT };
-    InvalidateRect(hwnd, &brand, FALSE);
-
+static void InvalidateActiveToolButton() {
     const int idx = static_cast<int>(currentTool);
     if (idx >= 0 && idx < 7 && hwndToolButtons[idx]) {
         InvalidateRect(hwndToolButtons[idx], NULL, FALSE);
     }
-    if (hwndActionButtons[0]) {
-        InvalidateRect(hwndActionButtons[0], NULL, FALSE);
-    }
+}
+
+static void DestroyChromeCache() {
+    delete gChromeCache;
+    gChromeCache = nullptr;
+    gChromeCacheW = 0;
+    gChromeCacheH = 0;
+    gChromeCacheStatusH = -1;
 }
 
 struct ChromeLayout {
@@ -1880,52 +1891,44 @@ static void CreateToolbar(HWND hwnd) {
     UpdateOpacityDisplay();
 }
 
-static void DrawToolbarBackground(HDC hdc, const RECT& client) {
-    const ChromeLayout chrome = GetChromeLayout(nullptr);
-    Graphics g(hdc);
-    g.SetSmoothingMode(SmoothingModeAntiAlias);
-    g.SetCompositingMode(CompositingModeSourceOver);
+static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayout& chrome) {
+    g.SetSmoothingMode(SmoothingModeNone); // cache build: crisp fills, cheaper
+    g.SetCompositingMode(CompositingModeSourceCopy);
 
     const Color stoneA(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg));
     const Color stoneB(255, 226, 216, 200);
     const Color deepA(255, GetRValue(gTheme.chromeDeep), GetGValue(gTheme.chromeDeep), GetBValue(gTheme.chromeDeep));
     const Color deepB(255, 208, 196, 178);
-    const Color grain(22, 120, 92, 58);
+    const Color grain(18, 120, 92, 58);
     const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
 
-    RectF topR(
-        static_cast<REAL>(client.left),
-        static_cast<REAL>(client.top),
-        static_cast<REAL>(client.right - client.left),
-        static_cast<REAL>(chrome.topH));
+    // Clear full client so holes behind children stay theme-colored if clipped oddly.
+    SolidBrush clear(stoneA);
+    g.FillRectangle(&clear, 0, 0, width, height);
+    g.SetCompositingMode(CompositingModeSourceOver);
+
+    RectF topR(0.0f, 0.0f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH));
     DrawFrescoPanel(g, topR, stoneA, stoneB, true);
     DrawFrescoGrain(g, topR, grain);
 
-    RectF railR(
-        static_cast<REAL>(client.left),
-        static_cast<REAL>(chrome.topH),
-        static_cast<REAL>(chrome.railW),
-        static_cast<REAL>((client.bottom - chrome.statusH) - chrome.topH));
+    RectF railR(0.0f, static_cast<REAL>(chrome.topH), static_cast<REAL>(chrome.railW),
+        static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, railR, deepA, deepB, false);
     DrawFrescoGrain(g, railR, grain);
 
-    RectF bottomR(
-        static_cast<REAL>(chrome.railW),
-        static_cast<REAL>(client.bottom - chrome.statusH - chrome.bottomH),
-        static_cast<REAL>((client.right - chrome.layerW) - chrome.railW),
+    RectF bottomR(static_cast<REAL>(chrome.railW),
+        static_cast<REAL>(height - chrome.statusH - chrome.bottomH),
+        static_cast<REAL>((width - chrome.layerW) - chrome.railW),
         static_cast<REAL>(chrome.bottomH));
     DrawFrescoPanel(g, bottomR, stoneB, stoneA, true);
     DrawFrescoGrain(g, bottomR, grain);
 
-    RectF panelR(
-        static_cast<REAL>(client.right - chrome.layerW),
-        static_cast<REAL>(chrome.topH),
+    RectF panelR(static_cast<REAL>(width - chrome.layerW), static_cast<REAL>(chrome.topH),
         static_cast<REAL>(chrome.layerW),
-        static_cast<REAL>((client.bottom - chrome.statusH) - chrome.topH));
+        static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, panelR, stoneA, Color(255, 230, 220, 204), true);
     DrawFrescoGrain(g, panelR, grain);
 
-    // Soft bronze wash behind the wordmark.
     {
         LinearGradientBrush wash(
             PointF(0.0f, 0.0f), PointF(160.0f, 0.0f),
@@ -1935,26 +1938,100 @@ static void DrawToolbarBackground(HDC hdc, const RECT& client) {
     }
 
     Pen rule(Color(255, GetRValue(gTheme.chromeLine), GetGValue(gTheme.chromeLine), GetBValue(gTheme.chromeLine)), 1.0f);
-    g.DrawLine(&rule, 0.0f, static_cast<REAL>(chrome.topH) - 0.5f,
-        static_cast<REAL>(client.right), static_cast<REAL>(chrome.topH) - 0.5f);
+    g.DrawLine(&rule, 0.0f, static_cast<REAL>(chrome.topH) - 0.5f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH) - 0.5f);
     g.DrawLine(&rule, static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(chrome.topH),
-        static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(client.bottom - chrome.statusH));
-    g.DrawLine(&rule, static_cast<REAL>(panelR.X), static_cast<REAL>(chrome.topH),
-        static_cast<REAL>(panelR.X), static_cast<REAL>(client.bottom - chrome.statusH));
-    g.DrawLine(&rule, static_cast<REAL>(chrome.railW), bottomR.Y,
-        static_cast<REAL>(panelR.X), bottomR.Y);
+        static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(height - chrome.statusH));
+    g.DrawLine(&rule, panelR.X, static_cast<REAL>(chrome.topH), panelR.X, static_cast<REAL>(height - chrome.statusH));
+    g.DrawLine(&rule, static_cast<REAL>(chrome.railW), bottomR.Y, panelR.X, bottomR.Y);
 
-    const float breath = 1.0f + gUiPulse * 0.08f;
-    DrawBrandCompass(g, 25.0f, static_cast<REAL>(chrome.topH) * 0.5f, 11.0f * breath, gold, gUiCompassAngle);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    DrawBrandCompass(g, 25.0f, static_cast<REAL>(chrome.topH) * 0.5f, 11.0f, gold, gUiCompassAngle);
+}
 
-    {
+static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome) {
+    if (width < 1 || height < 1) return;
+    if (gChromeCache
+        && gChromeCacheW == width
+        && gChromeCacheH == height
+        && gChromeCacheStatusH == chrome.statusH) {
+        return;
+    }
+
+    DestroyChromeCache();
+    gChromeCache = new Bitmap(width, height, PixelFormat32bppPARGB);
+    if (!gChromeCache) return;
+    gChromeCacheW = width;
+    gChromeCacheH = height;
+    gChromeCacheStatusH = chrome.statusH;
+
+    Graphics g(gChromeCache);
+    PaintChromeInto(g, width, height, chrome);
+
+    // Bake wordmark into the same bitmap (stable; no per-frame TextOut flicker).
+    HDC hdc = g.GetHDC();
+    if (hdc) {
         HFONT brand = gBrandFont ? gBrandFont : gUiFont;
         HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, gTheme.text);
         TextOutA(hdc, 44, (chrome.topH - 18) / 2, "Atelier", 7);
         if (oldFont) SelectObject(hdc, oldFont);
+        g.ReleaseHDC(hdc);
     }
+}
+
+static void DrawToolbarBackgroundCheap(HDC hdc, const RECT& client, const ChromeLayout& chrome) {
+    // Solid fills only — used while resizing before the fresco cache is rebuilt.
+    RECT top = client; top.bottom = chrome.topH;
+    FillRect(hdc, &top, gChromeBrush);
+    RECT rail = client;
+    rail.top = chrome.topH;
+    rail.right = chrome.railW;
+    rail.bottom = client.bottom - chrome.statusH;
+    FillRect(hdc, &rail, gChromeDeepBrush ? gChromeDeepBrush : gChromeBrush);
+    RECT bottom = client;
+    bottom.top = client.bottom - chrome.statusH - chrome.bottomH;
+    bottom.bottom = client.bottom - chrome.statusH;
+    bottom.left = chrome.railW;
+    bottom.right = client.right - chrome.layerW;
+    FillRect(hdc, &bottom, gChromeBrush);
+    RECT panel = client;
+    panel.left = client.right - chrome.layerW;
+    panel.top = chrome.topH;
+    panel.bottom = client.bottom - chrome.statusH;
+    FillRect(hdc, &panel, gChromeBrush);
+
+    const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
+    Graphics g(hdc);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    DrawBrandCompass(g, 25.0f, static_cast<REAL>(chrome.topH) * 0.5f, 11.0f, gold, gUiCompassAngle);
+    HFONT brand = gBrandFont ? gBrandFont : gUiFont;
+    HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, gTheme.text);
+    TextOutA(hdc, 44, (chrome.topH - 18) / 2, "Atelier", 7);
+    if (oldFont) SelectObject(hdc, oldFont);
+}
+
+static void DrawToolbarBackground(HDC hdc, const RECT& client) {
+    const ChromeLayout chrome = GetChromeLayout(nullptr);
+    const int width = client.right - client.left;
+    const int height = client.bottom - client.top;
+    if (width < 1 || height < 1) return;
+
+    const bool cacheReady = gChromeCache
+        && gChromeCacheW == width
+        && gChromeCacheH == height
+        && gChromeCacheStatusH == chrome.statusH;
+    if (!cacheReady) {
+        DrawToolbarBackgroundCheap(hdc, client, chrome);
+        return;
+    }
+
+    Graphics g(hdc);
+    g.SetCompositingMode(CompositingModeSourceCopy);
+    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+    g.DrawImage(gChromeCache, 0, 0, width, height);
 }
 
 static void CreateLayerPanel(HWND hwnd) {
@@ -2024,30 +2101,31 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         UpdateStatusBar(hwnd);
         UpdateWindowTitle(hwnd);
         EnableDarkTitleBar(hwnd);
-        gUiAnimTick = GetTickCount();
-        SetTimer(hwnd, IDT_UI_ANIM, 33, NULL); // ~30fps chrome motion
+        // Build fresco cache once after first layout; no continuous chrome timer.
+        SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
         break;
     }
     case WM_TIMER:
         if (wParam == IDT_UI_ANIM) {
-            const DWORD now = GetTickCount();
-            const float dt = (gUiAnimTick == 0) ? 0.033f : (now - gUiAnimTick) / 1000.0f;
-            gUiAnimTick = now;
-
-            gUiCompassAngle += 18.0f * dt; // slow drift
-            if (gUiCompassAngle >= 360.0f) gUiCompassAngle -= 360.0f;
-
-            static float phase = 0.0f;
-            phase += dt * 2.2f;
-            if (phase > 6.2831853f) phase -= 6.2831853f;
-            gUiPulse = 0.5f + 0.5f * sinf(phase);
-
-            if (gToolFlash > 0.0f) {
-                gToolFlash -= dt * 4.5f;
-                if (gToolFlash < 0.0f) gToolFlash = 0.0f;
+            // Runs only while a tool-switch flash decays; never invalidates brand/compass.
+            gToolFlash -= 0.18f;
+            if (gToolFlash < 0.0f) gToolFlash = 0.0f;
+            gUiPulse = gToolFlash;
+            InvalidateActiveToolButton();
+            if (gToolFlash <= 0.0f) {
+                KillTimer(hwnd, IDT_UI_ANIM);
+                gToolFlash = 0.0f;
+                gUiPulse = 0.0f;
+                InvalidateActiveToolButton();
             }
-
-            InvalidateChromeAnim(hwnd);
+        }
+        else if (wParam == IDT_CHROME_REBUILD) {
+            KillTimer(hwnd, IDT_CHROME_REBUILD);
+            RECT client = {};
+            GetClientRect(hwnd, &client);
+            const ChromeLayout chrome = GetChromeLayout(hwnd);
+            EnsureChromeCache(client.right - client.left, client.bottom - client.top, chrome);
+            InvalidateRect(hwnd, NULL, FALSE);
         }
         break;
     case WM_CTLCOLORBTN:
@@ -2107,21 +2185,29 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         break;
     }
-    case WM_ERASEBKGND: {
-        HDC hdc = (HDC)wParam;
-        RECT client = {};
-        GetClientRect(hwnd, &client);
-        DrawToolbarBackground(hdc, client);
+    case WM_ERASEBKGND:
+        // Avoid double-paint flicker: chrome is drawn once in WM_PAINT from cache.
         return 1;
-    }
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED) {
             SendMessageA(hwndStatus, WM_SIZE, 0, 0);
             LayoutStatusParts(hwnd);
             LayoutViewport(hwnd);
             UpdateStatusBar(hwnd);
+            // Drop stale fresco bitmap during live resize (avoids leak-like growth + hitch).
+            DestroyChromeCache();
+            SetTimer(hwnd, IDT_CHROME_REBUILD, 60, NULL);
+            InvalidateRect(hwnd, NULL, FALSE);
         }
         break;
+    case WM_EXITSIZEMOVE: {
+        KillTimer(hwnd, IDT_CHROME_REBUILD);
+        RECT client = {};
+        GetClientRect(hwnd, &client);
+        EnsureChromeCache(client.right - client.left, client.bottom - client.top, GetChromeLayout(hwnd));
+        InvalidateRect(hwnd, NULL, FALSE);
+        break;
+    }
     case WM_HSCROLL: {
         if ((HWND)lParam == hwndSlider) {
             penWidth = static_cast<int>(SendMessage(hwndSlider, TBM_GETPOS, 0, 0));
@@ -2425,6 +2511,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_DESTROY:
         KillTimer(hwnd, IDT_UI_ANIM);
+        KillTimer(hwnd, IDT_CHROME_REBUILD);
         if (GetCapture() == hwnd || (hwndViewport && GetCapture() == hwndViewport)) {
             ReleaseCapture();
         }
@@ -2434,6 +2521,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         gClipboardBmp = nullptr;
         gHistory.Clear();
         DestroyCompositeCache();
+        DestroyChromeCache();
         gLayers.Destroy();
         hwndViewport = nullptr;
         if (gUiFont) {
@@ -2495,7 +2583,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     }
 
     HWND hwnd = CreateWindowExA(0, CLASS_NAME, "Simple Drawing App",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, 1280, 760,
         NULL, NULL, hInstance, NULL);
 
