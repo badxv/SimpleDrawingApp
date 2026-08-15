@@ -44,6 +44,8 @@ script):
   (draw a stroke, undo, and Save a PNG).
 - **Build/run:** use `scripts/build-linux.sh` / `scripts/run-linux.sh` here, or
   Visual Studio 2022 (`Debug|x64`) on Windows per `README.md`.
+  MinGW does not define Windows `min`/`max` macros the same way MSVC does — prefer
+  `NOMINMAX` (see `framework.h`) and avoid bare `std::min`/`std::max` near Win32 headers.
 
 ### Follow-up (not done yet)
 - **Cursor Environment snapshot:** MinGW/Wine are currently installed ad-hoc on

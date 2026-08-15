@@ -16,7 +16,6 @@
 #include <string>
 #include <cstdio>
 #include <cmath>
-#include <algorithm>
 
 #pragma comment(lib, "Comctl32.lib")
 #pragma comment(lib, "Comdlg32.lib")
@@ -288,6 +287,9 @@ static void EnsureCanvas(HWND hwnd) {
     (void)hwnd;
 }
 
+static int MaxInt(int a, int b) { return (a > b) ? a : b; }
+static float MaxFloat(float a, float b) { return (a > b) ? a : b; }
+
 static void UpdateScrollBars() {
     if (!hwndViewport) return;
 
@@ -295,8 +297,8 @@ static void UpdateScrollBars() {
     GetClientRect(hwndViewport, &rc);
     const int viewW = rc.right - rc.left;
     const int viewH = rc.bottom - rc.top;
-    const int contentW = std::max(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
-    const int contentH = std::max(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
+    const int contentW = MaxInt(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
+    const int contentH = MaxInt(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
 
     SCROLLINFO si = {};
     si.cbSize = sizeof(si);
@@ -439,11 +441,11 @@ static void InvalidateCanvas() {
 }
 
 static int ScaledContentWidth() {
-    return std::max(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
+    return MaxInt(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
 }
 
 static int ScaledContentHeight() {
-    return std::max(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
+    return MaxInt(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
 }
 
 static void DestroySelFloat() {
@@ -609,8 +611,8 @@ static void ZoomToFit(HWND hwnd) {
     if (!hwndViewport || docWidth < 1 || docHeight < 1) return;
     RECT rc = {};
     GetClientRect(hwndViewport, &rc);
-    const int viewW = std::max(1, static_cast<int>(rc.right - rc.left));
-    const int viewH = std::max(1, static_cast<int>(rc.bottom - rc.top));
+    const int viewW = MaxInt(1, static_cast<int>(rc.right - rc.left));
+    const int viewH = MaxInt(1, static_cast<int>(rc.bottom - rc.top));
     const float zx = static_cast<float>(viewW) / static_cast<float>(docWidth);
     const float zy = static_cast<float>(viewH) / static_cast<float>(docHeight);
     float z = (zx < zy) ? zx : zy;
@@ -641,13 +643,15 @@ static void DrawSelectionOverlay(Graphics* g) {
 
     Pen dash(Color(255, 0, 0, 0), 1.0f);
     dash.SetDashStyle(DashStyleDash);
+    const float selW = MaxFloat(1.0f, gSel.w * zoomFactor);
+    const float selH = MaxFloat(1.0f, gSel.h * zoomFactor);
     g->DrawRectangle(
         &dash,
         RectF(
             gSel.x * zoomFactor,
             gSel.y * zoomFactor,
-            std::max(1.0f, gSel.w * zoomFactor),
-            std::max(1.0f, gSel.h * zoomFactor)));
+            selW,
+            selH));
 
     Pen dash2(Color(255, 255, 255, 255), 1.0f);
     dash2.SetDashStyle(DashStyleDash);
@@ -657,8 +661,8 @@ static void DrawSelectionOverlay(Graphics* g) {
         RectF(
             gSel.x * zoomFactor,
             gSel.y * zoomFactor,
-            std::max(1.0f, gSel.w * zoomFactor),
-            std::max(1.0f, gSel.h * zoomFactor)));
+            selW,
+            selH));
 }
 
 static void DoCopy(HWND hwnd) {
