@@ -13,7 +13,7 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 - **Shapes:** click-drag preview; hold `Shift` for square / circle / axis-aligned or 45° lines
 - **Selection:** rectangular marquee, move, Delete; **Cut / Copy / Paste** (`Ctrl+X/C/V`)
 - **Zoom:** `Ctrl` + mouse wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
-- **Layers:** stack panel with add/delete/reorder, visibility, per-layer opacity; eraser punches transparency on non-background layers
+- **Layers:** stack panel with add/delete/reorder, visibility, per-layer opacity; content layers are PNG-like (alpha); Background stays pinned at the bottom (opaque canvas)
 - **Undo / Redo** (layer-stack snapshots)
 - **New / Clear** with unsaved-change prompts
 - **Save / Open** PNG, JPG, BMP
