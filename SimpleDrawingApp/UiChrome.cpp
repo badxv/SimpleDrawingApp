@@ -84,19 +84,71 @@ void DrawFrescoPanel(Graphics& g, const RectF& bounds, Color top, Color bottom, 
         bottom,
         vertical ? LinearGradientModeVertical : LinearGradientModeHorizontal);
     g.FillRectangle(&brush, bounds);
+
+    // Soft cross-wash (first-approach warmth) — still only when baking the cache.
+    const Color tip(
+        28,
+        (top.GetR() + bottom.GetR()) / 2,
+        (top.GetG() + bottom.GetG()) / 2,
+        (top.GetB() + bottom.GetB()) / 2);
+    LinearGradientBrush cross(
+        bounds,
+        Color(0, tip.GetR(), tip.GetG(), tip.GetB()),
+        tip,
+        vertical ? LinearGradientModeHorizontal : LinearGradientModeVertical);
+    g.FillRectangle(&cross, bounds);
 }
 
 void DrawFrescoGrain(Graphics& g, const RectF& bounds, Color grain) {
     if (bounds.Width < 8.0f || bounds.Height < 8.0f) return;
-    // Very sparse hatch — baked into a chrome cache, not redrawn every frame.
-    Pen pen(grain, 1.0f);
-    const REAL step = 36.0f;
+
     const REAL x0 = bounds.X;
     const REAL y0 = bounds.Y;
+    const REAL x1 = bounds.X + bounds.Width;
     const REAL y1 = bounds.Y + bounds.Height;
-    for (REAL t = -bounds.Height; t < bounds.Width + bounds.Height; t += step) {
-        g.DrawLine(&pen, x0 + t, y0, x0 + t + bounds.Height, y1);
+    auto clampByte = [](int v) -> BYTE {
+        if (v < 1) return 1;
+        if (v > 255) return 255;
+        return static_cast<BYTE>(v);
+    };
+
+    // Primary diagonal hatch (closer to the first fresco look).
+    {
+        Pen pen(grain, 1.0f);
+        const REAL step = 17.0f;
+        for (REAL t = -bounds.Height; t < bounds.Width + bounds.Height; t += step) {
+            g.DrawLine(&pen, x0 + t, y0, x0 + t + bounds.Height, y1);
+        }
     }
+    // Softer counter-hatch.
+    {
+        Pen pen(Color(clampByte(static_cast<int>(grain.GetA()) * 2 / 3),
+            grain.GetR(), grain.GetG(), grain.GetB()), 1.0f);
+        const REAL step = 29.0f;
+        for (REAL t = -bounds.Height; t < bounds.Width + bounds.Height; t += step) {
+            g.DrawLine(&pen, x1 - t, y0, x1 - t - bounds.Height, y1);
+        }
+    }
+    // Speckle (deterministic, no RNG allocation).
+    {
+        SolidBrush dot(Color(clampByte(static_cast<int>(grain.GetA()) / 2),
+            grain.GetR(), grain.GetG(), grain.GetB()));
+        for (int y = 0; y < static_cast<int>(bounds.Height); y += 7) {
+            for (int x = 0; x < static_cast<int>(bounds.Width); x += 9) {
+                const unsigned h = static_cast<unsigned>((x * 73856093u) ^ (y * 19349663u));
+                if ((h & 7u) == 0u) {
+                    g.FillRectangle(&dot, x0 + static_cast<REAL>(x), y0 + static_cast<REAL>(y), 1.0f, 1.0f);
+                }
+            }
+        }
+    }
+    // Edge vignette.
+    SolidBrush wash(Color(clampByte(static_cast<int>(grain.GetA())),
+        grain.GetR(), grain.GetG(), grain.GetB()));
+    g.FillRectangle(&wash, RectF(x0, y0, bounds.Width, 5.0f));
+    g.FillRectangle(&wash, RectF(x0, y1 - 5.0f, bounds.Width, 5.0f));
+    g.FillRectangle(&wash, RectF(x0, y0, 4.0f, bounds.Height));
+    g.FillRectangle(&wash, RectF(x1 - 4.0f, y0, 4.0f, bounds.Height));
 }
 
 void DrawBrandCompass(Graphics& g, float cx, float cy, float radius, Color gold, float angleDeg) {
