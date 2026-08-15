@@ -58,5 +58,6 @@ void DrawHudPlate(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
 void DrawHudCornerTicks(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
     Gdiplus::Color bronze, float tick = 7.0f);
 
+// Minimal gilt hairline mount with Renaissance corner volutes + edge fleurons.
 void DrawCanvasWell(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
-    Gdiplus::Color rim, Gdiplus::Color shadow);
+    Gdiplus::Color rim, Gdiplus::Color gilt);
