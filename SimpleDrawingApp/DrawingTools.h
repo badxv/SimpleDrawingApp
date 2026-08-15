@@ -25,12 +25,15 @@ inline bool IsShapeTool(DrawTool tool) {
 }
 
 struct AppTheme {
-    COLORREF chromeBg = RGB(243, 243, 243);
-    COLORREF chromeLine = RGB(218, 218, 218);
+    // Renaissance atelier × thin bronze HUD (warm stone, not purple/cyber).
+    COLORREF chromeBg = RGB(236, 230, 220);
+    COLORREF chromeLine = RGB(176, 148, 108);
+    COLORREF chromeDeep = RGB(220, 210, 196);
     COLORREF canvasBg = RGB(255, 255, 255);
-    COLORREF accent = RGB(0, 120, 212);
-    COLORREF text = RGB(32, 32, 32);
-    COLORREF toolSelectedBg = RGB(225, 239, 250);
+    COLORREF accent = RGB(168, 118, 48);
+    COLORREF text = RGB(42, 36, 28);
+    COLORREF toolSelectedBg = RGB(248, 236, 208);
+    COLORREF workspace = RGB(168, 158, 146);
 };
 
 // 4-connected flood fill on a 32bpp ARGB bitmap.
