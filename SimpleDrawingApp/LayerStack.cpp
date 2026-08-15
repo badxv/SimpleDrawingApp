@@ -114,20 +114,24 @@ bool LayerStack::AddLayer() {
 
 bool LayerStack::DeleteActiveLayer() {
     if (Count() <= 1) return false;
+    // Keep the special Background layer; delete content layers only.
+    if (layers_[static_cast<size_t>(active_)].isBackground) {
+        return false;
+    }
     FreeLayer(layers_[static_cast<size_t>(active_)]);
     layers_.erase(layers_.begin() + active_);
     if (active_ >= Count()) {
         active_ = Count() - 1;
-    }
-    // Ensure at least one background-like bottom layer flag if none left marked.
-    if (!layers_.empty() && active_ == 0) {
-        // keep as-is
     }
     return true;
 }
 
 bool LayerStack::MoveActiveUp() {
     if (active_ < 0 || active_ >= Count() - 1) return false;
+    // Background stays pinned at the bottom (index 0), like Photoshop.
+    if (layers_[static_cast<size_t>(active_)].isBackground) {
+        return false;
+    }
     std::swap(layers_[static_cast<size_t>(active_)], layers_[static_cast<size_t>(active_ + 1)]);
     ++active_;
     return true;
@@ -135,6 +139,13 @@ bool LayerStack::MoveActiveUp() {
 
 bool LayerStack::MoveActiveDown() {
     if (active_ <= 0 || active_ >= Count()) return false;
+    // Do not move a layer under the Background, and do not move Background itself.
+    if (layers_[static_cast<size_t>(active_)].isBackground) {
+        return false;
+    }
+    if (layers_[static_cast<size_t>(active_ - 1)].isBackground) {
+        return false;
+    }
     std::swap(layers_[static_cast<size_t>(active_)], layers_[static_cast<size_t>(active_ - 1)]);
     --active_;
     return true;
@@ -241,7 +252,9 @@ Bitmap* LayerStack::CreateComposite() const {
     if (width_ < 1 || height_ < 1) return nullptr;
     Bitmap* out = new Bitmap(width_, height_, PixelFormat32bppARGB);
     Graphics g(out);
-    g.Clear(Color(255, 255, 255, 255));
+    // Transparent clear: the pinned Background layer (or workspace chrome) provides
+    // the visible white. Content layers stay PNG-like with real alpha.
+    g.Clear(Color(0, 0, 0, 0));
     Configure(&g);
     CompositeTo(&g);
     return out;
