@@ -13,7 +13,8 @@ Sketch with pen, eraser, and fill tools; undo your work; save or load images —
 - **Shapes:** click-drag preview; hold `Shift` for square / circle / axis-aligned or 45° lines
 - **Selection:** rectangular marquee, move, Delete; **Cut / Copy / Paste** (`Ctrl+X/C/V`)
 - **Zoom:** `Ctrl` + mouse wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
-- **Undo / Redo** (stroke & fill history)
+- **Layers:** stack panel with add/delete/reorder, visibility, per-layer opacity; eraser punches transparency on non-background layers
+- **Undo / Redo** (layer-stack snapshots)
 - **New / Clear** with unsaved-change prompts
 - **Save / Open** PNG, JPG, BMP
 - **Fixed document canvas** (default 1280×720) with scrollable viewport — resizing the window no longer crops artwork
@@ -52,6 +53,7 @@ cd SimpleDrawingApp
 | Select / move | **Select**, drag a marquee; drag inside to move |
 | Cut / Copy / Paste | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` (or Edit menu) |
 | Zoom | `Ctrl` + mouse wheel, or **View** menu |
+| Layers | Right panel: `+` / `-` / Up / Dn, Visible, opacity |
 | Color | Click a swatch or **Color...** |
 | Width | Slider, box, mouse wheel, or `[` / `]` |
 | Opacity | Slider, box, or `Shift` + mouse wheel |
@@ -68,7 +70,9 @@ SimpleDrawingApp/
 ├── README.md
 └── SimpleDrawingApp/
     ├── SimpleDrawingApp.cpp   # Window, toolbar, input
-    ├── CanvasHistory.*        # Undo / redo snapshots
+    ├── CanvasHistory.*        # Legacy single-bitmap undo (unused by UI)
+    ├── LayerStack.*           # Layer list + composite
+    ├── LayerHistory.*         # Undo / redo for the full layer stack
     ├── DrawingTools.*         # Tool enum + flood fill
     ├── FileManager.*          # Image save / load
     ├── ColorPicker.*          # ChooseColor dialog
@@ -84,7 +88,7 @@ SimpleDrawingApp/
 - [x] Fixed document canvas + scroll viewport + Canvas Size
 - [x] Shape tools (line, rectangle, ellipse)
 - [x] Selection, zoom, clipboard
-- [ ] Layers and transparency
+- [x] Layers and transparency
 
 ## Contributing
 

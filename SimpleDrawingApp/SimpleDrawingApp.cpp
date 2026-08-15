@@ -4,7 +4,8 @@
 #include "SimpleDrawingApp.h"
 #include "FileManager.h"
 #include "ColorPicker.h"
-#include "CanvasHistory.h"
+#include "LayerHistory.h"
+#include "LayerStack.h"
 #include "DrawingTools.h"
 #include "Resource.h"
 
@@ -29,6 +30,7 @@ const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
 constexpr int TOOLBAR_HEIGHT = 92;
 constexpr int STATUS_HEIGHT = 24;
+constexpr int LAYER_PANEL_WIDTH = 176;
 constexpr int DEFAULT_DOC_WIDTH = 1280;
 constexpr int DEFAULT_DOC_HEIGHT = 720;
 constexpr int MIN_DOC_SIZE = 1;
@@ -64,7 +66,8 @@ const CanvasPreset kPresets[] = {
 };
 
 AppTheme gTheme;
-CanvasHistory gHistory;
+LayerStack gLayers;
+LayerHistory gHistory;
 HFONT gUiFont = nullptr;
 HBRUSH gChromeBrush = nullptr;
 HACCEL gAccel = nullptr;
@@ -75,6 +78,13 @@ HWND hwndPenWidthBox = nullptr;
 HWND hwndOpacitySlider = nullptr;
 HWND hwndOpacityBox = nullptr;
 HWND hwndStatus = nullptr;
+HWND hwndLayerList = nullptr;
+HWND hwndLayerAdd = nullptr;
+HWND hwndLayerDel = nullptr;
+HWND hwndLayerUp = nullptr;
+HWND hwndLayerDown = nullptr;
+HWND hwndLayerVisible = nullptr;
+HWND hwndLayerOpacity = nullptr;
 HWND hwndToolButtons[7] = {};
 HWND hwndSwatches[8] = {};
 HWND hwndActionButtons[7] = {};
@@ -83,6 +93,7 @@ POINT lastPoint = {};
 POINT shapeStart = {};
 bool isDrawing = false;
 bool suppressEditNotify = false;
+bool suppressLayerNotify = false;
 
 int docWidth = DEFAULT_DOC_WIDTH;
 int docHeight = DEFAULT_DOC_HEIGHT;
@@ -108,11 +119,11 @@ struct SelectionState {
 
 SelectionState gSel;
 Bitmap* gClipboardBmp = nullptr;
-
-Bitmap* canvasBitmap = nullptr;
-Graphics* canvasGraphics = nullptr;
+Bitmap* compositeCache = nullptr;
+bool compositeDirty = true;
 Bitmap* strokeLayer = nullptr;
 Graphics* strokeGraphics = nullptr;
+
 WNDPROC gOldTrackbarProc = nullptr;
 ULONG_PTR gdiplusToken = 0;
 }
@@ -199,7 +210,12 @@ void UpdateStatusBar(HWND hwnd) {
     char part1[64];
     char part2[80];
     sprintf_s(part0, "Tool: %s", toolName);
-    sprintf_s(part1, "Size: %d x %d  %d%%", docWidth, docHeight, zoomPct);
+    if (const Layer* layer = gLayers.ActiveLayer()) {
+        sprintf_s(part1, "%s | %d x %d  %d%%", layer->name.c_str(), docWidth, docHeight, zoomPct);
+    }
+    else {
+        sprintf_s(part1, "Size: %d x %d  %d%%", docWidth, docHeight, zoomPct);
+    }
     sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");
 
     SendMessageA(hwndStatus, SB_SETTEXTA, 0, (LPARAM)part0);
@@ -261,7 +277,12 @@ static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY);
 static void UpdateScrollBars();
 static void SyncDocSizeFromBitmap();
 static void InvalidateCanvas();
+static void InvalidateComposite();
+static void DestroyCompositeCache();
+static Bitmap* GetCompositeBitmap();
 static void LayoutViewport(HWND hwnd);
+static void LayoutLayerPanel(HWND hwnd);
+static void RefreshLayerList();
 static void ClearSelection(bool stampFloating);
 static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink);
 static INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
@@ -269,26 +290,40 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 static int gCanvasDlgWidth = 0;
 static int gCanvasDlgHeight = 0;
 
+static int MaxInt(int a, int b) { return (a > b) ? a : b; }
+static float MaxFloat(float a, float b) { return (a > b) ? a : b; }
+
 static void SyncDocSizeFromBitmap() {
-    if (!canvasBitmap) return;
-    docWidth = static_cast<int>(canvasBitmap->GetWidth());
-    docHeight = static_cast<int>(canvasBitmap->GetHeight());
-    if (docWidth < 1) docWidth = 1;
-    if (docHeight < 1) docHeight = 1;
+    docWidth = MaxInt(1, gLayers.Width());
+    docHeight = MaxInt(1, gLayers.Height());
 }
 
 static void EnsureCanvas(HWND hwnd) {
-    if (canvasBitmap) return;
-
-    canvasBitmap = new Bitmap(docWidth, docHeight, PixelFormat32bppARGB);
-    canvasGraphics = Graphics::FromImage(canvasBitmap);
-    canvasGraphics->Clear(GdiplusFromColor(gTheme.canvasBg));
-    ConfigureCanvasGraphics(canvasGraphics);
+    if (gLayers.Count() > 0) return;
+    gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
+    InvalidateComposite();
     (void)hwnd;
 }
 
-static int MaxInt(int a, int b) { return (a > b) ? a : b; }
-static float MaxFloat(float a, float b) { return (a > b) ? a : b; }
+static void DestroyCompositeCache() {
+    delete compositeCache;
+    compositeCache = nullptr;
+    compositeDirty = true;
+}
+
+static void InvalidateComposite() {
+    compositeDirty = true;
+}
+
+static Bitmap* GetCompositeBitmap() {
+    if (!compositeDirty && compositeCache) {
+        return compositeCache;
+    }
+    delete compositeCache;
+    compositeCache = gLayers.CreateComposite();
+    compositeDirty = false;
+    return compositeCache;
+}
 
 static void UpdateScrollBars() {
     if (!hwndViewport) return;
@@ -333,12 +368,90 @@ static void LayoutViewport(HWND hwnd) {
     GetClientRect(hwnd, &client);
     const int x = 0;
     const int y = toolbarH;
-    const int w = client.right - client.left;
+    const int w = MaxInt(1, client.right - client.left - LAYER_PANEL_WIDTH);
     int h = client.bottom - client.top - toolbarH - statusH;
     if (h < 1) h = 1;
 
     MoveWindow(hwndViewport, x, y, w, h, TRUE);
+    LayoutLayerPanel(hwnd);
     UpdateScrollBars();
+}
+
+static void LayoutLayerPanel(HWND hwnd) {
+    if (!hwndLayerList) return;
+
+    int toolbarH = 0, statusH = 0;
+    GetChromeMetrics(hwnd, toolbarH, statusH);
+
+    RECT client = {};
+    GetClientRect(hwnd, &client);
+    const int panelX = client.right - LAYER_PANEL_WIDTH;
+    const int panelY = toolbarH;
+    const int panelH = MaxInt(1, client.bottom - client.top - toolbarH - statusH);
+
+    const int btnH = 26;
+    const int pad = 8;
+    int y = panelY + pad;
+
+    if (hwndLayerAdd) MoveWindow(hwndLayerAdd, panelX + pad, y, 36, btnH, TRUE);
+    if (hwndLayerDel) MoveWindow(hwndLayerDel, panelX + pad + 40, y, 36, btnH, TRUE);
+    if (hwndLayerUp) MoveWindow(hwndLayerUp, panelX + pad + 80, y, 36, btnH, TRUE);
+    if (hwndLayerDown) MoveWindow(hwndLayerDown, panelX + pad + 120, y, 36, btnH, TRUE);
+    y += btnH + 6;
+
+    if (hwndLayerVisible) {
+        MoveWindow(hwndLayerVisible, panelX + pad, y, LAYER_PANEL_WIDTH - pad * 2, btnH, TRUE);
+    }
+    y += btnH + 6;
+
+    const int listH = MaxInt(60, panelH - (y - panelY) - 56);
+    MoveWindow(hwndLayerList, panelX + pad, y, LAYER_PANEL_WIDTH - pad * 2, listH, TRUE);
+    y += listH + 6;
+
+    if (hwndLayerOpacity) {
+        MoveWindow(hwndLayerOpacity, panelX + pad, y, LAYER_PANEL_WIDTH - pad * 2, 30, TRUE);
+    }
+}
+
+static void RefreshLayerList() {
+    if (!hwndLayerList) return;
+    suppressLayerNotify = true;
+    SendMessageA(hwndLayerList, LB_RESETCONTENT, 0, 0);
+
+    // Show topmost layer first in the list.
+    for (int i = gLayers.Count() - 1; i >= 0; --i) {
+        const Layer* layer = gLayers.At(i);
+        if (!layer) continue;
+        char label[96];
+        sprintf_s(label, "%s%s  %d%%",
+            layer->visible ? "" : "[H] ",
+            layer->name.c_str(),
+            layer->opacity);
+        const int idx = static_cast<int>(SendMessageA(hwndLayerList, LB_ADDSTRING, 0, (LPARAM)label));
+        SendMessageA(hwndLayerList, LB_SETITEMDATA, idx, i);
+    }
+
+    // Select the row that matches active layer.
+    const int count = static_cast<int>(SendMessageA(hwndLayerList, LB_GETCOUNT, 0, 0));
+    for (int row = 0; row < count; ++row) {
+        const int layerIndex = static_cast<int>(SendMessageA(hwndLayerList, LB_GETITEMDATA, row, 0));
+        if (layerIndex == gLayers.ActiveIndex()) {
+            SendMessageA(hwndLayerList, LB_SETCURSEL, row, 0);
+            break;
+        }
+    }
+
+    if (hwndLayerVisible) {
+        const Layer* active = gLayers.ActiveLayer();
+        const bool visible = active ? active->visible : true;
+        SendMessageA(hwndLayerVisible, BM_SETCHECK, visible ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
+    if (hwndLayerOpacity) {
+        const Layer* active = gLayers.ActiveLayer();
+        const int opacity = active ? active->opacity : 100;
+        SendMessage(hwndLayerOpacity, TBM_SETPOS, TRUE, opacity);
+    }
+    suppressLayerNotify = false;
 }
 
 static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink) {
@@ -372,32 +485,20 @@ static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHist
     ClearSelection(false);
 
     if (pushHistory) {
-        gHistory.Push(canvasBitmap);
+        gHistory.Push(gLayers);
     }
 
-    Bitmap* newBitmap = new Bitmap(newWidth, newHeight, PixelFormat32bppARGB);
-    Graphics* newGraphics = Graphics::FromImage(newBitmap);
-    newGraphics->Clear(GdiplusFromColor(gTheme.canvasBg));
-    ConfigureCanvasGraphics(newGraphics);
-
-    if (canvasBitmap) {
-        // Grow pads white from top-left; shrink crops from top-left.
-        newGraphics->DrawImage(canvasBitmap, 0, 0);
-    }
-
-    delete canvasGraphics;
-    delete canvasBitmap;
-    canvasBitmap = newBitmap;
-    canvasGraphics = newGraphics;
-
+    gLayers.Resize(newWidth, newHeight, gTheme.canvasBg);
     docWidth = newWidth;
     docHeight = newHeight;
     scrollX = 0;
     scrollY = 0;
+    InvalidateComposite();
     UpdateScrollBars();
     MarkDirty(hwnd);
     InvalidateCanvas();
     UpdateStatusBar(hwnd);
+    RefreshLayerList();
     return true;
 }
 
@@ -407,9 +508,10 @@ static void ClearCanvas(HWND hwnd, bool pushHistory) {
     isDrawing = false;
     ClearSelection(false);
     if (pushHistory) {
-        gHistory.Push(canvasBitmap);
+        gHistory.Push(gLayers);
     }
-    canvasGraphics->Clear(GdiplusFromColor(gTheme.canvasBg));
+    gLayers.ClearAllContent(gTheme.canvasBg);
+    InvalidateComposite();
     MarkDirty(hwnd);
     InvalidateCanvas();
 }
@@ -455,8 +557,10 @@ static void DestroySelFloat() {
 }
 
 static void ClearSelection(bool stampFloating) {
-    if (stampFloating && gSel.isFloating && gSel.floatBmp && canvasGraphics) {
-        canvasGraphics->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+    Graphics* ag = gLayers.ActiveGraphics();
+    if (stampFloating && gSel.isFloating && gSel.floatBmp && ag) {
+        ag->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+        InvalidateComposite();
     }
     DestroySelFloat();
     gSel.hasMarquee = false;
@@ -496,22 +600,35 @@ static Bitmap* CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
 }
 
 static void LiftSelection() {
-    if (!gSel.hasMarquee || gSel.isFloating || !canvasBitmap || !canvasGraphics) return;
+    Bitmap* ab = gLayers.ActiveBitmap();
+    Graphics* ag = gLayers.ActiveGraphics();
+    if (!gSel.hasMarquee || gSel.isFloating || !ab || !ag) return;
     if (gSel.w < 1 || gSel.h < 1) return;
 
     DestroySelFloat();
-    gSel.floatBmp = CloneBitmapRect(canvasBitmap, gSel.x, gSel.y, gSel.w, gSel.h);
+    gSel.floatBmp = CloneBitmapRect(ab, gSel.x, gSel.y, gSel.w, gSel.h);
     if (!gSel.floatBmp) return;
 
-    SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
-    canvasGraphics->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+    const Layer* layer = gLayers.ActiveLayer();
+    if (layer && layer->isBackground) {
+        SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
+        ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+    } else {
+        ag->SetCompositingMode(CompositingModeSourceCopy);
+        SolidBrush brush(Color(0, 0, 0, 0));
+        ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+        ag->SetCompositingMode(CompositingModeSourceOver);
+    }
     gSel.isFloating = true;
+    InvalidateComposite();
 }
 
 static void StampFloatingSelection() {
-    if (!gSel.isFloating || !gSel.floatBmp || !canvasGraphics) return;
-    canvasGraphics->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+    Graphics* ag = gLayers.ActiveGraphics();
+    if (!gSel.isFloating || !gSel.floatBmp || !ag) return;
+    ag->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
     DestroySelFloat();
+    InvalidateComposite();
 }
 
 static Bitmap* CaptureSelectionPixels() {
@@ -519,7 +636,7 @@ static Bitmap* CaptureSelectionPixels() {
     if (gSel.isFloating && gSel.floatBmp) {
         return CloneBitmapRect(gSel.floatBmp, 0, 0, gSel.w, gSel.h);
     }
-    return CloneBitmapRect(canvasBitmap, gSel.x, gSel.y, gSel.w, gSel.h);
+    return CloneBitmapRect(gLayers.ActiveBitmap(), gSel.x, gSel.y, gSel.w, gSel.h);
 }
 
 static void SetInternalClipboard(Bitmap* bmp) {
@@ -677,17 +794,29 @@ static void DoCopy(HWND hwnd) {
 static void DoDeleteSelection(HWND hwnd) {
     if (!gSel.hasMarquee) return;
     EnsureCanvas(hwnd);
-    gHistory.Push(canvasBitmap);
+    gHistory.Push(gLayers);
     if (gSel.isFloating) {
         DestroySelFloat();
         gSel.hasMarquee = false;
         gSel.w = gSel.h = 0;
     }
     else {
-        SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
-        canvasGraphics->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+        Graphics* ag = gLayers.ActiveGraphics();
+        if (ag) {
+            const Layer* layer = gLayers.ActiveLayer();
+            if (layer && layer->isBackground) {
+                SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
+                ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+            } else {
+                ag->SetCompositingMode(CompositingModeSourceCopy);
+                SolidBrush brush(Color(0, 0, 0, 0));
+                ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+                ag->SetCompositingMode(CompositingModeSourceOver);
+            }
+        }
         gSel.hasMarquee = false;
         gSel.w = gSel.h = 0;
+        InvalidateComposite();
     }
     MarkDirty(hwnd);
     InvalidateCanvas();
@@ -724,7 +853,7 @@ static void DoPaste(HWND hwnd) {
     if (pasteX < 0) pasteX = 0;
     if (pasteY < 0) pasteY = 0;
 
-    gHistory.Push(canvasBitmap);
+    gHistory.Push(gLayers);
     gSel.hasMarquee = true;
     gSel.isFloating = true;
     gSel.floatBmp = src;
@@ -897,7 +1026,9 @@ static void DoSave(HWND hwnd) {
     ofn.lpstrDefExt = "png";
 
     if (GetSaveFileNameA(&ofn)) {
-        if (SaveCanvasToFile(canvasBitmap, filePath)) {
+        ClearSelection(true);
+        Bitmap* flat = GetCompositeBitmap();
+        if (flat && SaveCanvasToFile(flat, filePath)) {
             MarkClean(hwnd);
         }
         else {
@@ -922,14 +1053,21 @@ static void DoOpen(HWND hwnd) {
         DestroyStrokeLayer();
         isDrawing = false;
         ClearSelection(false);
-        if (LoadImageFromFile(filePath, canvasBitmap, canvasGraphics)) {
-            ConfigureCanvasGraphics(canvasGraphics);
+
+        Bitmap* loaded = nullptr;
+        Graphics* loadedG = nullptr;
+        if (LoadImageFromFile(filePath, loaded, loadedG)) {
+            delete loadedG;
+            gLayers.ReplaceWithImage(loaded);
+            delete loaded;
             SyncDocSizeFromBitmap();
             scrollX = 0;
             scrollY = 0;
+            InvalidateComposite();
             UpdateScrollBars();
             gHistory.Clear();
             MarkClean(hwnd);
+            RefreshLayerList();
             InvalidateCanvas();
             UpdateStatusBar(hwnd);
         }
@@ -945,10 +1083,12 @@ static void DoNew(HWND hwnd) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
-    // Keep current document size; clear content only (Paint-like New).
-    canvasGraphics->Clear(GdiplusFromColor(gTheme.canvasBg));
+    // Keep current document size; reset to a single background layer.
+    gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
     gHistory.Clear();
+    InvalidateComposite();
     MarkClean(hwnd);
+    RefreshLayerList();
     InvalidateCanvas();
     UpdateStatusBar(hwnd);
 }
@@ -958,11 +1098,12 @@ static void DoUndo(HWND hwnd) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
-    if (gHistory.Undo(canvasBitmap, canvasGraphics)) {
-        ConfigureCanvasGraphics(canvasGraphics);
+    if (gHistory.Undo(gLayers)) {
         SyncDocSizeFromBitmap();
+        InvalidateComposite();
         UpdateScrollBars();
         MarkDirty(hwnd);
+        RefreshLayerList();
         InvalidateCanvas();
         UpdateStatusBar(hwnd);
     }
@@ -973,11 +1114,12 @@ static void DoRedo(HWND hwnd) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
-    if (gHistory.Redo(canvasBitmap, canvasGraphics)) {
-        ConfigureCanvasGraphics(canvasGraphics);
+    if (gHistory.Redo(gLayers)) {
         SyncDocSizeFromBitmap();
+        InvalidateComposite();
         UpdateScrollBars();
         MarkDirty(hwnd);
+        RefreshLayerList();
         InvalidateCanvas();
         UpdateStatusBar(hwnd);
     }
@@ -992,10 +1134,10 @@ static void DestroyStrokeLayer() {
 
 static void BeginStrokeLayer() {
     DestroyStrokeLayer();
-    if (!canvasBitmap) return;
+    if (!gLayers.ActiveBitmap()) return;
 
-    const int width = static_cast<int>(canvasBitmap->GetWidth());
-    const int height = static_cast<int>(canvasBitmap->GetHeight());
+    const int width = gLayers.Width();
+    const int height = gLayers.Height();
     strokeLayer = new Bitmap(width, height, PixelFormat32bppARGB);
     strokeGraphics = Graphics::FromImage(strokeLayer);
     strokeGraphics->Clear(Color(0, 0, 0, 0));
@@ -1007,7 +1149,25 @@ static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (!target) return;
 
     // Draw fully opaque ink onto the stroke layer; opacity is applied once when compositing.
-    COLORREF strokeColor = (currentTool == DrawTool::Eraser) ? gTheme.canvasBg : penColor;
+    // Eraser on non-background layers punches transparent holes via SourceCopy on commit.
+    const Layer* layer = gLayers.ActiveLayer();
+    const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
+    COLORREF strokeColor = (currentTool == DrawTool::Eraser)
+        ? (eraseTransparent ? RGB(0, 0, 0) : gTheme.canvasBg)
+        : penColor;
+    if (eraseTransparent) {
+        target->SetCompositingMode(CompositingModeSourceCopy);
+        Pen pen(Color(255, 0, 0, 0), static_cast<REAL>(penWidth)); // alpha marker stored in A
+        // Use opaque magenta as erase mask; commit will clear those pixels.
+        pen.SetColor(Color(255, 255, 0, 255));
+        pen.SetStartCap(LineCapRound);
+        pen.SetEndCap(LineCapRound);
+        pen.SetLineJoin(LineJoinRound);
+        target->DrawLine(&pen, x0, y0, x1, y1);
+        target->SetCompositingMode(CompositingModeSourceOver);
+        return;
+    }
+
     Pen pen(GdiplusFromColor(strokeColor, 255), static_cast<REAL>(penWidth));
     pen.SetStartCap(LineCapRound);
     pen.SetEndCap(LineCapRound);
@@ -1112,13 +1272,60 @@ static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
         &attrs);
 }
 
+static void ApplyTransparentEraseMask(Graphics* dest, Bitmap* mask) {
+    if (!dest || !mask) return;
+    Bitmap* target = gLayers.ActiveBitmap();
+    if (!target) return;
+
+    const int width = static_cast<int>(mask->GetWidth());
+    const int height = static_cast<int>(mask->GetHeight());
+    BitmapData maskData = {};
+    BitmapData targetData = {};
+    Rect lockRect(0, 0, width, height);
+    if (mask->LockBits(&lockRect, ImageLockModeRead, PixelFormat32bppARGB, &maskData) != Ok) return;
+    if (target->LockBits(&lockRect, ImageLockModeWrite, PixelFormat32bppARGB, &targetData) != Ok) {
+        mask->UnlockBits(&maskData);
+        return;
+    }
+
+    auto* maskPx = static_cast<BYTE*>(maskData.Scan0);
+    auto* targetPx = static_cast<BYTE*>(targetData.Scan0);
+    for (int y = 0; y < height; ++y) {
+        BYTE* mrow = maskPx + y * maskData.Stride;
+        BYTE* trow = targetPx + y * targetData.Stride;
+        for (int x = 0; x < width; ++x) {
+            BYTE* m = mrow + x * 4;
+            if (m[3] == 0) continue;
+            // Magenta erase marker: punch to transparent.
+            if (m[2] == 255 && m[1] == 0 && m[0] == 255) {
+                BYTE* t = trow + x * 4;
+                t[0] = t[1] = t[2] = t[3] = 0;
+            }
+        }
+    }
+
+    target->UnlockBits(&targetData);
+    mask->UnlockBits(&maskData);
+    (void)dest;
+}
+
 static void CommitStrokeLayer() {
-    if (!strokeLayer || !canvasGraphics) {
+    Graphics* ag = gLayers.ActiveGraphics();
+    if (!strokeLayer || !ag) {
         DestroyStrokeLayer();
         return;
     }
-    DrawStrokeLayerWithOpacity(canvasGraphics, 0, 0);
+
+    const Layer* layer = gLayers.ActiveLayer();
+    const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
+    if (eraseTransparent) {
+        ApplyTransparentEraseMask(ag, strokeLayer);
+    }
+    else {
+        DrawStrokeLayerWithOpacity(ag, 0, 0);
+    }
     DestroyStrokeLayer();
+    InvalidateComposite();
 }
 
 static int ScrollByMessage(HWND hwnd, int bar, WPARAM wParam, int current, int maxScroll) {
@@ -1223,7 +1430,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
         if (currentTool == DrawTool::Select) {
             if (SelectionHitTest(docX, docY)) {
-                gHistory.Push(canvasBitmap);
+                gHistory.Push(gLayers);
                 if (!gSel.isFloating) {
                     LiftSelection();
                 }
@@ -1256,15 +1463,16 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         ClearSelection(true);
 
         if (currentTool == DrawTool::Fill) {
-            gHistory.Push(canvasBitmap);
-            if (FloodFillCanvas(canvasBitmap, docX, docY, penColor, OpacityToAlpha())) {
+            gHistory.Push(gLayers);
+            if (FloodFillCanvas(gLayers.ActiveBitmap(), docX, docY, penColor, OpacityToAlpha())) {
+                InvalidateComposite();
                 MarkDirty(parent);
                 InvalidateCanvas();
             }
             break;
         }
 
-        gHistory.Push(canvasBitmap);
+        gHistory.Push(gLayers);
         BeginStrokeLayer();
         isDrawing = true;
         lastPoint.x = docX;
@@ -1398,8 +1606,9 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                 const int scaledH = ScaledContentHeight();
                 const Rect dest(-scrollX, -scrollY, scaledW, scaledH);
 
-                if (canvasBitmap) {
-                    g.DrawImage(canvasBitmap, dest);
+                Bitmap* flat = GetCompositeBitmap();
+                if (flat) {
+                    g.DrawImage(flat, dest);
                 }
                 if (strokeLayer) {
                     const REAL alpha = static_cast<REAL>(OpacityToAlpha()) / 255.0f;
@@ -1566,12 +1775,45 @@ static void DrawToolbarBackground(HDC hdc, const RECT& client) {
     toolbar.bottom = TOOLBAR_HEIGHT;
     FillRect(hdc, &toolbar, gChromeBrush);
 
+    RECT panel = client;
+    panel.left = client.right - LAYER_PANEL_WIDTH;
+    panel.top = TOOLBAR_HEIGHT;
+    FillRect(hdc, &panel, gChromeBrush);
+
     HPEN pen = CreatePen(PS_SOLID, 1, gTheme.chromeLine);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, 0, TOOLBAR_HEIGHT - 1, NULL);
     LineTo(hdc, client.right, TOOLBAR_HEIGHT - 1);
+    MoveToEx(hdc, panel.left, TOOLBAR_HEIGHT, NULL);
+    LineTo(hdc, panel.left, client.bottom);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
+}
+
+static void CreateLayerPanel(HWND hwnd) {
+    hwndLayerAdd = CreateToolbarButton(hwnd, IDC_LAYER_ADD, "+", 0, 0, 36, 26, false);
+    hwndLayerDel = CreateToolbarButton(hwnd, IDC_LAYER_DEL, "-", 0, 0, 36, 26, false);
+    hwndLayerUp = CreateToolbarButton(hwnd, IDC_LAYER_UP, "Up", 0, 0, 36, 26, false);
+    hwndLayerDown = CreateToolbarButton(hwnd, IDC_LAYER_DOWN, "Dn", 0, 0, 36, 26, false);
+
+    hwndLayerVisible = CreateWindowA("BUTTON", "Visible",
+        WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+        0, 0, 100, 26, hwnd, (HMENU)(INT_PTR)IDC_LAYER_VISIBLE, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(hwndLayerVisible);
+
+    hwndLayerList = CreateWindowExA(WS_EX_CLIENTEDGE, "LISTBOX", "",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+        0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)IDC_LAYER_LIST, GetModuleHandle(NULL), NULL);
+    ApplyUiFont(hwndLayerList);
+
+    hwndLayerOpacity = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
+        WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
+        0, 0, 100, 30, hwnd, (HMENU)(INT_PTR)IDC_LAYER_OPACITY, GetModuleHandle(NULL), NULL);
+    SendMessage(hwndLayerOpacity, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
+    SendMessage(hwndLayerOpacity, TBM_SETPOS, TRUE, 100);
+    SubclassTrackbarWheel(hwndLayerOpacity);
+
+    RefreshLayerList();
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -1587,6 +1829,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         gChromeBrush = CreateSolidBrush(gTheme.chromeBg);
 
         CreateToolbar(hwnd);
+        CreateLayerPanel(hwnd);
 
         hwndStatus = CreateStatusWindowA(WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, "", hwnd, 1);
         ApplyUiFont(hwndStatus);
@@ -1604,6 +1847,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             NULL);
 
         EnsureCanvas(hwnd);
+        RefreshLayerList();
         LayoutViewport(hwnd);
         UpdateStatusBar(hwnd);
         UpdateWindowTitle(hwnd);
@@ -1661,6 +1905,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         else if ((HWND)lParam == hwndOpacitySlider) {
             penOpacity = static_cast<int>(SendMessage(hwndOpacitySlider, TBM_GETPOS, 0, 0));
             UpdateOpacityDisplay();
+            UpdateStatusBar(hwnd);
+        }
+        else if ((HWND)lParam == hwndLayerOpacity) {
+            if (suppressLayerNotify) break;
+            const int opacity = static_cast<int>(SendMessage(hwndLayerOpacity, TBM_GETPOS, 0, 0));
+            gLayers.SetActiveOpacity(opacity);
+            InvalidateComposite();
+            RefreshLayerList();
+            MarkDirty(hwnd);
+            InvalidateCanvas();
             UpdateStatusBar(hwnd);
         }
         break;
@@ -1737,6 +1991,73 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDC_TOOL_SELECT:
             SetActiveTool(DrawTool::Select);
             UpdateStatusBar(hwnd);
+            break;
+        case IDC_LAYER_ADD:
+            ClearSelection(true);
+            gHistory.Push(gLayers);
+            if (gLayers.AddLayer()) {
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
+            break;
+        case IDC_LAYER_DEL:
+            ClearSelection(true);
+            gHistory.Push(gLayers);
+            if (gLayers.DeleteActiveLayer()) {
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
+            break;
+        case IDC_LAYER_UP:
+            ClearSelection(true);
+            gHistory.Push(gLayers);
+            if (gLayers.MoveActiveUp()) {
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+            }
+            break;
+        case IDC_LAYER_DOWN:
+            ClearSelection(true);
+            gHistory.Push(gLayers);
+            if (gLayers.MoveActiveDown()) {
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+            }
+            break;
+        case IDC_LAYER_VISIBLE:
+            if (suppressLayerNotify) break;
+            {
+                const bool checked = SendMessageA(hwndLayerVisible, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                gHistory.Push(gLayers);
+                gLayers.SetActiveVisible(checked);
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+            }
+            break;
+        case IDC_LAYER_LIST:
+            if (suppressLayerNotify) break;
+            if (notifyCode == LBN_SELCHANGE) {
+                const int row = static_cast<int>(SendMessageA(hwndLayerList, LB_GETCURSEL, 0, 0));
+                if (row >= 0) {
+                    const int layerIndex = static_cast<int>(SendMessageA(hwndLayerList, LB_GETITEMDATA, row, 0));
+                    ClearSelection(true);
+                    gLayers.SetActiveIndex(layerIndex);
+                    RefreshLayerList();
+                    UpdateStatusBar(hwnd);
+                }
+            }
             break;
         case IDM_CUT:
             DoCut(hwnd);
@@ -1883,10 +2204,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         delete gClipboardBmp;
         gClipboardBmp = nullptr;
         gHistory.Clear();
-        delete canvasGraphics;
-        delete canvasBitmap;
-        canvasGraphics = nullptr;
-        canvasBitmap = nullptr;
+        DestroyCompositeCache();
+        gLayers.Destroy();
         hwndViewport = nullptr;
         if (gUiFont) {
             DeleteObject(gUiFont);
@@ -1940,7 +2259,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     HWND hwnd = CreateWindowExA(0, CLASS_NAME, "Simple Drawing App",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1100, 720,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1280, 760,
         NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
