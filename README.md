@@ -43,6 +43,7 @@ Made with the same building blocks the app exposes — gradients, ellipses, poly
 - **Canvas Size…** (`Image` menu or `Ctrl+E`) to change document dimensions; open sets size to the loaded image
 - Mouse capture, status bar with live size + zoom
 - Modern light chrome + dark title bar (Windows 10/11)
+- Renaissance atelier chrome: left tool rail, top actions, bottom size/opacity, icon buttons
 - Keyboard shortcuts: `Ctrl+N/O/S/E/A/X/C/V`, `Ctrl+Z/Y`, `Del`, `Esc`
 
 ## Requirements
@@ -97,6 +98,7 @@ SimpleDrawingApp/
     ├── LayerStack.*           # Layer list + composite
     ├── LayerHistory.*         # Undo / redo for the full layer stack
     ├── DrawingTools.*         # Tool enum + flood fill
+    ├── UiChrome.*             # Icon drawing + owner-draw chrome buttons
     ├── FileManager.*          # Image save / load
     ├── ColorPicker.*          # ChooseColor dialog
     └── Resource.h / .rc       # Menu, accelerators, About
@@ -112,6 +114,7 @@ SimpleDrawingApp/
 - [x] Shape tools (line, rectangle, ellipse)
 - [x] Selection, zoom, clipboard
 - [x] Layers and transparency
+- [x] Icon tool rail + atelier chrome layout
 
 ## Contributing
 
