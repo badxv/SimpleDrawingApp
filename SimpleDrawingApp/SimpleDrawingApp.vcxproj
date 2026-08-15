@@ -140,6 +140,8 @@
     <ClInclude Include="DrawingTools.h" />
     <ClInclude Include="FileManager.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="LayerHistory.h" />
+    <ClInclude Include="LayerStack.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="SimpleDrawingApp.h" />
     <ClInclude Include="targetver.h" />
@@ -149,6 +151,8 @@
     <ClCompile Include="ColorPicker.cpp" />
     <ClCompile Include="DrawingTools.cpp" />
     <ClCompile Include="FileManager.cpp" />
+    <ClCompile Include="LayerHistory.cpp" />
+    <ClCompile Include="LayerStack.cpp" />
     <ClCompile Include="SimpleDrawingApp.cpp" />
   </ItemGroup>
   <ItemGroup>
