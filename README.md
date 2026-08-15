@@ -117,6 +117,7 @@ SimpleDrawingApp/
 - [x] Icon tool rail + atelier chrome layout
 - [x] Fresco washes + chrome motion (compass, tool pulse)
 - [x] Idle chrome motion without draw/resize flicker (cached fresco + overlay)
+- [x] Brand mark as dedicated child window (single BitBlt; no parent overdraw)
 
 ## Contributing
 
