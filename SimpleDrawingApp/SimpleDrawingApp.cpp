@@ -630,7 +630,7 @@ static void LayoutChromeControls(HWND hwnd) {
 
     // Left tool rail (top → bottom).
     const int railX = (chrome.railW - ICON_BTN) / 2;
-    int y = chrome.topH + 10;
+    int y = chrome.topH + 14;
     const int order[7] = { 0, 1, 2, 6, 3, 4, 5 }; // Pen Eraser Fill Select Line Rect Ellipse
     for (int i = 0; i < 7; ++i) {
         const int idx = order[i];
@@ -2106,8 +2106,6 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
         SetBkMode(hdcCaps, TRANSPARENT);
         SetTextColor(hdcCaps, gTheme.accentDeep);
         TextOutA(hdcCaps, width - chrome.layerW + 10, chrome.topH + 4, "LAYERS", 6);
-        // Vertical-feeling label for tools via short top mark on rail.
-        TextOutA(hdcCaps, 8, chrome.topH + 6, "TOOLS", 5);
         TextOutA(hdcCaps, chrome.railW + 14, height - chrome.statusH - chrome.bottomH + 6, "INSTRUMENT", 10);
         if (old) SelectObject(hdcCaps, old);
         g.ReleaseHDC(hdcCaps);
