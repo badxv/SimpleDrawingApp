@@ -290,11 +290,6 @@ static void InvalidateActiveToolButton() {
     }
 }
 
-static RECT BrandStripInvalidateRect() {
-    RECT r = { 0, 0, BRAND_STRIP_W, TOPBAR_HEIGHT };
-    return r;
-}
-
 static bool ShouldRunIdleMotion(HWND hwnd) {
     if (!hwnd || gUiSizing) return false;
     if (IsIconic(hwnd) || !IsWindowVisible(hwnd)) return false;
