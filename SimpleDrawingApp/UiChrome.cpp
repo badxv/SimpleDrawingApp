@@ -351,15 +351,177 @@ void DrawHudPlate(Graphics& g, const RectF& bounds, Color fill, Color bronze, bo
     DrawHudCornerTicks(g, bounds, bronze, 6.0f);
 }
 
-void DrawCanvasWell(Graphics& g, const RectF& bounds, Color rim, Color shadow) {
-    // Soft outer shadow (atelier recess).
-    SolidBrush sh(shadow);
-    g.FillRectangle(&sh, RectF(bounds.X + 2.0f, bounds.Y + 2.0f, bounds.Width, bounds.Height));
-    Pen p1(rim, 1.4f);
-    Pen p2(Color(160, rim.GetR(), rim.GetG(), rim.GetB()), 1.0f);
-    g.DrawRectangle(&p1, bounds);
-    g.DrawRectangle(&p2, RectF(bounds.X + 1.5f, bounds.Y + 1.5f, bounds.Width - 3.0f, bounds.Height - 3.0f));
-    DrawHudCornerTicks(g, bounds, rim, 9.0f);
+namespace {
+
+void StrokeRound(Pen& pen) {
+    pen.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
+    pen.SetLineJoin(LineJoinRound);
+}
+
+// Corner cartouche: L-hairline + double volute + leaf, sized for the mount band.
+void DrawCornerVolute(Graphics& g, float cx, float cy, float sx, float sy, Color gilt) {
+    Pen arm(Color(230, gilt.GetR(), gilt.GetG(), gilt.GetB()), 1.15f);
+    StrokeRound(arm);
+    const float reach = 16.0f;
+    g.DrawLine(&arm, cx + sx * 0.5f, cy, cx + sx * reach, cy);
+    g.DrawLine(&arm, cx, cy + sy * 0.5f, cx, cy + sy * reach);
+
+    // Outer acanthus scroll
+    Pen scroll(Color(210, gilt.GetR(), gilt.GetG(), gilt.GetB()), 1.25f);
+    StrokeRound(scroll);
+    GraphicsPath outer;
+    const float x0 = cx + sx * 2.0f;
+    const float y0 = cy + sy * 2.0f;
+    outer.AddBezier(
+        PointF(cx + sx * 1.0f, cy + sy * 10.0f),
+        PointF(x0 + sx * 0.5f, y0 + sy * 8.5f),
+        PointF(x0 + sx * 8.5f, y0 + sy * 8.0f),
+        PointF(x0 + sx * 9.0f, y0 + sy * 2.5f));
+    g.DrawPath(&scroll, &outer);
+
+    // Inner counter-scroll
+    Pen inner(Color(190, gilt.GetR(), gilt.GetG(), gilt.GetB()), 1.05f);
+    StrokeRound(inner);
+    GraphicsPath coil;
+    coil.AddBezier(
+        PointF(x0 + sx * 3.0f, y0 + sy * 3.0f),
+        PointF(x0 + sx * 3.2f, y0 + sy * 6.8f),
+        PointF(x0 + sx * 7.2f, y0 + sy * 6.5f),
+        PointF(x0 + sx * 7.0f, y0 + sy * 3.5f));
+    coil.AddBezier(
+        PointF(x0 + sx * 7.0f, y0 + sy * 3.5f),
+        PointF(x0 + sx * 6.8f, y0 + sy * 1.6f),
+        PointF(x0 + sx * 4.4f, y0 + sy * 1.8f),
+        PointF(x0 + sx * 4.6f, y0 + sy * 3.8f));
+    g.DrawPath(&inner, &coil);
+
+    SolidBrush eye(Color(200, gilt.GetR(), gilt.GetG(), gilt.GetB()));
+    g.FillEllipse(&eye, RectF(x0 + sx * 5.0f - 1.5f, y0 + sy * 3.6f - 1.5f, 3.0f, 3.0f));
+
+    // Trifoliate leaf tip along the top/side arm
+    GraphicsPath leaf;
+    leaf.AddBezier(
+        PointF(cx + sx * 10.0f, cy + sy * 0.6f),
+        PointF(cx + sx * 13.5f, cy - sy * 1.2f),
+        PointF(cx + sx * 15.0f, cy + sy * 3.5f),
+        PointF(cx + sx * 11.5f, cy + sy * 3.8f));
+    leaf.AddBezier(
+        PointF(cx + sx * 11.5f, cy + sy * 3.8f),
+        PointF(cx + sx * 13.0f, cy + sy * 5.5f),
+        PointF(cx + sx * 10.5f, cy + sy * 5.0f),
+        PointF(cx + sx * 9.5f, cy + sy * 2.5f));
+    Pen leafPen(Color(175, gilt.GetR(), gilt.GetG(), gilt.GetB()), 1.0f);
+    StrokeRound(leafPen);
+    g.DrawPath(&leafPen, &leaf);
+}
+
+// Mid-edge fleuron: lozenge rosette with side curls.
+void DrawEdgeFleuron(Graphics& g, float cx, float cy, bool horizontal, Color gilt) {
+    Pen pen(Color(205, gilt.GetR(), gilt.GetG(), gilt.GetB()), 1.1f);
+    StrokeRound(pen);
+    const float a = 3.6f;
+    PointF diamond[4] = {
+        PointF(cx, cy - a),
+        PointF(cx + a, cy),
+        PointF(cx, cy + a),
+        PointF(cx - a, cy)
+    };
+    g.DrawPolygon(&pen, diamond, 4);
+    // Tiny inner diamond
+    const float b = 1.6f;
+    PointF inner[4] = {
+        PointF(cx, cy - b),
+        PointF(cx + b, cy),
+        PointF(cx, cy + b),
+        PointF(cx - b, cy)
+    };
+    Pen fine(Color(160, gilt.GetR(), gilt.GetG(), gilt.GetB()), 0.85f);
+    g.DrawPolygon(&fine, inner, 4);
+
+    Pen curl(Color(170, gilt.GetR(), gilt.GetG(), gilt.GetB()), 0.95f);
+    StrokeRound(curl);
+    if (horizontal) {
+        GraphicsPath left;
+        left.AddBezier(
+            PointF(cx - a - 1.0f, cy),
+            PointF(cx - a - 4.0f, cy - 3.5f),
+            PointF(cx - a - 7.0f, cy + 2.5f),
+            PointF(cx - a - 3.5f, cy + 1.0f));
+        GraphicsPath right;
+        right.AddBezier(
+            PointF(cx + a + 1.0f, cy),
+            PointF(cx + a + 4.0f, cy + 3.5f),
+            PointF(cx + a + 7.0f, cy - 2.5f),
+            PointF(cx + a + 3.5f, cy - 1.0f));
+        g.DrawPath(&curl, &left);
+        g.DrawPath(&curl, &right);
+    } else {
+        GraphicsPath up;
+        up.AddBezier(
+            PointF(cx, cy - a - 1.0f),
+            PointF(cx - 3.5f, cy - a - 4.0f),
+            PointF(cx + 2.5f, cy - a - 7.0f),
+            PointF(cx + 1.0f, cy - a - 3.5f));
+        GraphicsPath down;
+        down.AddBezier(
+            PointF(cx, cy + a + 1.0f),
+            PointF(cx + 3.5f, cy + a + 4.0f),
+            PointF(cx - 2.5f, cy + a + 7.0f),
+            PointF(cx - 1.0f, cy + a + 3.5f));
+        g.DrawPath(&curl, &up);
+        g.DrawPath(&curl, &down);
+    }
+}
+
+} // namespace
+
+void DrawCanvasWell(Graphics& g, const RectF& bounds, Color rim, Color gilt) {
+    if (bounds.Width < 24.0f || bounds.Height < 24.0f) return;
+
+    const SmoothingMode prevSmooth = g.GetSmoothingMode();
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+
+    // Quiet mount — no heavy shadow slab.
+    SolidBrush mount(Color(22, rim.GetR(), rim.GetG(), rim.GetB()));
+    g.FillRectangle(&mount, bounds);
+
+    // Single outer hairline.
+    Pen outer(Color(215, gilt.GetR(), gilt.GetG(), gilt.GetB()), 1.0f);
+    StrokeRound(outer);
+    g.DrawRectangle(&outer, RectF(bounds.X + 0.5f, bounds.Y + 0.5f,
+        bounds.Width - 1.0f, bounds.Height - 1.0f));
+
+    // Whisper inner rule near the viewport edge of the mount.
+    const float inset = 9.0f;
+    if (bounds.Width > inset * 2 + 8.0f && bounds.Height > inset * 2 + 8.0f) {
+        Pen inner(Color(100, rim.GetR(), rim.GetG(), rim.GetB()), 0.8f);
+        StrokeRound(inner);
+        g.DrawRectangle(&inner, RectF(
+            bounds.X + inset, bounds.Y + inset,
+            bounds.Width - inset * 2.0f, bounds.Height - inset * 2.0f));
+    }
+
+    // Corners sit on the mount; slight outward bias so scrolls read against fresco.
+    const float x0 = bounds.X + 0.5f;
+    const float y0 = bounds.Y + 0.5f;
+    const float x1 = bounds.X + bounds.Width - 0.5f;
+    const float y1 = bounds.Y + bounds.Height - 0.5f;
+
+    DrawCornerVolute(g, x0, y0, 1.0f, 1.0f, gilt);
+    DrawCornerVolute(g, x1, y0, -1.0f, 1.0f, gilt);
+    DrawCornerVolute(g, x0, y1, 1.0f, -1.0f, gilt);
+    DrawCornerVolute(g, x1, y1, -1.0f, -1.0f, gilt);
+
+    // Fleurons centered in the mount band (away from scrollbar thumbs when possible).
+    const float band = 5.5f;
+    const float mx = bounds.X + bounds.Width * 0.5f;
+    const float my = bounds.Y + bounds.Height * 0.5f;
+    DrawEdgeFleuron(g, mx, y0 + band, true, gilt);
+    DrawEdgeFleuron(g, mx, y1 - band, true, gilt);
+    DrawEdgeFleuron(g, x0 + band, my, false, gilt);
+    DrawEdgeFleuron(g, x1 - band, my, false, gilt);
+
+    g.SetSmoothingMode(prevSmooth);
 }
 
 void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
