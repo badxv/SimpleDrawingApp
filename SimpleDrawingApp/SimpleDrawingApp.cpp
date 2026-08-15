@@ -35,6 +35,7 @@ constexpr int BOTTOMBAR_HEIGHT = 40;
 constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 168;
 constexpr int ICON_BTN = 32;
+constexpr UINT_PTR IDT_UI_ANIM = 42;
 constexpr int DEFAULT_DOC_WIDTH = 1280;
 constexpr int DEFAULT_DOC_HEIGHT = 720;
 constexpr int MIN_DOC_SIZE = 1;
@@ -79,6 +80,10 @@ HBRUSH gChromeBrush = nullptr;
 HBRUSH gChromeDeepBrush = nullptr;
 HACCEL gAccel = nullptr;
 HWND hwndTooltip = nullptr;
+float gUiPulse = 0.0f;       // 0..1 sine breath for selected tool / compass
+float gUiCompassAngle = 0.0f;
+float gToolFlash = 0.0f;     // 1 → 0 after tool switch
+DWORD gUiAnimTick = 0;
 
 HWND hwndViewport = nullptr;
 HWND hwndSlider = nullptr;
@@ -253,12 +258,30 @@ static void ApplyUiFont(HWND control) {
 }
 
 static void SetActiveTool(DrawTool tool) {
+    const bool changed = (currentTool != tool);
     currentTool = tool;
+    if (changed) {
+        gToolFlash = 1.0f;
+    }
     for (int i = 0; i < 7; ++i) {
         if (!hwndToolButtons[i]) continue;
         const bool selected = (static_cast<int>(tool) == i);
         SendMessageA(hwndToolButtons[i], BM_SETCHECK, selected ? BST_CHECKED : BST_UNCHECKED, 0);
         InvalidateRect(hwndToolButtons[i], NULL, FALSE);
+    }
+}
+
+static void InvalidateChromeAnim(HWND hwnd) {
+    if (!hwnd) return;
+    RECT brand = { 0, 0, 140, TOPBAR_HEIGHT };
+    InvalidateRect(hwnd, &brand, FALSE);
+
+    const int idx = static_cast<int>(currentTool);
+    if (idx >= 0 && idx < 7 && hwndToolButtons[idx]) {
+        InvalidateRect(hwndToolButtons[idx], NULL, FALSE);
+    }
+    if (hwndActionButtons[0]) {
+        InvalidateRect(hwndActionButtons[0], NULL, FALSE);
     }
 }
 
@@ -1859,59 +1882,77 @@ static void CreateToolbar(HWND hwnd) {
 
 static void DrawToolbarBackground(HDC hdc, const RECT& client) {
     const ChromeLayout chrome = GetChromeLayout(nullptr);
+    Graphics g(hdc);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetCompositingMode(CompositingModeSourceOver);
 
-    RECT top = client;
-    top.bottom = chrome.topH;
-    FillRect(hdc, &top, gChromeBrush);
+    const Color stoneA(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg));
+    const Color stoneB(255, 226, 216, 200);
+    const Color deepA(255, GetRValue(gTheme.chromeDeep), GetGValue(gTheme.chromeDeep), GetBValue(gTheme.chromeDeep));
+    const Color deepB(255, 208, 196, 178);
+    const Color grain(22, 120, 92, 58);
+    const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
 
-    RECT rail = client;
-    rail.top = chrome.topH;
-    rail.right = chrome.railW;
-    rail.bottom = client.bottom - chrome.statusH;
-    FillRect(hdc, &rail, gChromeDeepBrush ? gChromeDeepBrush : gChromeBrush);
+    RectF topR(
+        static_cast<REAL>(client.left),
+        static_cast<REAL>(client.top),
+        static_cast<REAL>(client.right - client.left),
+        static_cast<REAL>(chrome.topH));
+    DrawFrescoPanel(g, topR, stoneA, stoneB, true);
+    DrawFrescoGrain(g, topR, grain);
 
-    RECT bottom = client;
-    bottom.top = client.bottom - chrome.statusH - chrome.bottomH;
-    bottom.bottom = client.bottom - chrome.statusH;
-    bottom.left = chrome.railW;
-    bottom.right = client.right - chrome.layerW;
-    FillRect(hdc, &bottom, gChromeBrush);
+    RectF railR(
+        static_cast<REAL>(client.left),
+        static_cast<REAL>(chrome.topH),
+        static_cast<REAL>(chrome.railW),
+        static_cast<REAL>((client.bottom - chrome.statusH) - chrome.topH));
+    DrawFrescoPanel(g, railR, deepA, deepB, false);
+    DrawFrescoGrain(g, railR, grain);
 
-    RECT panel = client;
-    panel.left = client.right - chrome.layerW;
-    panel.top = chrome.topH;
-    panel.bottom = client.bottom - chrome.statusH;
-    FillRect(hdc, &panel, gChromeBrush);
+    RectF bottomR(
+        static_cast<REAL>(chrome.railW),
+        static_cast<REAL>(client.bottom - chrome.statusH - chrome.bottomH),
+        static_cast<REAL>((client.right - chrome.layerW) - chrome.railW),
+        static_cast<REAL>(chrome.bottomH));
+    DrawFrescoPanel(g, bottomR, stoneB, stoneA, true);
+    DrawFrescoGrain(g, bottomR, grain);
 
-    HPEN pen = CreatePen(PS_SOLID, 1, gTheme.chromeLine);
-    HGDIOBJ oldPen = SelectObject(hdc, pen);
-    MoveToEx(hdc, 0, chrome.topH - 1, NULL);
-    LineTo(hdc, client.right, chrome.topH - 1);
-    MoveToEx(hdc, chrome.railW - 1, chrome.topH, NULL);
-    LineTo(hdc, chrome.railW - 1, client.bottom - chrome.statusH);
-    MoveToEx(hdc, panel.left, chrome.topH, NULL);
-    LineTo(hdc, panel.left, client.bottom - chrome.statusH);
-    MoveToEx(hdc, chrome.railW, bottom.top, NULL);
-    LineTo(hdc, panel.left, bottom.top);
-    SelectObject(hdc, oldPen);
-    DeleteObject(pen);
+    RectF panelR(
+        static_cast<REAL>(client.right - chrome.layerW),
+        static_cast<REAL>(chrome.topH),
+        static_cast<REAL>(chrome.layerW),
+        static_cast<REAL>((client.bottom - chrome.statusH) - chrome.topH));
+    DrawFrescoPanel(g, panelR, stoneA, Color(255, 230, 220, 204), true);
+    DrawFrescoGrain(g, panelR, grain);
 
-    // Brand wordmark + small bronze compass mark.
+    // Soft bronze wash behind the wordmark.
     {
-        Graphics g(hdc);
-        g.SetSmoothingMode(SmoothingModeAntiAlias);
-        const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
-        Pen ring(gold, 1.4f);
-        g.DrawEllipse(&ring, 14, 10, 22, 22);
-        g.DrawLine(&ring, 25.0f, 12.0f, 25.0f, 30.0f);
-        g.DrawLine(&ring, 16.0f, 21.0f, 34.0f, 21.0f);
+        LinearGradientBrush wash(
+            PointF(0.0f, 0.0f), PointF(160.0f, 0.0f),
+            Color(40, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent)),
+            Color(0, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent)));
+        g.FillRectangle(&wash, RectF(0.0f, 0.0f, 160.0f, static_cast<REAL>(chrome.topH)));
     }
+
+    Pen rule(Color(255, GetRValue(gTheme.chromeLine), GetGValue(gTheme.chromeLine), GetBValue(gTheme.chromeLine)), 1.0f);
+    g.DrawLine(&rule, 0.0f, static_cast<REAL>(chrome.topH) - 0.5f,
+        static_cast<REAL>(client.right), static_cast<REAL>(chrome.topH) - 0.5f);
+    g.DrawLine(&rule, static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(chrome.topH),
+        static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(client.bottom - chrome.statusH));
+    g.DrawLine(&rule, static_cast<REAL>(panelR.X), static_cast<REAL>(chrome.topH),
+        static_cast<REAL>(panelR.X), static_cast<REAL>(client.bottom - chrome.statusH));
+    g.DrawLine(&rule, static_cast<REAL>(chrome.railW), bottomR.Y,
+        static_cast<REAL>(panelR.X), bottomR.Y);
+
+    const float breath = 1.0f + gUiPulse * 0.08f;
+    DrawBrandCompass(g, 25.0f, static_cast<REAL>(chrome.topH) * 0.5f, 11.0f * breath, gold, gUiCompassAngle);
+
     {
         HFONT brand = gBrandFont ? gBrandFont : gUiFont;
         HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, gTheme.text);
-        TextOutA(hdc, 44, 12, "Atelier", 7);
+        TextOutA(hdc, 44, (chrome.topH - 18) / 2, "Atelier", 7);
         if (oldFont) SelectObject(hdc, oldFont);
     }
 }
@@ -1983,8 +2024,32 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         UpdateStatusBar(hwnd);
         UpdateWindowTitle(hwnd);
         EnableDarkTitleBar(hwnd);
+        gUiAnimTick = GetTickCount();
+        SetTimer(hwnd, IDT_UI_ANIM, 33, NULL); // ~30fps chrome motion
         break;
     }
+    case WM_TIMER:
+        if (wParam == IDT_UI_ANIM) {
+            const DWORD now = GetTickCount();
+            const float dt = (gUiAnimTick == 0) ? 0.033f : (now - gUiAnimTick) / 1000.0f;
+            gUiAnimTick = now;
+
+            gUiCompassAngle += 18.0f * dt; // slow drift
+            if (gUiCompassAngle >= 360.0f) gUiCompassAngle -= 360.0f;
+
+            static float phase = 0.0f;
+            phase += dt * 2.2f;
+            if (phase > 6.2831853f) phase -= 6.2831853f;
+            gUiPulse = 0.5f + 0.5f * sinf(phase);
+
+            if (gToolFlash > 0.0f) {
+                gToolFlash -= dt * 4.5f;
+                if (gToolFlash < 0.0f) gToolFlash = 0.0f;
+            }
+
+            InvalidateChromeAnim(hwnd);
+        }
+        break;
     case WM_CTLCOLORBTN:
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam;
@@ -2013,12 +2078,31 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         if (IsIconControlId(static_cast<int>(dis->CtlID))) {
             const int id = static_cast<int>(dis->CtlID);
-            const bool onRail =
-                (id >= IDC_TOOL_PEN && id <= IDC_TOOL_FILL)
-                || id == IDC_TOOL_LINE || id == IDC_TOOL_RECT || id == IDC_TOOL_ELLIPSE
-                || id == IDC_TOOL_SELECT || id == IDC_COLOR_BUTTON;
-            const COLORREF btnBg = onRail ? gTheme.chromeDeep : gTheme.chromeBg;
-            PaintIconButton(dis, btnBg, gTheme.accent, gTheme.text, gTheme.toolSelectedBg);
+            IconPaintOpts opts;
+            opts.chromeBg = IsToolRailControlId(id) ? gTheme.chromeDeep : gTheme.chromeBg;
+            opts.accent = gTheme.accent;
+            opts.text = gTheme.text;
+            opts.selectedBg = gTheme.toolSelectedBg;
+            opts.pulse = gUiPulse;
+            opts.pressScale = 1.0f;
+            int activeToolId = IDC_TOOL_PEN;
+            switch (currentTool) {
+            case DrawTool::Pen: activeToolId = IDC_TOOL_PEN; break;
+            case DrawTool::Eraser: activeToolId = IDC_TOOL_ERASER; break;
+            case DrawTool::Fill: activeToolId = IDC_TOOL_FILL; break;
+            case DrawTool::Line: activeToolId = IDC_TOOL_LINE; break;
+            case DrawTool::Rectangle: activeToolId = IDC_TOOL_RECT; break;
+            case DrawTool::Ellipse: activeToolId = IDC_TOOL_ELLIPSE; break;
+            case DrawTool::Select: activeToolId = IDC_TOOL_SELECT; break;
+            }
+            if (id == activeToolId) {
+                opts.pressScale = 1.0f + gToolFlash * 0.12f;
+            }
+            if (id == IDC_COLOR_BUTTON) {
+                opts.useColorFill = true;
+                opts.colorFill = penColor;
+            }
+            PaintIconButton(dis, opts);
             return TRUE;
         }
         break;
@@ -2096,6 +2180,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             for (HWND sw : hwndSwatches) {
                 InvalidateRect(sw, NULL, TRUE);
             }
+            if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
             break;
         }
 
@@ -2234,6 +2319,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             for (HWND sw : hwndSwatches) {
                 InvalidateRect(sw, NULL, TRUE);
             }
+            if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
             break;
         }
         case IDC_NEW_BUTTON:
@@ -2338,6 +2424,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         break;
     }
     case WM_DESTROY:
+        KillTimer(hwnd, IDT_UI_ANIM);
         if (GetCapture() == hwnd || (hwndViewport && GetCapture() == hwndViewport)) {
             ReleaseCapture();
         }
