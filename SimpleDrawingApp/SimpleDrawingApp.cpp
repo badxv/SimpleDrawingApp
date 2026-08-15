@@ -9,6 +9,7 @@
 #include "DrawingTools.h"
 #include "UiChrome.h"
 #include "AtelierFonts.h"
+#include "AtelierControls.h"
 #include "Resource.h"
 
 #include <commctrl.h>
@@ -101,6 +102,9 @@ HBITMAP gBrandStripHbmp = nullptr; // GDI handle for single BitBlt to screen
 int gBrandStripH = 0;
 
 HWND hwndViewport = nullptr;
+HWND hwndScrollH = nullptr;
+HWND hwndScrollV = nullptr;
+HWND hwndScrollCorner = nullptr;
 HWND hwndSlider = nullptr;
 HWND hwndPenWidthBox = nullptr;
 HWND hwndOpacitySlider = nullptr;
@@ -154,7 +158,6 @@ bool compositeDirty = true;
 Bitmap* strokeLayer = nullptr;
 Graphics* strokeGraphics = nullptr;
 
-WNDPROC gOldTrackbarProc = nullptr;
 ULONG_PTR gdiplusToken = 0;
 }
 
@@ -525,32 +528,58 @@ static void UpdateScrollBars() {
 
     RECT rc = {};
     GetClientRect(hwndViewport, &rc);
-    const int viewW = rc.right - rc.left;
-    const int viewH = rc.bottom - rc.top;
+    const int clientW = rc.right - rc.left;
+    const int clientH = rc.bottom - rc.top;
     const int contentW = MaxInt(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
     const int contentH = MaxInt(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
 
-    SCROLLINFO si = {};
-    si.cbSize = sizeof(si);
-    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    int availW = clientW;
+    int availH = clientH;
+    bool needV = contentH > availH;
+    bool needH = contentW > availW;
+    if (needV) availW = MaxInt(1, clientW - ATL_SCROLL_THICK);
+    if (needH) availH = MaxInt(1, clientH - ATL_SCROLL_THICK);
+    needV = contentH > availH;
+    needH = contentW > availW;
+    availW = needV ? MaxInt(1, clientW - ATL_SCROLL_THICK) : clientW;
+    availH = needH ? MaxInt(1, clientH - ATL_SCROLL_THICK) : clientH;
 
-    si.nMin = 0;
-    si.nMax = (contentW > 1) ? (contentW - 1) : 0;
-    si.nPage = (viewW > 0) ? static_cast<UINT>(viewW) : 1;
-    if (scrollX > contentW - viewW) scrollX = (contentW > viewW) ? (contentW - viewW) : 0;
+    const int maxX = (contentW > availW) ? (contentW - availW) : 0;
+    const int maxY = (contentH > availH) ? (contentH - availH) : 0;
+    if (scrollX > maxX) scrollX = maxX;
     if (scrollX < 0) scrollX = 0;
-    si.nPos = scrollX;
-    SetScrollInfo(hwndViewport, SB_HORZ, &si, TRUE);
-    scrollX = GetScrollPos(hwndViewport, SB_HORZ);
-
-    si.nMin = 0;
-    si.nMax = (contentH > 1) ? (contentH - 1) : 0;
-    si.nPage = (viewH > 0) ? static_cast<UINT>(viewH) : 1;
-    if (scrollY > contentH - viewH) scrollY = (contentH > viewH) ? (contentH - viewH) : 0;
+    if (scrollY > maxY) scrollY = maxY;
     if (scrollY < 0) scrollY = 0;
-    si.nPos = scrollY;
-    SetScrollInfo(hwndViewport, SB_VERT, &si, TRUE);
-    scrollY = GetScrollPos(hwndViewport, SB_VERT);
+
+    if (hwndScrollH) {
+        ShowWindow(hwndScrollH, needH ? SW_SHOW : SW_HIDE);
+        if (needH) {
+            MoveWindow(hwndScrollH, 0, clientH - ATL_SCROLL_THICK,
+                needV ? (clientW - ATL_SCROLL_THICK) : clientW, ATL_SCROLL_THICK, TRUE);
+            AtelierScroll_SetInfo(hwndScrollH, 0, contentW > 1 ? contentW - 1 : 0,
+                availW > 0 ? availW : 1, scrollX, TRUE);
+            scrollX = AtelierScroll_GetPos(hwndScrollH);
+        }
+    }
+    if (hwndScrollV) {
+        ShowWindow(hwndScrollV, needV ? SW_SHOW : SW_HIDE);
+        if (needV) {
+            MoveWindow(hwndScrollV, clientW - ATL_SCROLL_THICK, 0,
+                ATL_SCROLL_THICK, needH ? (clientH - ATL_SCROLL_THICK) : clientH, TRUE);
+            AtelierScroll_SetInfo(hwndScrollV, 0, contentH > 1 ? contentH - 1 : 0,
+                availH > 0 ? availH : 1, scrollY, TRUE);
+            scrollY = AtelierScroll_GetPos(hwndScrollV);
+        }
+    }
+    if (hwndScrollCorner) {
+        const bool both = needH && needV;
+        ShowWindow(hwndScrollCorner, both ? SW_SHOW : SW_HIDE);
+        if (both) {
+            MoveWindow(hwndScrollCorner, clientW - ATL_SCROLL_THICK, clientH - ATL_SCROLL_THICK,
+                ATL_SCROLL_THICK, ATL_SCROLL_THICK, TRUE);
+            AtelierScroll_SetInfo(hwndScrollCorner, 0, 0, 1, 0, TRUE);
+        }
+    }
 }
 
 static void LayoutViewport(HWND hwnd) {
@@ -1586,9 +1615,9 @@ static void CommitStrokeLayer() {
     InvalidateComposite();
 }
 
-static int ScrollByMessage(HWND hwnd, int bar, WPARAM wParam, int current, int maxScroll) {
+static int ScrollByMessage(HWND scrollBar, WPARAM wParam, int current, int maxScroll) {
     int pos = current;
-    // SB_LINELEFT/SB_LINEUP (and similar H/V pairs) share the same numeric values.
+    const int page = scrollBar ? AtelierScroll_GetPage(scrollBar) : 32;
     switch (LOWORD(wParam)) {
     case SB_LINELEFT: // also SB_LINEUP
         pos -= 16;
@@ -1596,31 +1625,16 @@ static int ScrollByMessage(HWND hwnd, int bar, WPARAM wParam, int current, int m
     case SB_LINERIGHT: // also SB_LINEDOWN
         pos += 16;
         break;
-    case SB_PAGELEFT: { // also SB_PAGEUP
-        SCROLLINFO si = {};
-        si.cbSize = sizeof(si);
-        si.fMask = SIF_PAGE;
-        GetScrollInfo(hwnd, bar, &si);
-        pos -= static_cast<int>(si.nPage);
+    case SB_PAGELEFT: // also SB_PAGEUP
+        pos -= page;
         break;
-    }
-    case SB_PAGERIGHT: { // also SB_PAGEDOWN
-        SCROLLINFO si = {};
-        si.cbSize = sizeof(si);
-        si.fMask = SIF_PAGE;
-        GetScrollInfo(hwnd, bar, &si);
-        pos += static_cast<int>(si.nPage);
+    case SB_PAGERIGHT: // also SB_PAGEDOWN
+        pos += page;
         break;
-    }
     case SB_THUMBTRACK:
-    case SB_THUMBPOSITION: {
-        SCROLLINFO si = {};
-        si.cbSize = sizeof(si);
-        si.fMask = SIF_TRACKPOS;
-        GetScrollInfo(hwnd, bar, &si);
-        pos = si.nTrackPos;
+    case SB_THUMBPOSITION:
+        pos = static_cast<int>(HIWORD(wParam));
         break;
-    }
     case SB_TOP: // also SB_LEFT
         pos = 0;
         break;
@@ -1644,27 +1658,35 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         InvalidateRect(hwnd, NULL, FALSE);
         return 0;
     case WM_HSCROLL: {
+        if ((HWND)lParam != hwndScrollH) return 0;
         RECT rc = {};
         GetClientRect(hwnd, &rc);
+        int availW = rc.right - rc.left;
+        if (hwndScrollV && IsWindowVisible(hwndScrollV)) availW -= ATL_SCROLL_THICK;
+        if (availW < 1) availW = 1;
         const int contentW = ScaledContentWidth();
-        const int maxScroll = (contentW > rc.right) ? (contentW - rc.right) : 0;
-        const int newPos = ScrollByMessage(hwnd, SB_HORZ, wParam, scrollX, maxScroll);
+        const int maxScroll = (contentW > availW) ? (contentW - availW) : 0;
+        const int newPos = ScrollByMessage(hwndScrollH, wParam, scrollX, maxScroll);
         if (newPos != scrollX) {
             scrollX = newPos;
-            SetScrollPos(hwnd, SB_HORZ, scrollX, TRUE);
+            AtelierScroll_SetInfo(hwndScrollH, 0, contentW > 1 ? contentW - 1 : 0, availW, scrollX, TRUE);
             InvalidateRect(hwnd, NULL, FALSE);
         }
         return 0;
     }
     case WM_VSCROLL: {
+        if ((HWND)lParam != hwndScrollV) return 0;
         RECT rc = {};
         GetClientRect(hwnd, &rc);
+        int availH = rc.bottom - rc.top;
+        if (hwndScrollH && IsWindowVisible(hwndScrollH)) availH -= ATL_SCROLL_THICK;
+        if (availH < 1) availH = 1;
         const int contentH = ScaledContentHeight();
-        const int maxScroll = (contentH > rc.bottom) ? (contentH - rc.bottom) : 0;
-        const int newPos = ScrollByMessage(hwnd, SB_VERT, wParam, scrollY, maxScroll);
+        const int maxScroll = (contentH > availH) ? (contentH - availH) : 0;
+        const int newPos = ScrollByMessage(hwndScrollV, wParam, scrollY, maxScroll);
         if (newPos != scrollY) {
             scrollY = newPos;
-            SetScrollPos(hwnd, SB_VERT, scrollY, TRUE);
+            AtelierScroll_SetInfo(hwndScrollV, 0, contentH > 1 ? contentH - 1 : 0, availH, scrollY, TRUE);
             InvalidateRect(hwnd, NULL, FALSE);
         }
         return 0;
@@ -1910,24 +1932,6 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     return DefWindowProcA(hwnd, uMsg, wParam, lParam);
 }
 
-static LRESULT CALLBACK TrackbarWheelProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_MOUSEWHEEL) {
-        HWND parent = GetParent(hwnd);
-        if (parent) {
-            return SendMessageA(parent, WM_MOUSEWHEEL, wParam, lParam);
-        }
-    }
-    return CallWindowProcA(gOldTrackbarProc, hwnd, msg, wParam, lParam);
-}
-
-static void SubclassTrackbarWheel(HWND trackbar) {
-    if (!trackbar) return;
-    WNDPROC prev = (WNDPROC)SetWindowLongPtrA(trackbar, GWLP_WNDPROC, (LONG_PTR)TrackbarWheelProc);
-    if (!gOldTrackbarProc) {
-        gOldTrackbarProc = prev;
-    }
-}
-
 static void LayoutStatusParts(HWND hwnd) {
     if (!hwndStatus) return;
     RECT rc = {};
@@ -1993,12 +1997,9 @@ static void CreateToolbar(HWND hwnd) {
         0, 0, 34, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndSizeLabel);
 
-    hwndSlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
-        WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        0, 0, 150, 30, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    hwndSlider = AtelierSlider_Create(hwnd, 0, 0, 150, 28, NULL);
     SendMessage(hwndSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 50));
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
-    SubclassTrackbarWheel(hwndSlider);
 
     hwndPenWidthBox = CreateWindowExA(0, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER,
@@ -2009,12 +2010,9 @@ static void CreateToolbar(HWND hwnd) {
         0, 0, 54, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndOpacityLabel);
 
-    hwndOpacitySlider = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
-        WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        0, 0, 150, 30, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    hwndOpacitySlider = AtelierSlider_Create(hwnd, 0, 0, 150, 28, NULL);
     SendMessage(hwndOpacitySlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
-    SubclassTrackbarWheel(hwndOpacitySlider);
 
     hwndOpacityBox = CreateWindowExA(0, "EDIT", "",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER,
@@ -2205,12 +2203,9 @@ static void CreateLayerPanel(HWND hwnd) {
         0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)IDC_LAYER_LIST, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndLayerList);
 
-    hwndLayerOpacity = CreateWindowExA(0, TRACKBAR_CLASSA, NULL,
-        WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TOOLTIPS,
-        0, 0, 100, 28, hwnd, (HMENU)(INT_PTR)IDC_LAYER_OPACITY, GetModuleHandle(NULL), NULL);
+    hwndLayerOpacity = AtelierSlider_Create(hwnd, 0, 0, 100, 28, (HMENU)(INT_PTR)IDC_LAYER_OPACITY);
     SendMessage(hwndLayerOpacity, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndLayerOpacity, TBM_SETPOS, TRUE, 100);
-    SubclassTrackbarWheel(hwndLayerOpacity);
 
     RefreshLayerList();
 }
@@ -2236,6 +2231,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         gChromeBrush = CreateSolidBrush(gTheme.chromeBg);
         gChromeDeepBrush = CreateSolidBrush(gTheme.chromeDeep);
         gChromeElevatedBrush = CreateSolidBrush(gTheme.chromeElevated);
+        AtelierControls_SetTheme(&gTheme);
 
         hwndBrand = CreateWindowExA(
             0,
@@ -2259,12 +2255,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             0, // no CLIENTEDGE — custom bronze well frame instead
             VIEWPORT_CLASS_NAME,
             "",
-            WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | WS_CLIPCHILDREN,
+            WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
             TOOL_RAIL_WIDTH + WELL_FRAME, TOPBAR_HEIGHT + WELL_FRAME, 100, 100,
             hwnd,
             NULL,
             GetModuleHandle(NULL),
             NULL);
+        hwndScrollH = AtelierScroll_Create(hwndViewport, false, 0, 0, 40, ATL_SCROLL_THICK);
+        hwndScrollV = AtelierScroll_Create(hwndViewport, true, 0, 0, ATL_SCROLL_THICK, 40);
+        hwndScrollCorner = AtelierScroll_Create(hwndViewport, false, 0, 0, ATL_SCROLL_THICK, ATL_SCROLL_THICK);
+        ShowWindow(hwndScrollH, SW_HIDE);
+        ShowWindow(hwndScrollV, SW_HIDE);
+        ShowWindow(hwndScrollCorner, SW_HIDE);
 
         EnsureCanvas(hwnd);
         RefreshLayerList();
@@ -2765,6 +2767,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
     AtelierFonts_Init();
+    AtelierControls_SetTheme(&gTheme);
+    if (!AtelierControls_Register()) {
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
 
     if (!RegisterViewportClass(hInstance)) {
         AtelierFonts_Shutdown();
