@@ -83,6 +83,7 @@ HBRUSH gChromeBrush = nullptr;
 HBRUSH gChromeDeepBrush = nullptr;
 HACCEL gAccel = nullptr;
 HWND hwndTooltip = nullptr;
+HWND hwndBrand = nullptr; // dedicated child: flicker-free compass (Catch22 / clip-children pattern)
 float gUiPulse = 0.0f;            // 0..1 selected-tool breath (idle)
 float gUiCompassAngle = -18.0f;   // animated overlay angle
 float gToolFlash = 0.0f;          // 1 → 0 after tool switch
@@ -92,7 +93,8 @@ Bitmap* gChromeCache = nullptr;
 int gChromeCacheW = 0;
 int gChromeCacheH = 0;
 int gChromeCacheStatusH = -1;
-Bitmap* gBrandStrip = nullptr; // double-buffered compass + wordmark zone
+Bitmap* gBrandStrip = nullptr; // offscreen compose target
+HBITMAP gBrandStripHbmp = nullptr; // GDI handle for single BitBlt to screen
 int gBrandStripH = 0;
 
 HWND hwndViewport = nullptr;
@@ -288,11 +290,6 @@ static void InvalidateActiveToolButton() {
     }
 }
 
-static RECT BrandStripInvalidateRect() {
-    RECT r = { 0, 0, BRAND_STRIP_W, TOPBAR_HEIGHT };
-    return r;
-}
-
 static bool ShouldRunIdleMotion(HWND hwnd) {
     if (!hwnd || gUiSizing) return false;
     if (IsIconic(hwnd) || !IsWindowVisible(hwnd)) return false;
@@ -306,6 +303,10 @@ static bool ShouldRunIdleMotion(HWND hwnd) {
 static void DestroyBrandStrip() {
     delete gBrandStrip;
     gBrandStrip = nullptr;
+    if (gBrandStripHbmp) {
+        DeleteObject(gBrandStripHbmp);
+        gBrandStripHbmp = nullptr;
+    }
     gBrandStripH = 0;
 }
 
@@ -354,22 +355,77 @@ static void EnsureBrandStrip(int topH) {
         }
     }
 
-    // Fixed radius — no geometric breath (that caused clip/glitch flicker).
     g.SetCompositingMode(CompositingModeSourceOver);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
     DrawBrandCompass(g, 25.0f, static_cast<REAL>(topH) * 0.5f, 11.0f, gold, gUiCompassAngle);
+
+    // Refresh GDI bitmap for a single BitBlt to the brand child (no multi-step screen draws).
+    if (gBrandStripHbmp) {
+        DeleteObject(gBrandStripHbmp);
+        gBrandStripHbmp = nullptr;
+    }
+    gBrandStrip->GetHBITMAP(
+        Color(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)),
+        &gBrandStripHbmp);
 }
 
-static void BlitBrandStrip(HDC hdc, int topH) {
-    if (!gBrandStrip || gBrandStripH != topH) {
-        EnsureBrandStrip(topH);
+static void PaintBrandChild(HDC hdc, int width, int height) {
+    if (width < 1 || height < 1) return;
+    EnsureBrandStrip(height);
+    if (gBrandStripHbmp) {
+        HDC mem = CreateCompatibleDC(hdc);
+        if (mem) {
+            HGDIOBJ old = SelectObject(mem, gBrandStripHbmp);
+            BitBlt(hdc, 0, 0, width, height, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, old);
+            DeleteDC(mem);
+            return;
+        }
     }
-    if (!gBrandStrip) return;
-    Graphics g(hdc);
-    g.SetCompositingMode(CompositingModeSourceCopy);
-    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
-    g.DrawImage(gBrandStrip, 0, 0, BRAND_STRIP_W, topH);
+    // Fallback if HBITMAP unavailable.
+    if (gBrandStrip) {
+        Graphics g(hdc);
+        g.SetCompositingMode(CompositingModeSourceCopy);
+        g.DrawImage(gBrandStrip, 0, 0, width, height);
+    }
+}
+
+static void InvalidateBrandMark() {
+    if (hwndBrand) {
+        InvalidateRect(hwndBrand, NULL, FALSE);
+    }
+}
+
+static LRESULT CALLBACK BrandProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+    case WM_ERASEBKGND:
+        return 1; // never clear-then-draw (Catch22 flicker rule)
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+        PaintBrandChild(hdc, rc.right - rc.left, rc.bottom - rc.top);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_NCHITTEST:
+        // Let clicks pass through to parent (brand is decorative).
+        return HTTRANSPARENT;
+    }
+    return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+}
+
+static bool RegisterBrandClass(HINSTANCE hInstance) {
+    WNDCLASSA wc = {};
+    wc.lpfnWndProc = BrandProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = "SimpleDrawingAppBrand";
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = NULL;
+    wc.style = 0; // no CS_HREDRAW/VREDRAW
+    return RegisterClassA(&wc) != 0;
 }
 
 struct ChromeLayout {
@@ -2075,8 +2131,7 @@ static void DrawToolbarBackgroundCheap(HDC hdc, const RECT& client, const Chrome
     panel.top = chrome.topH;
     panel.bottom = client.bottom - chrome.statusH;
     FillRect(hdc, &panel, gChromeBrush);
-
-    BlitBrandStrip(hdc, chrome.topH);
+    // Brand mark is owned by hwndBrand (WS_CLIPCHILDREN excludes it from parent paint).
 }
 
 static void DrawToolbarBackground(HDC hdc, const RECT& client) {
@@ -2098,8 +2153,7 @@ static void DrawToolbarBackground(HDC hdc, const RECT& client) {
     g.SetCompositingMode(CompositingModeSourceCopy);
     g.SetInterpolationMode(InterpolationModeNearestNeighbor);
     g.DrawImage(gChromeCache, 0, 0, width, height);
-    // Atomic brand strip (fresco crop + compass) — prevents rotate flicker.
-    BlitBrandStrip(hdc, chrome.topH);
+    // Do not paint brand here — dedicated child BitBlts a precomposed frame.
 }
 
 static void CreateLayerPanel(HWND hwnd) {
@@ -2144,6 +2198,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Georgia");
         gChromeBrush = CreateSolidBrush(gTheme.chromeBg);
         gChromeDeepBrush = CreateSolidBrush(gTheme.chromeDeep);
+
+        hwndBrand = CreateWindowExA(
+            0,
+            "SimpleDrawingAppBrand",
+            "",
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+            0, 0, BRAND_STRIP_W, TOPBAR_HEIGHT,
+            hwnd,
+            NULL,
+            GetModuleHandle(NULL),
+            NULL);
 
         CreateToolbar(hwnd);
         CreateLayerPanel(hwnd);
@@ -2190,9 +2255,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
             gUiPulse = breath * 0.65f + gToolFlash * 0.35f;
 
+            // Professional pattern: compose offscreen, invalidate only the brand child.
             EnsureBrandStrip(TOPBAR_HEIGHT);
-            RECT brand = BrandStripInvalidateRect();
-            InvalidateRect(hwnd, &brand, FALSE);
+            InvalidateBrandMark();
             InvalidateActiveToolButton();
         }
         else if (wParam == IDT_CHROME_REBUILD) {
@@ -2203,6 +2268,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             EnsureChromeCache(client.right - client.left, client.bottom - client.top, chrome);
             EnsureBrandStrip(chrome.topH);
             InvalidateRect(hwnd, NULL, FALSE);
+            InvalidateBrandMark();
         }
         break;
     case WM_CTLCOLORBTN:
@@ -2289,6 +2355,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         EnsureChromeCache(client.right - client.left, client.bottom - client.top, GetChromeLayout(hwnd));
         EnsureBrandStrip(TOPBAR_HEIGHT);
         InvalidateRect(hwnd, NULL, FALSE);
+        InvalidateBrandMark();
         break;
     }
     case WM_HSCROLL: {
@@ -2607,6 +2674,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         DestroyCompositeCache();
         DestroyChromeCache();
         gLayers.Destroy();
+        hwndBrand = nullptr;
         hwndViewport = nullptr;
         if (gUiFont) {
             DeleteObject(gUiFont);
@@ -2647,6 +2715,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
 
     if (!RegisterViewportClass(hInstance)) {
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
+    if (!RegisterBrandClass(hInstance)) {
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
