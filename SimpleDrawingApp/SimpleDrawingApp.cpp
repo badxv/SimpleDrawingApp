@@ -8,6 +8,7 @@
 #include "LayerStack.h"
 #include "DrawingTools.h"
 #include "UiChrome.h"
+#include "AtelierFonts.h"
 #include "Resource.h"
 
 #include <commctrl.h>
@@ -29,13 +30,14 @@ using namespace Gdiplus;
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
-constexpr int TOPBAR_HEIGHT = 44;
-constexpr int TOOL_RAIL_WIDTH = 52;
-constexpr int BOTTOMBAR_HEIGHT = 40;
+constexpr int TOPBAR_HEIGHT = 48;
+constexpr int TOOL_RAIL_WIDTH = 56;
+constexpr int BOTTOMBAR_HEIGHT = 44;
 constexpr int STATUS_HEIGHT = 24;
-constexpr int LAYER_PANEL_WIDTH = 168;
-constexpr int ICON_BTN = 32;
-constexpr int BRAND_STRIP_W = 148;
+constexpr int LAYER_PANEL_WIDTH = 176;
+constexpr int ICON_BTN = 34;
+constexpr int WELL_FRAME = 3;
+constexpr int BRAND_STRIP_W = 156;
 constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;      // low-rate compass + tool pulse
@@ -81,6 +83,7 @@ HFONT gUiFont = nullptr;
 HFONT gBrandFont = nullptr;
 HBRUSH gChromeBrush = nullptr;
 HBRUSH gChromeDeepBrush = nullptr;
+HBRUSH gChromeElevatedBrush = nullptr;
 HACCEL gAccel = nullptr;
 HWND hwndTooltip = nullptr;
 HWND hwndBrand = nullptr; // dedicated child: flicker-free compass (Catch22 / clip-children pattern)
@@ -348,8 +351,8 @@ static void EnsureBrandStrip(int topH) {
             HFONT brand = gBrandFont ? gBrandFont : gUiFont;
             HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
             SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, gTheme.text);
-            TextOutA(hdc, 44, (topH - 18) / 2, "Atelier", 7);
+            SetTextColor(hdc, gTheme.ink);
+            TextOutA(hdc, 48, (topH - 20) / 2, "ATELIER", 7);
             if (oldFont) SelectObject(hdc, oldFont);
             g.ReleaseHDC(hdc);
         }
@@ -557,10 +560,10 @@ static void LayoutViewport(HWND hwnd) {
     RECT client = {};
     GetClientRect(hwnd, &client);
 
-    const int x = chrome.railW;
-    const int y = chrome.topH;
-    const int w = MaxInt(1, client.right - client.left - chrome.railW - chrome.layerW);
-    int h = client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH;
+    const int x = chrome.railW + WELL_FRAME;
+    const int y = chrome.topH + WELL_FRAME;
+    const int w = MaxInt(1, client.right - client.left - chrome.railW - chrome.layerW - WELL_FRAME * 2);
+    int h = client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH - WELL_FRAME * 2;
     if (h < 1) h = 1;
 
     MoveWindow(hwndViewport, x, y, w, h, TRUE);
@@ -580,8 +583,8 @@ static void LayoutLayerPanel(HWND hwnd) {
     const int panelH = MaxInt(1, client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH);
 
     const int btn = 28;
-    const int pad = 8;
-    int y = panelY + pad;
+    const int pad = 10;
+    int y = panelY + 22; // room for LAYERS caption
 
     if (hwndLayerAdd) MoveWindow(hwndLayerAdd, panelX + pad, y, btn, btn, TRUE);
     if (hwndLayerDel) MoveWindow(hwndLayerDel, panelX + pad + btn + 4, y, btn, btn, TRUE);
@@ -611,7 +614,7 @@ static void LayoutChromeControls(HWND hwnd) {
 
     // Top bar: undo/redo left-of-center actions; doc actions on the right.
     const int topY = (chrome.topH - ICON_BTN) / 2;
-    int x = 150; // leave room for brand wordmark
+    int x = 160; // brand strip + breathing room
     if (hwndActionButtons[2]) MoveWindow(hwndActionButtons[2], x, topY, ICON_BTN, ICON_BTN, TRUE); // Undo
     x += ICON_BTN + 4;
     if (hwndActionButtons[3]) MoveWindow(hwndActionButtons[3], x, topY, ICON_BTN, ICON_BTN, TRUE); // Redo
@@ -1997,8 +2000,8 @@ static void CreateToolbar(HWND hwnd) {
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
     SubclassTrackbarWheel(hwndSlider);
 
-    hwndPenWidthBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
-        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
+    hwndPenWidthBox = CreateWindowExA(0, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER,
         0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_WIDTH_EDIT, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndPenWidthBox);
 
@@ -2013,8 +2016,8 @@ static void CreateToolbar(HWND hwnd) {
     SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
     SubclassTrackbarWheel(hwndOpacitySlider);
 
-    hwndOpacityBox = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
-        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
+    hwndOpacityBox = CreateWindowExA(0, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER,
         0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_OPACITY_EDIT, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndOpacityBox);
 
@@ -2068,15 +2071,47 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
         g.FillRectangle(&wash, RectF(0.0f, 0.0f, 160.0f, static_cast<REAL>(chrome.topH)));
     }
 
-    Pen rule(Color(255, GetRValue(gTheme.chromeLine), GetGValue(gTheme.chromeLine), GetBValue(gTheme.chromeLine)), 1.0f);
+    Pen rule(Color(255, GetRValue(gTheme.chromeLine), GetGValue(gTheme.chromeLine), GetBValue(gTheme.chromeLine)), 1.15f);
     g.DrawLine(&rule, 0.0f, static_cast<REAL>(chrome.topH) - 0.5f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH) - 0.5f);
     g.DrawLine(&rule, static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(chrome.topH),
         static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(height - chrome.statusH));
     g.DrawLine(&rule, panelR.X, static_cast<REAL>(chrome.topH), panelR.X, static_cast<REAL>(height - chrome.statusH));
     g.DrawLine(&rule, static_cast<REAL>(chrome.railW), bottomR.Y, panelR.X, bottomR.Y);
 
-    // Compass is NOT baked into the cache — drawn as a cheap overlay so it can
-    // animate without rebuilding fresco panels.
+    const Color bronze(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
+    const Color rim(255, GetRValue(gTheme.wellRim), GetGValue(gTheme.wellRim), GetBValue(gTheme.wellRim));
+    const Color shadow(55, 40, 32, 24);
+
+    // Canvas well frame (parent margin around viewport).
+    RectF well(
+        static_cast<REAL>(chrome.railW),
+        static_cast<REAL>(chrome.topH),
+        static_cast<REAL>(width - chrome.railW - chrome.layerW),
+        static_cast<REAL>(height - chrome.topH - chrome.bottomH - chrome.statusH));
+    if (well.Width > 8 && well.Height > 8) {
+        DrawCanvasWell(g, well, rim, shadow);
+    }
+
+    // Thin HUD plates on instrument zones.
+    DrawHudCornerTicks(g, topR, bronze, 10.0f);
+    DrawHudCornerTicks(g, railR, bronze, 8.0f);
+    DrawHudCornerTicks(g, panelR, bronze, 8.0f);
+    DrawHudCornerTicks(g, bottomR, bronze, 8.0f);
+
+    // Section captions baked into fresco (manuscript × HUD).
+    HDC hdcCaps = g.GetHDC();
+    if (hdcCaps) {
+        HFONT caption = gUiFont;
+        HGDIOBJ old = caption ? SelectObject(hdcCaps, caption) : nullptr;
+        SetBkMode(hdcCaps, TRANSPARENT);
+        SetTextColor(hdcCaps, gTheme.accentDeep);
+        TextOutA(hdcCaps, width - chrome.layerW + 10, chrome.topH + 4, "LAYERS", 6);
+        // Vertical-feeling label for tools via short top mark on rail.
+        TextOutA(hdcCaps, 8, chrome.topH + 6, "TOOLS", 5);
+        TextOutA(hdcCaps, chrome.railW + 14, height - chrome.statusH - chrome.bottomH + 6, "INSTRUMENT", 10);
+        if (old) SelectObject(hdcCaps, old);
+        g.ReleaseHDC(hdcCaps);
+    }
 }
 
 static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome) {
@@ -2104,8 +2139,8 @@ static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome)
         HFONT brand = gBrandFont ? gBrandFont : gUiFont;
         HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
         SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, gTheme.text);
-        TextOutA(hdc, 44, (chrome.topH - 18) / 2, "Atelier", 7);
+        SetTextColor(hdc, gTheme.ink);
+        TextOutA(hdc, 48, (chrome.topH - 20) / 2, "ATELIER", 7);
         if (oldFont) SelectObject(hdc, oldFont);
         g.ReleaseHDC(hdc);
     }
@@ -2167,7 +2202,7 @@ static void CreateLayerPanel(HWND hwnd) {
         0, 0, 100, 22, hwnd, (HMENU)(INT_PTR)IDC_LAYER_VISIBLE, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndLayerVisible);
 
-    hwndLayerList = CreateWindowExA(WS_EX_CLIENTEDGE, "LISTBOX", "",
+    hwndLayerList = CreateWindowExA(0, "LISTBOX", "",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
         0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)IDC_LAYER_LIST, GetModuleHandle(NULL), NULL);
     ApplyUiFont(hwndLayerList);
@@ -2188,16 +2223,21 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         INITCOMMONCONTROLSEX icex = { sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_WIN95_CLASSES };
         InitCommonControlsEx(&icex);
 
-        gUiFont = CreateFontA(
-            -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Segoe UI");
-        gBrandFont = CreateFontA(
-            -16, 0, 0, 0, FW_NORMAL, TRUE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Georgia");
+        gUiFont = AtelierFonts_Ui(13, false);
+        gBrandFont = AtelierFonts_Display(18, false);
+        if (!gUiFont) {
+            gUiFont = CreateFontA(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Segoe UI");
+        }
+        if (!gBrandFont) {
+            gBrandFont = CreateFontA(-18, 0, 0, 0, FW_NORMAL, TRUE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Georgia");
+        }
         gChromeBrush = CreateSolidBrush(gTheme.chromeBg);
         gChromeDeepBrush = CreateSolidBrush(gTheme.chromeDeep);
+        gChromeElevatedBrush = CreateSolidBrush(gTheme.chromeElevated);
 
         hwndBrand = CreateWindowExA(
             0,
@@ -2218,11 +2258,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         LayoutStatusParts(hwnd);
 
         hwndViewport = CreateWindowExA(
-            WS_EX_CLIENTEDGE,
+            0, // no CLIENTEDGE — custom bronze well frame instead
             VIEWPORT_CLASS_NAME,
             "",
             WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | WS_CLIPCHILDREN,
-            TOOL_RAIL_WIDTH, TOPBAR_HEIGHT, 100, 100,
+            TOOL_RAIL_WIDTH + WELL_FRAME, TOPBAR_HEIGHT + WELL_FRAME, 100, 100,
             hwnd,
             NULL,
             GetModuleHandle(NULL),
@@ -2275,8 +2315,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam;
         SetBkColor(hdc, gTheme.chromeBg);
-        SetTextColor(hdc, gTheme.text);
+        SetTextColor(hdc, gTheme.ink);
         return (LRESULT)gChromeBrush;
+    }
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX: {
+        HDC hdc = (HDC)wParam;
+        SetBkColor(hdc, gTheme.chromeElevated);
+        SetTextColor(hdc, gTheme.ink);
+        return (LRESULT)(gChromeElevatedBrush ? gChromeElevatedBrush : gChromeBrush);
     }
     case WM_DRAWITEM: {
         const DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
@@ -2302,8 +2349,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             IconPaintOpts opts;
             opts.chromeBg = IsToolRailControlId(id) ? gTheme.chromeDeep : gTheme.chromeBg;
             opts.accent = gTheme.accent;
-            opts.text = gTheme.text;
+            opts.accentDeep = gTheme.accentDeep;
+            opts.text = gTheme.ink;
             opts.selectedBg = gTheme.toolSelectedBg;
+            opts.elevated = gTheme.chromeElevated;
             opts.pulse = 0.0f;
             opts.pressScale = 1.0f;
             int activeToolId = IDC_TOOL_PEN;
@@ -2692,6 +2741,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DeleteObject(gChromeDeepBrush);
             gChromeDeepBrush = nullptr;
         }
+        if (gChromeElevatedBrush) {
+            DeleteObject(gChromeElevatedBrush);
+            gChromeElevatedBrush = nullptr;
+        }
         PostQuitMessage(0);
         return 0;
     }
@@ -2713,12 +2766,15 @@ static bool RegisterViewportClass(HINSTANCE hInstance) {
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    AtelierFonts_Init();
 
     if (!RegisterViewportClass(hInstance)) {
+        AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
     if (!RegisterBrandClass(hInstance)) {
+        AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
@@ -2734,6 +2790,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     wc.style = CS_DBLCLKS;
 
     if (!RegisterClassA(&wc)) {
+        AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
@@ -2744,6 +2801,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
+        AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
@@ -2761,6 +2819,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         }
     }
 
+    AtelierFonts_Shutdown();
     GdiplusShutdown(gdiplusToken);
     return static_cast<int>(msg.wParam);
 }

@@ -48,9 +48,15 @@
     <ClInclude Include="UiChrome.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AtelierFonts.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SimpleDrawingApp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AtelierFonts.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ColorPicker.cpp">
