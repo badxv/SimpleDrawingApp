@@ -44,3 +44,9 @@ script):
   (draw a stroke, undo, and Save a PNG).
 - **Build/run:** use `scripts/build-linux.sh` / `scripts/run-linux.sh` here, or
   Visual Studio 2022 (`Debug|x64`) on Windows per `README.md`.
+
+### Follow-up (not done yet)
+- **Cursor Environment snapshot:** MinGW/Wine are currently installed ad-hoc on
+  the cloud VM. Later, link a persistent Cursor Environment with an `install`
+  script (mingw-w64, wine, xvfb, fluxbox, xdotool) and a snapshot so new agents
+  boot ready-to-build without reinstalling packages each time.
