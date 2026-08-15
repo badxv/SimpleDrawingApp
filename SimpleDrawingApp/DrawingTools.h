@@ -10,7 +10,8 @@ enum class DrawTool {
     Fill = 2,
     Line = 3,
     Rectangle = 4,
-    Ellipse = 5
+    Ellipse = 5,
+    Select = 6
 };
 
 inline bool IsFreehandTool(DrawTool tool) {
