@@ -88,20 +88,15 @@ void DrawFrescoPanel(Graphics& g, const RectF& bounds, Color top, Color bottom, 
 
 void DrawFrescoGrain(Graphics& g, const RectF& bounds, Color grain) {
     if (bounds.Width < 8.0f || bounds.Height < 8.0f) return;
+    // Very sparse hatch — baked into a chrome cache, not redrawn every frame.
     Pen pen(grain, 1.0f);
-    // Sparse diagonal hatch — parchment suggestion, not a grid.
-    const REAL step = 18.0f;
+    const REAL step = 36.0f;
     const REAL x0 = bounds.X;
     const REAL y0 = bounds.Y;
-    const REAL x1 = bounds.X + bounds.Width;
     const REAL y1 = bounds.Y + bounds.Height;
     for (REAL t = -bounds.Height; t < bounds.Width + bounds.Height; t += step) {
         g.DrawLine(&pen, x0 + t, y0, x0 + t + bounds.Height, y1);
     }
-    // Soft vignette corners.
-    SolidBrush wash(Color(18, grain.GetR(), grain.GetG(), grain.GetB()));
-    g.FillRectangle(&wash, RectF(x0, y0, bounds.Width, 6.0f));
-    g.FillRectangle(&wash, RectF(x0, y1 - 6.0f, bounds.Width, 6.0f));
 }
 
 void DrawBrandCompass(Graphics& g, float cx, float cy, float radius, Color gold, float angleDeg) {
