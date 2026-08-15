@@ -35,6 +35,7 @@ constexpr int BOTTOMBAR_HEIGHT = 40;
 constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 168;
 constexpr int ICON_BTN = 32;
+constexpr int BRAND_STRIP_W = 148;
 constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;      // low-rate compass + tool pulse
@@ -91,6 +92,8 @@ Bitmap* gChromeCache = nullptr;
 int gChromeCacheW = 0;
 int gChromeCacheH = 0;
 int gChromeCacheStatusH = -1;
+Bitmap* gBrandStrip = nullptr; // double-buffered compass + wordmark zone
+int gBrandStripH = 0;
 
 HWND hwndViewport = nullptr;
 HWND hwndSlider = nullptr;
@@ -285,9 +288,8 @@ static void InvalidateActiveToolButton() {
     }
 }
 
-static RECT BrandCompassInvalidateRect() {
-    // Compass only (wordmark stays in fresco cache and is not invalidated).
-    RECT r = { 8, 2, 44, TOPBAR_HEIGHT - 2 };
+static RECT BrandStripInvalidateRect() {
+    RECT r = { 0, 0, BRAND_STRIP_W, TOPBAR_HEIGHT };
     return r;
 }
 
@@ -301,12 +303,10 @@ static bool ShouldRunIdleMotion(HWND hwnd) {
     return true;
 }
 
-static void DrawBrandCompassOverlay(HDC hdc, int topH) {
-    const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
-    const float breath = 1.0f + gUiPulse * 0.06f;
-    Graphics g(hdc);
-    g.SetSmoothingMode(SmoothingModeAntiAlias);
-    DrawBrandCompass(g, 25.0f, static_cast<REAL>(topH) * 0.5f, 11.0f * breath, gold, gUiCompassAngle);
+static void DestroyBrandStrip() {
+    delete gBrandStrip;
+    gBrandStrip = nullptr;
+    gBrandStripH = 0;
 }
 
 static void DestroyChromeCache() {
@@ -315,6 +315,61 @@ static void DestroyChromeCache() {
     gChromeCacheW = 0;
     gChromeCacheH = 0;
     gChromeCacheStatusH = -1;
+    DestroyBrandStrip();
+}
+
+static void EnsureBrandStrip(int topH) {
+    if (topH < 1) return;
+    if (!gBrandStrip || gBrandStripH != topH) {
+        DestroyBrandStrip();
+        gBrandStrip = new Bitmap(BRAND_STRIP_W, topH, PixelFormat32bppPARGB);
+        gBrandStripH = topH;
+    }
+    if (!gBrandStrip) return;
+
+    Graphics g(gBrandStrip);
+    g.SetCompositingMode(CompositingModeSourceCopy);
+    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+
+    if (gChromeCache && gChromeCacheW >= BRAND_STRIP_W && gChromeCacheH >= topH) {
+        g.DrawImage(
+            gChromeCache,
+            Rect(0, 0, BRAND_STRIP_W, topH),
+            0, 0, BRAND_STRIP_W, topH,
+            UnitPixel);
+    }
+    else {
+        SolidBrush fill(Color(255,
+            GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)));
+        g.FillRectangle(&fill, 0, 0, BRAND_STRIP_W, topH);
+        HDC hdc = g.GetHDC();
+        if (hdc) {
+            HFONT brand = gBrandFont ? gBrandFont : gUiFont;
+            HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, gTheme.text);
+            TextOutA(hdc, 44, (topH - 18) / 2, "Atelier", 7);
+            if (oldFont) SelectObject(hdc, oldFont);
+            g.ReleaseHDC(hdc);
+        }
+    }
+
+    // Fixed radius — no geometric breath (that caused clip/glitch flicker).
+    g.SetCompositingMode(CompositingModeSourceOver);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
+    DrawBrandCompass(g, 25.0f, static_cast<REAL>(topH) * 0.5f, 11.0f, gold, gUiCompassAngle);
+}
+
+static void BlitBrandStrip(HDC hdc, int topH) {
+    if (!gBrandStrip || gBrandStripH != topH) {
+        EnsureBrandStrip(topH);
+    }
+    if (!gBrandStrip) return;
+    Graphics g(hdc);
+    g.SetCompositingMode(CompositingModeSourceCopy);
+    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+    g.DrawImage(gBrandStrip, 0, 0, BRAND_STRIP_W, topH);
 }
 
 struct ChromeLayout {
@@ -1920,7 +1975,7 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
     const Color stoneB(255, 226, 216, 200);
     const Color deepA(255, GetRValue(gTheme.chromeDeep), GetGValue(gTheme.chromeDeep), GetBValue(gTheme.chromeDeep));
     const Color deepB(255, 208, 196, 178);
-    const Color grain(18, 120, 92, 58);
+    const Color grain(26, 120, 92, 58);
 
     // Clear full client so holes behind children stay theme-colored if clipped oddly.
     SolidBrush clear(stoneA);
@@ -2021,15 +2076,7 @@ static void DrawToolbarBackgroundCheap(HDC hdc, const RECT& client, const Chrome
     panel.bottom = client.bottom - chrome.statusH;
     FillRect(hdc, &panel, gChromeBrush);
 
-    const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
-    (void)gold;
-    HFONT brand = gBrandFont ? gBrandFont : gUiFont;
-    HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
-    SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, gTheme.text);
-    TextOutA(hdc, 44, (chrome.topH - 18) / 2, "Atelier", 7);
-    if (oldFont) SelectObject(hdc, oldFont);
-    DrawBrandCompassOverlay(hdc, chrome.topH);
+    BlitBrandStrip(hdc, chrome.topH);
 }
 
 static void DrawToolbarBackground(HDC hdc, const RECT& client) {
@@ -2051,8 +2098,8 @@ static void DrawToolbarBackground(HDC hdc, const RECT& client) {
     g.SetCompositingMode(CompositingModeSourceCopy);
     g.SetInterpolationMode(InterpolationModeNearestNeighbor);
     g.DrawImage(gChromeCache, 0, 0, width, height);
-    // Animated compass overlay (cache blit restores the previous frame under it).
-    DrawBrandCompassOverlay(hdc, chrome.topH);
+    // Atomic brand strip (fresco crop + compass) — prevents rotate flicker.
+    BlitBrandStrip(hdc, chrome.topH);
 }
 
 static void CreateLayerPanel(HWND hwnd) {
@@ -2143,7 +2190,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
             gUiPulse = breath * 0.65f + gToolFlash * 0.35f;
 
-            RECT brand = BrandCompassInvalidateRect();
+            EnsureBrandStrip(TOPBAR_HEIGHT);
+            RECT brand = BrandStripInvalidateRect();
             InvalidateRect(hwnd, &brand, FALSE);
             InvalidateActiveToolButton();
         }
@@ -2153,6 +2201,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             GetClientRect(hwnd, &client);
             const ChromeLayout chrome = GetChromeLayout(hwnd);
             EnsureChromeCache(client.right - client.left, client.bottom - client.top, chrome);
+            EnsureBrandStrip(chrome.topH);
             InvalidateRect(hwnd, NULL, FALSE);
         }
         break;
@@ -2238,6 +2287,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         RECT client = {};
         GetClientRect(hwnd, &client);
         EnsureChromeCache(client.right - client.left, client.bottom - client.top, GetChromeLayout(hwnd));
+        EnsureBrandStrip(TOPBAR_HEIGHT);
         InvalidateRect(hwnd, NULL, FALSE);
         break;
     }
