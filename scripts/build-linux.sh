@@ -49,7 +49,7 @@ CXXFLAGS="-std=c++17 -O2 -DMINGW_HAS_SECURE_API=1 -I$SHIM -I$SRC"
 
 echo "== Compiling sources =="
 OBJS=()
-for f in CanvasHistory ColorPicker DrawingTools FileManager LayerHistory LayerStack UiChrome SimpleDrawingApp; do
+for f in AtelierFonts CanvasHistory ColorPicker DrawingTools FileManager LayerHistory LayerStack UiChrome SimpleDrawingApp; do
   echo "  cc $f.cpp"
   "$CXX" $CXXFLAGS -c "$SRC/$f.cpp" -o "$OUT_DIR/$f.o"
   OBJS+=("$OUT_DIR/$f.o")
@@ -66,6 +66,12 @@ echo "== Linking =="
   "${OBJS[@]}" "$OUT_DIR/resource.res" \
   -lgdiplus -lcomctl32 -lcomdlg32 -ldwmapi -lgdi32 -luser32 -lole32 \
   -o "$OUT_DIR/SimpleDrawingApp.exe"
+
+echo "== Bundling fonts =="
+mkdir -p "$OUT_DIR/fonts"
+cp -f "$REPO_ROOT/fonts/"*.ttf "$OUT_DIR/fonts/" 2>/dev/null || true
+cp -f "$REPO_ROOT/fonts/"NOTICE.txt "$OUT_DIR/fonts/" 2>/dev/null || true
+cp -f "$REPO_ROOT/fonts/"OFL-*.txt "$OUT_DIR/fonts/" 2>/dev/null || true
 
 echo "== Done =="
 echo "Built: $OUT_DIR/SimpleDrawingApp.exe"

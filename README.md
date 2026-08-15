@@ -44,6 +44,7 @@ Made with the same building blocks the app exposes — gradients, ellipses, poly
 - Mouse capture, status bar with live size + zoom
 - Modern light chrome + dark title bar (Windows 10/11)
 - Renaissance atelier chrome: left tool rail, top actions, bottom size/opacity, icon buttons
+- Bundled OFL fonts (Cinzel display + DM Sans UI) and bronze HUD plates
 - Keyboard shortcuts: `Ctrl+N/O/S/E/A/X/C/V`, `Ctrl+Z/Y`, `Del`, `Esc`
 
 ## Requirements
@@ -99,6 +100,7 @@ SimpleDrawingApp/
     ├── LayerHistory.*         # Undo / redo for the full layer stack
     ├── DrawingTools.*         # Tool enum + flood fill
     ├── UiChrome.*             # Icon drawing + owner-draw chrome buttons
+    ├── AtelierFonts.*         # Private OFL font loader (Cinzel / DM Sans)
     ├── FileManager.*          # Image save / load
     ├── ColorPicker.*          # ChooseColor dialog
     └── Resource.h / .rc       # Menu, accelerators, About
@@ -118,6 +120,7 @@ SimpleDrawingApp/
 - [x] Fresco washes + chrome motion (compass, tool pulse)
 - [x] Idle chrome motion without draw/resize flicker (cached fresco + overlay)
 - [x] Brand mark as dedicated child window (single BitBlt; no parent overdraw)
+- [x] Bronze & Parchment visual language + bundled Cinzel/DM Sans
 
 ## Contributing
 

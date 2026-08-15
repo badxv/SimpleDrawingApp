@@ -26,13 +26,15 @@ enum class UiIcon {
 };
 
 struct IconPaintOpts {
-    COLORREF chromeBg = RGB(220, 210, 196);
-    COLORREF accent = RGB(168, 118, 48);
-    COLORREF text = RGB(42, 36, 28);
-    COLORREF selectedBg = RGB(248, 236, 208);
-    float pulse = 0.0f;          // 0..1 selected border breath
-    float pressScale = 1.0f;     // brief tool-switch pop
-    COLORREF colorFill = 0;      // Color icon fill (pen color)
+    COLORREF chromeBg = RGB(210, 198, 180);
+    COLORREF accent = RGB(176, 122, 48);
+    COLORREF accentDeep = RGB(120, 78, 28);
+    COLORREF text = RGB(36, 30, 22);
+    COLORREF selectedBg = RGB(250, 236, 200);
+    COLORREF elevated = RGB(244, 236, 222);
+    float pulse = 0.0f;
+    float pressScale = 1.0f;
+    COLORREF colorFill = 0;
     bool useColorFill = false;
 };
 
@@ -48,3 +50,13 @@ void DrawFrescoPanel(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
 void DrawFrescoGrain(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds, Gdiplus::Color grain);
 void DrawBrandCompass(Gdiplus::Graphics& g, float cx, float cy, float radius,
     Gdiplus::Color gold, float angleDeg);
+
+// Thin bronze HUD plate: double hairline + corner ticks (atelier × futurism).
+void DrawHudPlate(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
+    Gdiplus::Color fill, Gdiplus::Color bronze, bool filled);
+
+void DrawHudCornerTicks(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
+    Gdiplus::Color bronze, float tick = 7.0f);
+
+void DrawCanvasWell(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
+    Gdiplus::Color rim, Gdiplus::Color shadow);

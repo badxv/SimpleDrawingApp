@@ -142,12 +142,14 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="LayerHistory.h" />
     <ClInclude Include="LayerStack.h" />
+    <ClInclude Include="AtelierFonts.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="SimpleDrawingApp.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="UiChrome.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AtelierFonts.cpp" />
     <ClCompile Include="CanvasHistory.cpp" />
     <ClCompile Include="ColorPicker.cpp" />
     <ClCompile Include="DrawingTools.cpp" />

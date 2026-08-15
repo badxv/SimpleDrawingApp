@@ -1,0 +1,5 @@
+Bundled fonts (SIL Open Font License 1.1):
+- Cinzel (Copyright 2012 Natanael Gama) — see OFL-Cinzel.txt
+- DM Sans (Copyright 2014-2022 Indian Type Foundry, Google) — see OFL-DMSans.txt
+
+These fonts are bundled with SimpleDrawingApp under the OFL.
