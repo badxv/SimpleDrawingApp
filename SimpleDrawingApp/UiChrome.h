@@ -48,6 +48,9 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts);
 void DrawFrescoPanel(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
     Gdiplus::Color top, Gdiplus::Color bottom, bool vertical);
 void DrawFrescoGrain(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds, Gdiplus::Color grain);
+// Quiet Renaissance × HUD linework wallpaper for chrome side panels (baked into cache).
+void DrawFrescoMotifs(Gdiplus::Graphics& g, const Gdiplus::RectF& bounds,
+    Gdiplus::Color ink, bool verticalPanel);
 void DrawBrandCompass(Gdiplus::Graphics& g, float cx, float cy, float radius,
     Gdiplus::Color gold, float angleDeg);
 

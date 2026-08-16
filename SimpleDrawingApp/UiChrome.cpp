@@ -151,6 +151,184 @@ void DrawFrescoGrain(Graphics& g, const RectF& bounds, Color grain) {
     g.FillRectangle(&wash, RectF(x1 - 4.0f, y0, 4.0f, bounds.Height));
 }
 
+namespace {
+
+void MotifStroke(Pen& pen) {
+    pen.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
+    pen.SetLineJoin(LineJoinRound);
+}
+
+// One wallpaper cell: manuscript volute × thin orbital HUD (very low contrast).
+void DrawMotifCell(Graphics& g, float cx, float cy, float scale, Color ink, int variant) {
+    const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(22);
+    const BYTE aSoft = static_cast<BYTE>((a * 2) / 3);
+    const BYTE aFaint = static_cast<BYTE>((a * 2) / 5);
+
+    Pen pen(Color(a, ink.GetR(), ink.GetG(), ink.GetB()), 1.0f);
+    MotifStroke(pen);
+    Pen soft(Color(aSoft, ink.GetR(), ink.GetG(), ink.GetB()), 0.9f);
+    MotifStroke(soft);
+    Pen faint(Color(aFaint, ink.GetR(), ink.GetG(), ink.GetB()), 0.8f);
+    MotifStroke(faint);
+
+    const float r = scale;
+    // Futurism: nested construction rings + dashed outer orbit.
+    g.DrawEllipse(&faint, cx - r * 1.15f, cy - r * 1.15f, r * 2.3f, r * 2.3f);
+    g.DrawEllipse(&soft, cx - r * 0.72f, cy - r * 0.72f, r * 1.44f, r * 1.44f);
+
+    REAL dashVals[2] = { 2.5f, 3.5f };
+    faint.SetDashStyle(DashStyleCustom);
+    faint.SetDashPattern(dashVals, 2);
+    g.DrawEllipse(&faint, cx - r * 1.45f, cy - r * 1.45f, r * 2.9f, r * 2.9f);
+    faint.SetDashStyle(DashStyleSolid);
+
+    // Crosshair ticks (HUD).
+    const float tick = r * 0.22f;
+    g.DrawLine(&soft, cx - r * 1.45f, cy, cx - r * 1.45f + tick, cy);
+    g.DrawLine(&soft, cx + r * 1.45f - tick, cy, cx + r * 1.45f, cy);
+    g.DrawLine(&soft, cx, cy - r * 1.45f, cx, cy - r * 1.45f + tick);
+    g.DrawLine(&soft, cx, cy + r * 1.45f - tick, cx, cy + r * 1.45f);
+
+    // Renaissance: paired volutes (mirror) — variant flips leaf bias.
+    const float sx = (variant & 1) ? -1.0f : 1.0f;
+    GraphicsPath volL;
+    volL.AddBezier(
+        PointF(cx - r * 0.15f, cy + r * 0.1f),
+        PointF(cx - r * 0.85f, cy + r * 0.55f),
+        PointF(cx - r * 1.05f, cy - r * 0.15f),
+        PointF(cx - r * 0.45f, cy - r * 0.35f));
+    GraphicsPath volR;
+    volR.AddBezier(
+        PointF(cx + r * 0.15f, cy + r * 0.1f),
+        PointF(cx + r * 0.85f, cy + r * 0.55f),
+        PointF(cx + r * 1.05f, cy - r * 0.15f),
+        PointF(cx + r * 0.45f, cy - r * 0.35f));
+    g.DrawPath(&pen, &volL);
+    g.DrawPath(&pen, &volR);
+
+    // Tiny fleuron / lozenge hub.
+    const float d = r * 0.18f;
+    PointF dia[4] = {
+        PointF(cx, cy - d),
+        PointF(cx + d, cy),
+        PointF(cx, cy + d),
+        PointF(cx - d, cy)
+    };
+    g.DrawPolygon(&soft, dia, 4);
+
+    // Leaf tip accents.
+    GraphicsPath leaf;
+    leaf.AddBezier(
+        PointF(cx + sx * r * 0.55f, cy - r * 0.55f),
+        PointF(cx + sx * r * 0.95f, cy - r * 0.95f),
+        PointF(cx + sx * r * 1.15f, cy - r * 0.35f),
+        PointF(cx + sx * r * 0.7f, cy - r * 0.25f));
+    g.DrawPath(&faint, &leaf);
+
+    // Astrolabe chord (futurist).
+    if ((variant % 3) != 0) {
+        const float ang = (variant & 2) ? 0.55f : -0.4f;
+        const float c = cosf(ang);
+        const float s = sinf(ang);
+        g.DrawLine(&faint,
+            cx + c * r * 0.2f, cy + s * r * 0.2f,
+            cx + c * r * 1.2f, cy + s * r * 1.2f);
+    }
+}
+
+void DrawMotifBandRule(Graphics& g, float x0, float x1, float y, Color ink) {
+    const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(18);
+    Pen pen(Color(a, ink.GetR(), ink.GetG(), ink.GetB()), 0.85f);
+    MotifStroke(pen);
+    const float mid = (x0 + x1) * 0.5f;
+    g.DrawLine(&pen, x0 + 6.0f, y, mid - 8.0f, y);
+    g.DrawLine(&pen, mid + 8.0f, y, x1 - 6.0f, y);
+    // Ornamental break: tiny diamond
+    const float d = 2.4f;
+    PointF dia[4] = {
+        PointF(mid, y - d),
+        PointF(mid + d, y),
+        PointF(mid, y + d),
+        PointF(mid - d, y)
+    };
+    g.DrawPolygon(&pen, dia, 4);
+}
+
+} // namespace
+
+void DrawFrescoMotifs(Graphics& g, const RectF& bounds, Color ink, bool verticalPanel) {
+    if (bounds.Width < 20.0f || bounds.Height < 24.0f) return;
+
+    const SmoothingMode prevSmooth = g.GetSmoothingMode();
+
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetClip(bounds, CombineModeIntersect);
+
+    if (verticalPanel) {
+        const float cx = bounds.X + bounds.Width * 0.5f;
+        const bool narrow = bounds.Width < 70.0f;
+        const float scale = narrow ? 10.0f : 16.0f;
+        const float step = scale * (narrow ? 4.4f : 4.0f);
+        // Start below typical caption / first control row.
+        float y = bounds.Y + (narrow ? 40.0f : 48.0f);
+        int variant = 0;
+        for (; y < bounds.Y + bounds.Height - 24.0f; y += step, ++variant) {
+            DrawMotifCell(g, cx, y, scale, ink, variant);
+            // Soft linking vine between cells (manuscript column).
+            if (y + step < bounds.Y + bounds.Height - 24.0f) {
+                const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(30);
+                Pen vine(Color(static_cast<BYTE>((a * 3) / 5), ink.GetR(), ink.GetG(), ink.GetB()), 0.9f);
+                MotifStroke(vine);
+                GraphicsPath link;
+                link.AddBezier(
+                    PointF(cx, y + scale * 1.55f),
+                    PointF(cx + scale * 0.6f, y + step * 0.35f),
+                    PointF(cx - scale * 0.6f, y + step * 0.65f),
+                    PointF(cx, y + step - scale * 1.55f));
+                g.DrawPath(&vine, &link);
+            }
+        }
+        // Wide panels: offset secondary column of fainter cells (wallpaper density).
+        if (!narrow && bounds.Width > 120.0f) {
+            Color faintInk(
+                static_cast<BYTE>(ink.GetA() > 8 ? ink.GetA() - 8 : ink.GetA()),
+                ink.GetR(), ink.GetG(), ink.GetB());
+            const float cx2 = bounds.X + bounds.Width * 0.72f;
+            const float scale2 = scale * 0.55f;
+            int v2 = 1;
+            for (float y2 = bounds.Y + 70.0f; y2 < bounds.Y + bounds.Height - 30.0f; y2 += step * 1.15f, ++v2) {
+                DrawMotifCell(g, cx2, y2, scale2, faintInk, v2 + 3);
+            }
+        }
+        // Side hairline pilasters (engraved plate edge).
+        {
+            const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(26);
+            Pen edge(Color(static_cast<BYTE>((a * 3) / 5), ink.GetR(), ink.GetG(), ink.GetB()), 0.85f);
+            MotifStroke(edge);
+            g.DrawLine(&edge, bounds.X + 3.5f, bounds.Y + 10.0f,
+                bounds.X + 3.5f, bounds.Y + bounds.Height - 10.0f);
+            g.DrawLine(&edge, bounds.X + bounds.Width - 3.5f, bounds.Y + 10.0f,
+                bounds.X + bounds.Width - 3.5f, bounds.Y + bounds.Height - 10.0f);
+        }
+    } else {
+        // Horizontal chrome strip: sparse cells + ornamental rules.
+        const float cy = bounds.Y + bounds.Height * 0.55f;
+        const float scale = 8.0f;
+        const float step = 96.0f;
+        int variant = 0;
+        for (float x = bounds.X + 48.0f; x < bounds.X + bounds.Width - 40.0f; x += step, ++variant) {
+            if ((variant % 2) == 0) {
+                DrawMotifCell(g, x, cy, scale, ink, variant);
+            }
+        }
+        DrawMotifBandRule(g, bounds.X, bounds.X + bounds.Width,
+            bounds.Y + bounds.Height - 3.0f, ink);
+    }
+
+    g.ResetClip();
+    g.SetSmoothingMode(prevSmooth);
+}
+
 void DrawBrandCompass(Graphics& g, float cx, float cy, float radius, Color gold, float angleDeg) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     Pen ring(gold, 1.5f);
