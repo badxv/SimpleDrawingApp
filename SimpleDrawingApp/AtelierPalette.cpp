@@ -410,12 +410,25 @@ void Persist(PaletteState* st) {
     fclose(f);
 }
 
+int HexNibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
 COLORREF ParseHex6(const char* s) {
-    unsigned r = 0, g = 0, b = 0;
-    if (std::sscanf(s, "%02X%02X%02X", &r, &g, &b) == 3) {
-        return RGB(r, g, b);
+    if (!s) return RGB(0, 0, 0);
+    int nibbles[6] = {};
+    for (int i = 0; i < 6; ++i) {
+        const int n = HexNibble(s[i]);
+        if (n < 0) return RGB(0, 0, 0);
+        nibbles[i] = n;
     }
-    return RGB(0, 0, 0);
+    const unsigned r = static_cast<unsigned>((nibbles[0] << 4) | nibbles[1]);
+    const unsigned g = static_cast<unsigned>((nibbles[2] << 4) | nibbles[3]);
+    const unsigned b = static_cast<unsigned>((nibbles[4] << 4) | nibbles[5]);
+    return RGB(r, g, b);
 }
 
 void LoadList(std::vector<COLORREF>& out, const char* line, int maxCount) {
