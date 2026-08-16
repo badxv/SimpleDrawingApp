@@ -67,7 +67,9 @@ void LayerStack::Reset(int width, int height, COLORREF background) {
     width_ = width;
     height_ = height;
     layers_.push_back(CreateLayer(width_, height_, "Background", true, background));
-    active_ = 0;
+    // Start drawing on a transparent content layer above Background.
+    layers_.push_back(CreateLayer(width_, height_, "Layer 1", false, RGB(0, 0, 0)));
+    active_ = 1;
 }
 
 void LayerStack::SetActiveIndex(int index) {
@@ -215,7 +217,8 @@ bool LayerStack::ReplaceWithImage(Bitmap* image) {
     Layer layer = CreateLayer(w, h, "Background", true, RGB(255, 255, 255));
     layer.graphics->DrawImage(image, 0, 0);
     layers_.push_back(layer);
-    active_ = 0;
+    layers_.push_back(CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0)));
+    active_ = 1;
     return true;
 }
 

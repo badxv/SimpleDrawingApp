@@ -1638,7 +1638,7 @@ static void DoNew(HWND hwnd) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
-    // Keep current document size; reset to a single background layer.
+    // Keep current document size; reset to Background + Layer 1 (active).
     gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
     gHistory.Clear();
     InvalidateComposite();
