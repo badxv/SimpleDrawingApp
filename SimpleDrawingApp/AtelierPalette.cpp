@@ -11,6 +11,8 @@
 #define NOMINMAX
 #endif
 
+#pragma comment(lib, "Msimg32.lib")
+
 namespace {
 
 const char kClassName[] = "AtelierColorPalette";
