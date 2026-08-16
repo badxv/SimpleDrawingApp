@@ -266,31 +266,44 @@ void DrawFrescoMotifs(Graphics& g, const RectF& bounds, Color ink, bool vertical
 
     if (verticalPanel) {
         const float cx = bounds.X + bounds.Width * 0.5f;
-        const float scale = (bounds.Width < 70.0f) ? 9.5f : 14.0f;
-        const float step = scale * 4.6f;
+        const bool narrow = bounds.Width < 70.0f;
+        const float scale = narrow ? 10.0f : 16.0f;
+        const float step = scale * (narrow ? 4.4f : 4.0f);
         // Start below typical caption / first control row.
-        float y = bounds.Y + 36.0f;
+        float y = bounds.Y + (narrow ? 40.0f : 48.0f);
         int variant = 0;
-        for (; y < bounds.Y + bounds.Height - 28.0f; y += step, ++variant) {
+        for (; y < bounds.Y + bounds.Height - 24.0f; y += step, ++variant) {
             DrawMotifCell(g, cx, y, scale, ink, variant);
             // Soft linking vine between cells (manuscript column).
-            if (y + step < bounds.Y + bounds.Height - 28.0f) {
-                const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(22);
-                Pen vine(Color(static_cast<BYTE>((a * 2) / 5), ink.GetR(), ink.GetG(), ink.GetB()), 0.85f);
+            if (y + step < bounds.Y + bounds.Height - 24.0f) {
+                const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(30);
+                Pen vine(Color(static_cast<BYTE>((a * 3) / 5), ink.GetR(), ink.GetG(), ink.GetB()), 0.9f);
                 MotifStroke(vine);
                 GraphicsPath link;
                 link.AddBezier(
-                    PointF(cx, y + scale * 1.5f),
-                    PointF(cx + scale * 0.55f, y + step * 0.35f),
-                    PointF(cx - scale * 0.55f, y + step * 0.65f),
-                    PointF(cx, y + step - scale * 1.5f));
+                    PointF(cx, y + scale * 1.55f),
+                    PointF(cx + scale * 0.6f, y + step * 0.35f),
+                    PointF(cx - scale * 0.6f, y + step * 0.65f),
+                    PointF(cx, y + step - scale * 1.55f));
                 g.DrawPath(&vine, &link);
+            }
+        }
+        // Wide panels: offset secondary column of fainter cells (wallpaper density).
+        if (!narrow && bounds.Width > 120.0f) {
+            Color faintInk(
+                static_cast<BYTE>(ink.GetA() > 8 ? ink.GetA() - 8 : ink.GetA()),
+                ink.GetR(), ink.GetG(), ink.GetB());
+            const float cx2 = bounds.X + bounds.Width * 0.72f;
+            const float scale2 = scale * 0.55f;
+            int v2 = 1;
+            for (float y2 = bounds.Y + 70.0f; y2 < bounds.Y + bounds.Height - 30.0f; y2 += step * 1.15f, ++v2) {
+                DrawMotifCell(g, cx2, y2, scale2, faintInk, v2 + 3);
             }
         }
         // Side hairline pilasters (engraved plate edge).
         {
-            const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(18);
-            Pen edge(Color(static_cast<BYTE>((a * 3) / 5), ink.GetR(), ink.GetG(), ink.GetB()), 0.8f);
+            const BYTE a = ink.GetA() > 0 ? ink.GetA() : static_cast<BYTE>(26);
+            Pen edge(Color(static_cast<BYTE>((a * 3) / 5), ink.GetR(), ink.GetG(), ink.GetB()), 0.85f);
             MotifStroke(edge);
             g.DrawLine(&edge, bounds.X + 3.5f, bounds.Y + 10.0f,
                 bounds.X + 3.5f, bounds.Y + bounds.Height - 10.0f);
