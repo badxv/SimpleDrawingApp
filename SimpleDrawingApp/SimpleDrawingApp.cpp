@@ -33,15 +33,18 @@ using namespace Gdiplus;
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
-constexpr int TOPBAR_HEIGHT = 48;
-constexpr int TOOL_RAIL_WIDTH = 108; // room for round color well
-constexpr int PANEL_EDGE_WIDTH = 28; // collapsed rail / layers strip
-constexpr int BOTTOMBAR_HEIGHT = 44;
-constexpr int STATUS_HEIGHT = 24;
-constexpr int LAYER_PANEL_WIDTH = 176;
-constexpr int ICON_BTN = 34;
-constexpr int WELL_FRAME = 14; // mount band for hairline + Renaissance ornaments
-constexpr int BRAND_STRIP_W = 156;
+constexpr int TOPBAR_HEIGHT = 38;       // compact Firefox-like top chrome
+constexpr int TOOL_RAIL_WIDTH = 100;
+constexpr int PANEL_EDGE_WIDTH = 22;    // collapsed rail / layers strip
+constexpr int BOTTOMBAR_HEIGHT = 34;
+constexpr int STATUS_HEIGHT = 22;
+constexpr int LAYER_PANEL_WIDTH = 168;
+constexpr int ICON_BTN = 30;
+constexpr int WELL_FRAME = 6;           // maximize canvas (was 14)
+constexpr int BRAND_STRIP_W = 118;
+constexpr int MENU_BTN_W = 44;
+constexpr int FLOAT_DRAG_H = 22;
+constexpr int FLOAT_CHIP_H = 36;
 constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;      // low-rate compass + tool pulse
@@ -124,9 +127,17 @@ HWND hwndShapeButtons[6] = {};
 HWND hwndShapeModeButtons[3] = {};
 HWND hwndToggleRail = nullptr;
 HWND hwndToggleLayers = nullptr;
+HWND hwndPaletteFloat = nullptr;
+HWND hwndMenuButtons[6] = {}; // File Edit Image View Tools Help
+HMENU gAppMenu = nullptr;
 
 bool gRailOpen = true;
 bool gLayersOpen = true;
+bool gBottomOpen = true;
+bool gPaletteFloating = false;
+POINT gPaletteFloatPos = { 80, 120 };
+bool gFloatDragging = false;
+POINT gFloatDragHot = {};
 
 POINT lastPoint = {};
 POINT shapeStart = {};
@@ -524,6 +535,7 @@ static ChromeLayout GetChromeLayout(HWND hwnd) {
     ChromeLayout layout;
     layout.railW = gRailOpen ? TOOL_RAIL_WIDTH : PANEL_EDGE_WIDTH;
     layout.layerW = gLayersOpen ? LAYER_PANEL_WIDTH : PANEL_EDGE_WIDTH;
+    layout.bottomH = gBottomOpen ? BOTTOMBAR_HEIGHT : 0;
     if (hwndStatus) {
         RECT sb = {};
         GetWindowRect(hwndStatus, &sb);
@@ -667,15 +679,202 @@ static void UpdateScrollBars() {
     }
 }
 
+static void LayoutFloatPaletteContents() {
+    if (!hwndPaletteFloat || !IsWindow(hwndPaletteFloat)) return;
+    RECT rc = {};
+    GetClientRect(hwndPaletteFloat, &rc);
+    const int w = rc.right - rc.left;
+    const int pad = 6;
+    int y = FLOAT_DRAG_H + 4;
+    if (hwndBgButton && GetParent(hwndBgButton) == hwndPaletteFloat) {
+        MoveWindow(hwndBgButton, pad + 14, y + 10, 20, 20, TRUE);
+    }
+    if (hwndActionButtons[0] && GetParent(hwndActionButtons[0]) == hwndPaletteFloat) {
+        MoveWindow(hwndActionButtons[0], pad, y, 22, 22, TRUE);
+    }
+    if (hwndSwapColors && GetParent(hwndSwapColors) == hwndPaletteFloat) {
+        MoveWindow(hwndSwapColors, pad + 28, y - 2, 18, 18, TRUE);
+    }
+    y += FLOAT_CHIP_H;
+    if (hwndPalette && GetParent(hwndPalette) == hwndPaletteFloat) {
+        const int palW = MaxInt(72, w - pad * 2);
+        const int palH = AtelierPalette_IdealHeight(palW);
+        MoveWindow(hwndPalette, pad, y, palW, palH, TRUE);
+    }
+}
+
+static int PaletteFloatHeight(int width) {
+    return FLOAT_DRAG_H + 4 + FLOAT_CHIP_H + AtelierPalette_IdealHeight(MaxInt(72, width - 12)) + 8;
+}
+
+static LRESULT CALLBACK PaletteFloatProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+        HBRUSH bg = CreateSolidBrush(gTheme.chromeDeep);
+        FillRect(hdc, &rc, bg);
+        DeleteObject(bg);
+        RECT drag = { 0, 0, rc.right, FLOAT_DRAG_H };
+        HBRUSH bar = CreateSolidBrush(gTheme.chromeElevated);
+        FillRect(hdc, &drag, bar);
+        DeleteObject(bar);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, gTheme.accentDeep);
+        if (gUiFont) SelectObject(hdc, gUiFont);
+        TextOutA(hdc, 8, 4, "Color", 5);
+        // Grip dots
+        for (int i = 0; i < 3; ++i) {
+            RECT d = { rc.right - 18, 6 + i * 4, rc.right - 10, 8 + i * 4 };
+            HBRUSH dot = CreateSolidBrush(gTheme.chromeLine);
+            FillRect(hdc, &d, dot);
+            DeleteObject(dot);
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        const int y = GET_Y_LPARAM(lParam);
+        if (y < FLOAT_DRAG_H) {
+            gFloatDragging = true;
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ClientToScreen(hwnd, &pt);
+            RECT wr = {};
+            GetWindowRect(hwnd, &wr);
+            gFloatDragHot.x = pt.x - wr.left;
+            gFloatDragHot.y = pt.y - wr.top;
+            SetCapture(hwnd);
+        }
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (gFloatDragging && (wParam & MK_LBUTTON)) {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ClientToScreen(hwnd, &pt);
+            gPaletteFloatPos.x = pt.x - gFloatDragHot.x;
+            gPaletteFloatPos.y = pt.y - gFloatDragHot.y;
+            SetWindowPos(hwnd, nullptr, gPaletteFloatPos.x, gPaletteFloatPos.y, 0, 0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        return 0;
+    case WM_LBUTTONUP:
+    case WM_CAPTURECHANGED:
+        gFloatDragging = false;
+        if (GetCapture() == hwnd) ReleaseCapture();
+        return 0;
+    case WM_COMMAND:
+        if (HWND main = GetWindow(hwnd, GW_OWNER)) {
+            return SendMessageA(main, msg, wParam, lParam);
+        }
+        break;
+    case WM_DRAWITEM:
+        if (HWND main = GetWindow(hwnd, GW_OWNER)) {
+            return SendMessageA(main, msg, wParam, lParam);
+        }
+        break;
+    case WM_SIZE:
+        LayoutFloatPaletteContents();
+        return 0;
+    case WM_NCHITTEST: {
+        LRESULT hit = DefWindowProcA(hwnd, msg, wParam, lParam);
+        if (hit == HTCLIENT) {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hwnd, &pt);
+            if (pt.y < FLOAT_DRAG_H) return HTCAPTION; // native drag as fallback
+        }
+        return hit;
+    }
+    default:
+        break;
+    }
+    return DefWindowProcA(hwnd, msg, wParam, lParam);
+}
+
+static bool RegisterPaletteFloatClass(HINSTANCE hInstance) {
+    WNDCLASSA wc = {};
+    wc.lpfnWndProc = PaletteFloatProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = "AtelierPaletteFloat";
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = NULL;
+    wc.style = CS_DROPSHADOW;
+    return RegisterClassA(&wc) != 0;
+}
+
+static void EnsurePaletteFloatHost(HWND owner) {
+    if (hwndPaletteFloat && IsWindow(hwndPaletteFloat)) return;
+    const int w = TOOL_RAIL_WIDTH;
+    const int h = PaletteFloatHeight(w);
+    hwndPaletteFloat = CreateWindowExA(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        "AtelierPaletteFloat",
+        "Color",
+        WS_POPUP | WS_CLIPCHILDREN | WS_BORDER,
+        gPaletteFloatPos.x, gPaletteFloatPos.y, w, h,
+        owner, NULL, GetModuleHandle(NULL), NULL);
+}
+
+static void DockPaletteInstruments(HWND mainHwnd) {
+    if (!gPaletteFloating) return;
+    gPaletteFloating = false;
+    if (hwndPalette) SetParent(hwndPalette, mainHwnd);
+    if (hwndActionButtons[0]) SetParent(hwndActionButtons[0], mainHwnd);
+    if (hwndBgButton) SetParent(hwndBgButton, mainHwnd);
+    if (hwndSwapColors) SetParent(hwndSwapColors, mainHwnd);
+    if (hwndPaletteFloat) ShowWindow(hwndPaletteFloat, SW_HIDE);
+}
+
+static void UndockPaletteInstruments(HWND mainHwnd) {
+    EnsurePaletteFloatHost(mainHwnd);
+    if (!hwndPaletteFloat) return;
+    gPaletteFloating = true;
+
+    if (hwndActionButtons[0]) SetParent(hwndActionButtons[0], hwndPaletteFloat);
+    if (hwndBgButton) SetParent(hwndBgButton, hwndPaletteFloat);
+    if (hwndSwapColors) SetParent(hwndSwapColors, hwndPaletteFloat);
+    if (hwndPalette) SetParent(hwndPalette, hwndPaletteFloat);
+
+    if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], SW_SHOW);
+    if (hwndBgButton) ShowWindow(hwndBgButton, SW_SHOW);
+    if (hwndSwapColors) ShowWindow(hwndSwapColors, SW_SHOW);
+    if (hwndPalette) ShowWindow(hwndPalette, SW_SHOW);
+
+    const int w = TOOL_RAIL_WIDTH;
+    const int h = PaletteFloatHeight(w);
+    SetWindowPos(hwndPaletteFloat, HWND_TOPMOST,
+        gPaletteFloatPos.x, gPaletteFloatPos.y, w, h,
+        SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    LayoutFloatPaletteContents();
+    // Keep colors in sync after reparent.
+    if (hwndPalette) AtelierPalette_SetColors(hwndPalette, penColor, backColor);
+}
+
+static void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
+    if (!gAppMenu || menuIndex < 0) return;
+    HMENU sub = GetSubMenu(gAppMenu, menuIndex);
+    if (!sub) return;
+    RECT br = {};
+    if (anchorBtn) GetWindowRect(anchorBtn, &br);
+    else GetWindowRect(hwnd, &br);
+    TrackPopupMenu(sub, TPM_LEFTALIGN | TPM_TOPALIGN, br.left, br.bottom, 0, hwnd, NULL);
+}
+
 static void ApplyPanelVisibility() {
     const int railShow = gRailOpen ? SW_SHOW : SW_HIDE;
     for (HWND btn : hwndToolButtons) {
         if (btn) ShowWindow(btn, railShow);
     }
-    if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], railShow);
-    if (hwndBgButton) ShowWindow(hwndBgButton, railShow);
-    if (hwndSwapColors) ShowWindow(hwndSwapColors, railShow);
-    if (hwndPalette) ShowWindow(hwndPalette, railShow);
+
+    if (!gPaletteFloating) {
+        if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], railShow);
+        if (hwndBgButton) ShowWindow(hwndBgButton, railShow);
+        if (hwndSwapColors) ShowWindow(hwndSwapColors, railShow);
+        if (hwndPalette) ShowWindow(hwndPalette, railShow);
+    }
 
     const int layerShow = gLayersOpen ? SW_SHOW : SW_HIDE;
     if (hwndLayerList) ShowWindow(hwndLayerList, layerShow);
@@ -685,6 +884,14 @@ static void ApplyPanelVisibility() {
     if (hwndLayerDown) ShowWindow(hwndLayerDown, layerShow);
     if (hwndLayerVisible) ShowWindow(hwndLayerVisible, layerShow);
     if (hwndLayerOpacity) ShowWindow(hwndLayerOpacity, layerShow);
+
+    const int bottomShow = gBottomOpen ? SW_SHOW : SW_HIDE;
+    if (hwndSizeLabel) ShowWindow(hwndSizeLabel, bottomShow);
+    if (hwndSlider) ShowWindow(hwndSlider, bottomShow);
+    if (hwndPenWidthBox) ShowWindow(hwndPenWidthBox, bottomShow);
+    if (hwndOpacityLabel) ShowWindow(hwndOpacityLabel, bottomShow);
+    if (hwndOpacitySlider) ShowWindow(hwndOpacitySlider, bottomShow);
+    if (hwndOpacityBox) ShowWindow(hwndOpacityBox, bottomShow);
 
     if (hwndToggleRail) ShowWindow(hwndToggleRail, SW_SHOW);
     if (hwndToggleLayers) ShowWindow(hwndToggleLayers, SW_SHOW);
@@ -696,8 +903,20 @@ static void SetRailOpen(HWND hwnd, bool open) {
     if (!gRailOpen && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
         CloseShapeFlyout();
     }
+    if (gRailOpen) {
+        DockPaletteInstruments(hwnd);
+        if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], SW_SHOW);
+        if (hwndBgButton) ShowWindow(hwndBgButton, SW_SHOW);
+        if (hwndSwapColors) ShowWindow(hwndSwapColors, SW_SHOW);
+        if (hwndPalette) ShowWindow(hwndPalette, SW_SHOW);
+    } else {
+        for (HWND btn : hwndToolButtons) {
+            if (btn) ShowWindow(btn, SW_HIDE);
+        }
+        UndockPaletteInstruments(hwnd);
+    }
     ApplyPanelVisibility();
-    UpdateButtonTooltip(hwnd, hwndToggleRail, gRailOpen ? "Hide tools" : "Show tools");
+    UpdateButtonTooltip(hwnd, hwndToggleRail, gRailOpen ? "Hide tools (Tab)" : "Show tools (Tab)");
     DestroyChromeCache();
     LayoutViewport(hwnd);
     if (hwndToggleRail) InvalidateRect(hwndToggleRail, NULL, FALSE);
@@ -709,10 +928,20 @@ static void SetLayersOpen(HWND hwnd, bool open) {
     if (gLayersOpen == open) return;
     gLayersOpen = open;
     ApplyPanelVisibility();
-    UpdateButtonTooltip(hwnd, hwndToggleLayers, gLayersOpen ? "Hide layers" : "Show layers");
+    UpdateButtonTooltip(hwnd, hwndToggleLayers, gLayersOpen ? "Hide layers (F9)" : "Show layers (F9)");
     DestroyChromeCache();
     LayoutViewport(hwnd);
     if (hwndToggleLayers) InvalidateRect(hwndToggleLayers, NULL, FALSE);
+    InvalidateRect(hwnd, NULL, FALSE);
+    SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+}
+
+static void SetBottomOpen(HWND hwnd, bool open) {
+    if (gBottomOpen == open) return;
+    gBottomOpen = open;
+    ApplyPanelVisibility();
+    DestroyChromeCache();
+    LayoutViewport(hwnd);
     InvalidateRect(hwnd, NULL, FALSE);
     SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
 }
@@ -792,13 +1021,21 @@ static void LayoutChromeControls(HWND hwnd) {
     GetClientRect(hwnd, &client);
     const int right = client.right - client.left;
 
-    // Top bar: undo/redo left-of-center actions; doc actions on the right.
+    // Top bar: brand | File…Help menus | undo cluster | doc actions
     const int topY = (chrome.topH - ICON_BTN) / 2;
-    int x = 160; // brand strip + breathing room
+    const int menuY = (chrome.topH - 22) / 2;
+    int x = BRAND_STRIP_W + 4;
+    for (int i = 0; i < 6; ++i) {
+        if (hwndMenuButtons[i]) {
+            MoveWindow(hwndMenuButtons[i], x, menuY, MENU_BTN_W, 22, TRUE);
+            x += MENU_BTN_W + 2;
+        }
+    }
+    x += 10;
     if (hwndActionButtons[2]) MoveWindow(hwndActionButtons[2], x, topY, ICON_BTN, ICON_BTN, TRUE); // Undo
     x += ICON_BTN + 4;
     if (hwndActionButtons[3]) MoveWindow(hwndActionButtons[3], x, topY, ICON_BTN, ICON_BTN, TRUE); // Redo
-    x += ICON_BTN + 10;
+    x += ICON_BTN + 8;
     if (hwndActionButtons[4]) MoveWindow(hwndActionButtons[4], x, topY, ICON_BTN, ICON_BTN, TRUE); // Clear
 
     x = right - chrome.layerW - (ICON_BTN + 4) * 3 - 12;
@@ -808,74 +1045,65 @@ static void LayoutChromeControls(HWND hwnd) {
     x += ICON_BTN + 4;
     if (hwndActionButtons[5]) MoveWindow(hwndActionButtons[5], x, topY, ICON_BTN, ICON_BTN, TRUE); // Save
 
-    // Panel collapse controls live on the panel edges (not the top bar).
-    const int tb = 22;
+    if (hwndBrand) {
+        MoveWindow(hwndBrand, 0, 0, BRAND_STRIP_W, chrome.topH, TRUE);
+    }
+
+    // Panel collapse controls on panel edges.
+    const int tb = 20;
     if (hwndToggleRail) {
         if (gRailOpen) {
-            MoveWindow(hwndToggleRail, chrome.railW - tb - 6, chrome.topH + 4, tb, tb, TRUE);
+            MoveWindow(hwndToggleRail, chrome.railW - tb - 4, chrome.topH + 4, tb, tb, TRUE);
         } else {
-            MoveWindow(hwndToggleRail, (chrome.railW - tb) / 2, chrome.topH + 8, tb, tb, TRUE);
+            MoveWindow(hwndToggleRail, (chrome.railW - tb) / 2, chrome.topH + 6, tb, tb, TRUE);
         }
     }
 
-    if (!gRailOpen) {
-        // Bottom bar still needs positioning; tool rail contents are hidden.
+    // Bottom inspectors (hidden when gBottomOpen is false via ShowWindow).
+    if (gBottomOpen) {
         const int bottomY = client.bottom - chrome.statusH - chrome.bottomH;
-        const int bottomX = chrome.railW + 12;
-        if (hwndSizeLabel) MoveWindow(hwndSizeLabel, bottomX, bottomY + 10, 34, 18, TRUE);
-        if (hwndSlider) MoveWindow(hwndSlider, bottomX + 36, bottomY + 4, 150, 30, TRUE);
-        if (hwndPenWidthBox) MoveWindow(hwndPenWidthBox, bottomX + 194, bottomY + 8, 40, 22, TRUE);
-        if (hwndOpacityLabel) MoveWindow(hwndOpacityLabel, bottomX + 250, bottomY + 10, 54, 18, TRUE);
-        if (hwndOpacitySlider) MoveWindow(hwndOpacitySlider, bottomX + 306, bottomY + 4, 150, 30, TRUE);
-        if (hwndOpacityBox) MoveWindow(hwndOpacityBox, bottomX + 464, bottomY + 8, 40, 22, TRUE);
+        const int bottomX = chrome.railW + 10;
+        if (hwndSizeLabel) MoveWindow(hwndSizeLabel, bottomX, bottomY + 8, 34, 18, TRUE);
+        if (hwndSlider) MoveWindow(hwndSlider, bottomX + 36, bottomY + 2, 140, 28, TRUE);
+        if (hwndPenWidthBox) MoveWindow(hwndPenWidthBox, bottomX + 184, bottomY + 6, 40, 22, TRUE);
+        if (hwndOpacityLabel) MoveWindow(hwndOpacityLabel, bottomX + 236, bottomY + 8, 54, 18, TRUE);
+        if (hwndOpacitySlider) MoveWindow(hwndOpacitySlider, bottomX + 290, bottomY + 2, 140, 28, TRUE);
+        if (hwndOpacityBox) MoveWindow(hwndOpacityBox, bottomX + 438, bottomY + 6, 40, 22, TRUE);
+    }
+
+    if (!gRailOpen) {
         (void)hwnd;
         return;
     }
 
-    // Left tool rail — keep tools toward the inner edge so parchment art reads on the outer strip.
-    const int railX = 10;
-    int y = chrome.topH + 30; // leave room for collapse control
-    // Pen Eraser Fill | Select | Line Shapes
+    // Docked tool rail + palette (skipped while floating).
+    const int railX = 8;
+    int y = chrome.topH + 26;
     const int order[kToolButtonCount] = { 0, 1, 2, 3, 4, 5 };
     for (int i = 0; i < kToolButtonCount; ++i) {
         const int idx = order[i];
         if (hwndToolButtons[idx]) {
             MoveWindow(hwndToolButtons[idx], railX, y, ICON_BTN, ICON_BTN, TRUE);
         }
-        y += ICON_BTN + 6;
-        if (i == 2 || i == 3) y += 6; // group spacing
+        y += ICON_BTN + 5;
+        if (i == 2 || i == 3) y += 4;
     }
 
-    y += 8;
-    // Photoshop-style FG/BG chips (FG in front).
-    if (hwndBgButton) {
-        MoveWindow(hwndBgButton, railX + 14, y + 12, 22, 22, TRUE);
-    }
-    if (hwndActionButtons[0]) {
-        MoveWindow(hwndActionButtons[0], railX, y, 24, 24, TRUE); // FG
-    }
-    if (hwndSwapColors) {
-        MoveWindow(hwndSwapColors, railX + 28, y - 2, 18, 18, TRUE);
-    }
-    y += 40;
+    if (!gPaletteFloating) {
+        y += 6;
+        if (hwndBgButton) MoveWindow(hwndBgButton, railX + 14, y + 10, 20, 20, TRUE);
+        if (hwndActionButtons[0]) MoveWindow(hwndActionButtons[0], railX, y, 22, 22, TRUE);
+        if (hwndSwapColors) MoveWindow(hwndSwapColors, railX + 28, y - 2, 18, 18, TRUE);
+        y += 36;
 
-    if (hwndPalette) {
-        const int palW = chrome.railW - 12;
-        const int palH = AtelierPalette_IdealHeight(palW);
-        const int maxH = (client.bottom - chrome.statusH - chrome.bottomH) - y - 8;
-        const int h = (palH < maxH) ? palH : (maxH > 80 ? maxH : 80);
-        MoveWindow(hwndPalette, 6, y, palW, h, TRUE);
+        if (hwndPalette) {
+            const int palW = chrome.railW - 10;
+            const int palH = AtelierPalette_IdealHeight(palW);
+            const int maxH = (client.bottom - chrome.statusH - chrome.bottomH) - y - 6;
+            const int h = (palH < maxH) ? palH : (maxH > 72 ? maxH : 72);
+            MoveWindow(hwndPalette, 5, y, palW, h, TRUE);
+        }
     }
-
-    // Bottom bar under canvas: size + opacity.
-    const int bottomY = client.bottom - chrome.statusH - chrome.bottomH;
-    const int bottomX = chrome.railW + 12;
-    if (hwndSizeLabel) MoveWindow(hwndSizeLabel, bottomX, bottomY + 10, 34, 18, TRUE);
-    if (hwndSlider) MoveWindow(hwndSlider, bottomX + 36, bottomY + 4, 150, 30, TRUE);
-    if (hwndPenWidthBox) MoveWindow(hwndPenWidthBox, bottomX + 194, bottomY + 8, 40, 22, TRUE);
-    if (hwndOpacityLabel) MoveWindow(hwndOpacityLabel, bottomX + 250, bottomY + 10, 54, 18, TRUE);
-    if (hwndOpacitySlider) MoveWindow(hwndOpacitySlider, bottomX + 306, bottomY + 4, 150, 30, TRUE);
-    if (hwndOpacityBox) MoveWindow(hwndOpacityBox, bottomX + 464, bottomY + 8, 40, 22, TRUE);
 
     (void)hwnd;
 }
@@ -1420,6 +1648,9 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "  L          Line\r\n"
             "  U          Shapes\r\n"
             "  X          Swap foreground / background\r\n"
+            "  Tab        Toggle tools rail (floating color when hidden)\r\n"
+            "  F9         Toggle layers panel\r\n"
+            "  F8         Toggle size/opacity bar\r\n"
             "\r\n"
             "While drawing a shape\r\n"
             "  Alt        Fill only (hold)\r\n"
@@ -2598,8 +2829,21 @@ static void CreateToolbar(HWND hwnd) {
     hwndActionButtons[5] = CreateIconButton(hwnd, IDC_SAVE_BUTTON, "Save (Ctrl+S)", false);
     hwndActionButtons[6] = CreateIconButton(hwnd, IDC_LOAD_BUTTON, "Open (Ctrl+O)", false);
 
-    hwndToggleRail = CreateIconButton(hwnd, IDC_TOGGLE_RAIL, "Hide tools", false);
-    hwndToggleLayers = CreateIconButton(hwnd, IDC_TOGGLE_LAYERS, "Hide layers", false);
+    hwndToggleRail = CreateIconButton(hwnd, IDC_TOGGLE_RAIL, "Hide tools\r\nShortcut: Tab", false);
+    hwndToggleLayers = CreateIconButton(hwnd, IDC_TOGGLE_LAYERS, "Hide layers\r\nShortcut: F9", false);
+
+    static const char* kMenuLabels[6] = { "File", "Edit", "Image", "View", "Tools", "Help" };
+    static const int kMenuIds[6] = {
+        IDC_MENU_FILE, IDC_MENU_EDIT, IDC_MENU_IMAGE,
+        IDC_MENU_VIEW, IDC_MENU_TOOLS, IDC_MENU_HELP
+    };
+    for (int i = 0; i < 6; ++i) {
+        hwndMenuButtons[i] = CreateWindowA("BUTTON", kMenuLabels[i],
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+            0, 0, MENU_BTN_W, 22,
+            hwnd, (HMENU)(INT_PTR)kMenuIds[i], GetModuleHandle(NULL), NULL);
+        ApplyUiFont(hwndMenuButtons[i]);
+    }
 
     // Bottom inspectors
     hwndSizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
@@ -3204,6 +3448,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDC_TOGGLE_LAYERS:
             SetLayersOpen(hwnd, !gLayersOpen);
             break;
+        case IDC_TOGGLE_BOTTOM:
+            SetBottomOpen(hwnd, !gBottomOpen);
+            break;
+        case IDC_MENU_FILE:
+            PopupAppMenu(hwnd, 0, hwndMenuButtons[0]);
+            break;
+        case IDC_MENU_EDIT:
+            PopupAppMenu(hwnd, 1, hwndMenuButtons[1]);
+            break;
+        case IDC_MENU_IMAGE:
+            PopupAppMenu(hwnd, 2, hwndMenuButtons[2]);
+            break;
+        case IDC_MENU_VIEW:
+            PopupAppMenu(hwnd, 3, hwndMenuButtons[3]);
+            break;
+        case IDC_MENU_TOOLS:
+            PopupAppMenu(hwnd, 4, hwndMenuButtons[4]);
+            break;
+        case IDC_MENU_HELP:
+            PopupAppMenu(hwnd, 5, hwndMenuButtons[5]);
+            break;
         case IDC_BG_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
             backColor = newColor;
@@ -3414,6 +3679,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             case 'L': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_LINE, 0), 0); break;
             case 'U': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_SHAPES, 0), 0); break;
             case 'X': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_SWAP_COLORS, 0), 0); break;
+            case VK_TAB:
+                SetRailOpen(hwnd, !gRailOpen);
+                break;
+            case VK_F9:
+                SetLayersOpen(hwnd, !gLayersOpen);
+                break;
+            case VK_F8:
+                SetBottomOpen(hwnd, !gBottomOpen);
+                break;
             default: break;
             }
         }
@@ -3470,6 +3744,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             AtelierPalette_Save(hwndPalette);
             hwndPalette = nullptr;
         }
+        if (hwndPaletteFloat) {
+            DestroyWindow(hwndPaletteFloat);
+            hwndPaletteFloat = nullptr;
+        }
+        gAppMenu = nullptr;
         hwndBrand = nullptr;
         hwndViewport = nullptr;
         if (gUiFont) {
@@ -3548,6 +3827,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
+    if (!RegisterPaletteFloatClass(hInstance)) {
+        AtelierArtwork_Shutdown();
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
 
     WNDCLASSA wc = {};
     wc.lpfnWndProc = WindowProc;
@@ -3578,6 +3863,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 0;
     }
 
+    // Move classic menubar into the top chrome (Firefox-like); keep HMENU for popups.
+    gAppMenu = GetMenu(hwnd);
+    SetMenu(hwnd, NULL);
+    DrawMenuBar(hwnd);
+
     gAccel = LoadAcceleratorsA(hInstance, MAKEINTRESOURCEA(IDC_SIMPLEDRAWINGAPP));
 
     ShowWindow(hwnd, nCmdShow);
@@ -3585,8 +3875,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     MSG msg = {};
     while (GetMessage(&msg, NULL, 0, 0)) {
-        // Bare letter tool accelerators must not steal keys from Size/Opacity edits.
-        // Ctrl/Alt chords (Save, Undo, …) still translate while typing.
+        // Tab toggles the tools rail (don't let it cycle child focus).
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_TAB && !IsTypingInEdit()
+            && (GetKeyState(VK_CONTROL) & 0x8000) == 0
+            && (GetKeyState(VK_MENU) & 0x8000) == 0) {
+            SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDC_TOGGLE_RAIL, 0), 0);
+            continue;
+        }
         const bool keyMsg = (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN);
         const bool typing = keyMsg && IsTypingInEdit();
         const bool ctrlOrAlt = (GetKeyState(VK_CONTROL) & 0x8000) != 0
