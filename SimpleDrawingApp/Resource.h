@@ -90,6 +90,13 @@
 #define ID_PALETTE				1062
 #define IDC_TOGGLE_RAIL			1063
 #define IDC_TOGGLE_LAYERS		1064
+#define IDC_MENU_FILE			1070
+#define IDC_MENU_EDIT			1071
+#define IDC_MENU_IMAGE			1072
+#define IDC_MENU_VIEW			1073
+#define IDC_MENU_TOOLS			1074
+#define IDC_MENU_HELP			1075
+#define IDC_TOGGLE_BOTTOM		1076
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
