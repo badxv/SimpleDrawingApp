@@ -93,6 +93,7 @@ float gUiPulse = 0.0f;            // 0..1 selected-tool breath (idle)
 float gUiCompassAngle = -18.0f;   // animated overlay angle
 float gToolFlash = 0.0f;          // 1 → 0 after tool switch
 float gIdlePhase = 0.0f;
+float gSelAntOffset = 0.0f; // marching-ants dash phase (Photoshop-style)
 bool gUiSizing = false;
 Bitmap* gChromeCache = nullptr;
 int gChromeCacheW = 0;
@@ -1051,28 +1052,68 @@ static void DrawSelectionOverlay(Graphics* g) {
                 gSel.h * zoomFactor));
     }
 
-    Pen dash(Color(255, 0, 0, 0), 1.0f);
-    dash.SetDashStyle(DashStyleDash);
+    const float x = gSel.x * zoomFactor;
+    const float y = gSel.y * zoomFactor;
     const float selW = MaxFloat(1.0f, gSel.w * zoomFactor);
     const float selH = MaxFloat(1.0f, gSel.h * zoomFactor);
-    g->DrawRectangle(
-        &dash,
-        RectF(
-            gSel.x * zoomFactor,
-            gSel.y * zoomFactor,
-            selW,
-            selH));
+    const RectF box(x, y, selW, selH);
 
-    Pen dash2(Color(255, 255, 255, 255), 1.0f);
-    dash2.SetDashStyle(DashStyleDash);
-    dash2.SetDashOffset(4.0f);
-    g->DrawRectangle(
-        &dash2,
-        RectF(
-            gSel.x * zoomFactor,
-            gSel.y * zoomFactor,
-            selW,
-            selH));
+    // Soft exterior veil (PS-like focus) — warm atelier ink, not cold gray.
+    {
+        const float docW = static_cast<float>(ScaledContentWidth());
+        const float docH = static_cast<float>(ScaledContentHeight());
+        SolidBrush veil(Color(58, 36, 28, 20));
+        if (y > 0.0f) {
+            g->FillRectangle(&veil, RectF(0.0f, 0.0f, docW, y));
+        }
+        if (y + selH < docH) {
+            g->FillRectangle(&veil, RectF(0.0f, y + selH, docW, docH - (y + selH)));
+        }
+        if (x > 0.0f) {
+            g->FillRectangle(&veil, RectF(0.0f, y, x, selH));
+        }
+        if (x + selW < docW) {
+            g->FillRectangle(&veil, RectF(x + selW, y, docW - (x + selW), selH));
+        }
+    }
+
+    // Crisp under-rule so ants read on any canvas tone.
+    Pen under(Color(200, GetRValue(gTheme.ink), GetGValue(gTheme.ink), GetBValue(gTheme.ink)), 1.35f);
+    g->DrawRectangle(&under, box);
+
+    // Marching ants: ink + parchment (high contrast), gilt hairline for atelier.
+    REAL dashPattern[2] = { 5.0f, 4.0f };
+    Pen antDark(Color(255, GetRValue(gTheme.ink), GetGValue(gTheme.ink), GetBValue(gTheme.ink)), 1.15f);
+    antDark.SetDashStyle(DashStyleCustom);
+    antDark.SetDashPattern(dashPattern, 2);
+    antDark.SetDashOffset(gSelAntOffset);
+
+    Pen antLight(Color(255, 250, 244, 230), 1.15f);
+    antLight.SetDashStyle(DashStyleCustom);
+    antLight.SetDashPattern(dashPattern, 2);
+    antLight.SetDashOffset(gSelAntOffset + dashPattern[0]);
+
+    g->DrawRectangle(&antDark, box);
+    g->DrawRectangle(&antLight, box);
+
+    Pen gilt(Color(170, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent)), 1.0f);
+    g->DrawRectangle(&gilt, RectF(box.X - 0.5f, box.Y - 0.5f, box.Width + 1.0f, box.Height + 1.0f));
+
+    // Corner handles — small gilt plates (transform affordance, atelier-scaled).
+    const float hs = 3.6f;
+    const PointF corners[4] = {
+        { box.X, box.Y },
+        { box.X + box.Width, box.Y },
+        { box.X, box.Y + box.Height },
+        { box.X + box.Width, box.Y + box.Height }
+    };
+    SolidBrush handleFill(Color(235, GetRValue(gTheme.chromeElevated), GetGValue(gTheme.chromeElevated), GetBValue(gTheme.chromeElevated)));
+    Pen handleRim(Color(230, GetRValue(gTheme.accentDeep), GetGValue(gTheme.accentDeep), GetBValue(gTheme.accentDeep)), 1.1f);
+    for (const PointF& c : corners) {
+        RectF h(c.X - hs, c.Y - hs, hs * 2.0f, hs * 2.0f);
+        g->FillRectangle(&handleFill, h);
+        g->DrawRectangle(&handleRim, h);
+    }
 }
 
 static void DoCopy(HWND hwnd) {
@@ -2307,6 +2348,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             EnsureBrandStrip(TOPBAR_HEIGHT);
             InvalidateBrandMark();
             InvalidateActiveToolButton();
+
+            // Photoshop-style marching ants while a selection sits idle.
+            if (gSel.hasMarquee && !gSel.creating && !gSel.moving) {
+                gSelAntOffset += 1.25f;
+                if (gSelAntOffset >= 9.0f) gSelAntOffset -= 9.0f;
+                InvalidateCanvas();
+            }
         }
         else if (wParam == IDT_CHROME_REBUILD) {
             KillTimer(hwnd, IDT_CHROME_REBUILD);
