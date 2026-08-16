@@ -54,6 +54,14 @@ constexpr int CAPTION_BTN_W = 46;
 #define SM_CYPADDEDBORDER 92
 #endif
 
+static bool IsRunningUnderWine() {
+    static int cached = -1;
+    if (cached < 0) {
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        cached = (ntdll && GetProcAddress(ntdll, "wine_get_version")) ? 1 : 0;
+    }
+    return cached == 1;
+}
 constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;      // low-rate compass + tool pulse
@@ -1048,7 +1056,7 @@ static void LayoutChromeControls(HWND hwnd) {
     x += ICON_BTN + 8;
     if (hwndActionButtons[4]) MoveWindow(hwndActionButtons[4], x, topY, ICON_BTN, ICON_BTN, TRUE); // Clear
 
-    x = right - CAPTION_BTN_W * 3 - (ICON_BTN + 4) * 3 - 12;
+    x = right - (IsRunningUnderWine() ? 0 : CAPTION_BTN_W * 3) - (ICON_BTN + 4) * 3 - 12;
     if (hwndActionButtons[1]) MoveWindow(hwndActionButtons[1], x, topY, ICON_BTN, ICON_BTN, TRUE); // New
     x += ICON_BTN + 4;
     if (hwndActionButtons[6]) MoveWindow(hwndActionButtons[6], x, topY, ICON_BTN, ICON_BTN, TRUE); // Open
@@ -1642,6 +1650,8 @@ static int FrameBorderY() {
 
 static void EnableCustomTitleBar(HWND hwnd) {
     EnableDarkTitleBar(hwnd);
+    // Wine still draws a WM caption; expanding the client under it hides our chrome.
+    if (IsRunningUnderWine()) return;
     // Keep DWM borders; caption is drawn in-client (see WM_NCCALCSIZE).
     MARGINS margins = { 0, 0, 0, 0 };
     DwmExtendFrameIntoClientArea(hwnd, &margins);
@@ -3181,7 +3191,9 @@ static void DrawToolbarBackground(HDC hdc, HWND hwnd, const RECT& client) {
         g.SetInterpolationMode(InterpolationModeNearestNeighbor);
         g.DrawImage(gChromeCache, 0, 0, width, height);
     }
-    if (hwnd) PaintCaptionButtons(hdc, hwnd);
+    if (hwnd) {
+        if (!IsRunningUnderWine()) PaintCaptionButtons(hdc, hwnd);
+    }
 }
 
 static void CreateLayerPanel(HWND hwnd) {
@@ -3408,7 +3420,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
     case WM_NCCALCSIZE: {
         // Replace the OS caption with our in-client top bar; keep resize borders.
-        if (wParam == TRUE) {
+        // Skip on Wine — its window manager still draws a caption and our expanded
+        // client would sit underneath it, clipping brand/menus.
+        if (wParam == TRUE && !IsRunningUnderWine()) {
             auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
             const int frameX = FrameBorderX();
             const int frameY = FrameBorderY();
@@ -3424,6 +3438,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_NCHITTEST: {
+        if (IsRunningUnderWine()) break;
+
         POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
         RECT wr = {};
         GetWindowRect(hwnd, &wr);
@@ -3464,11 +3480,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_NCACTIVATE:
+        if (IsRunningUnderWine()) break;
         // Keep custom chrome painted; skip default caption redraw flash.
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
 
     case WM_NCMOUSEMOVE: {
+        if (IsRunningUnderWine()) break;
         POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
         ScreenToClient(hwnd, &pt);
         SetCaptionHover(hwnd, CaptionHoverAt(hwnd, pt));
@@ -3481,6 +3499,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_NCMOUSELEAVE:
+        if (IsRunningUnderWine()) break;
         SetCaptionHover(hwnd, 0);
         return 0;
 
