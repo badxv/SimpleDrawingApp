@@ -341,16 +341,18 @@ void PaintPalette(HWND hwnd, HDC hdc) {
 
     // Pin current FG affordance (+ button beside Favorites label).
     {
-        RECT pin = { client.right - 16, y - 13, client.right - 4, y - 1 };
+        RECT pin = { client.right - 20, y - 14, client.right - 4, y + 2 };
         HPEN pen = CreatePen(PS_SOLID, 1, th.accent);
         HGDIOBJ old = SelectObject(hdc, GetStockObject(NULL_BRUSH));
         HGDIOBJ oldPen = SelectObject(hdc, pen);
         Rectangle(hdc, pin.left, pin.top, pin.right, pin.bottom);
         // + mark
-        MoveToEx(hdc, pin.left + 6, pin.top + 2, nullptr);
-        LineTo(hdc, pin.left + 6, pin.bottom - 2);
-        MoveToEx(hdc, pin.left + 2, pin.top + 6, nullptr);
-        LineTo(hdc, pin.right - 2, pin.top + 6);
+        const int mx = (pin.left + pin.right) / 2;
+        const int my = (pin.top + pin.bottom) / 2;
+        MoveToEx(hdc, mx, pin.top + 3, nullptr);
+        LineTo(hdc, mx, pin.bottom - 3);
+        MoveToEx(hdc, pin.left + 3, my, nullptr);
+        LineTo(hdc, pin.right - 3, my);
         SelectObject(hdc, oldPen);
         SelectObject(hdc, old);
         DeleteObject(pen);
@@ -513,8 +515,8 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         const int recentY = stripY + stripH + 10;
         const int favY = recentY + ChipRowsHeight(chip) + 14;
 
-        // Pin button
-        RECT pin = { client.right - 16, favY - 13, client.right - 4, favY - 1 };
+        // Pin button (enlarged hit target)
+        RECT pin = { client.right - 20, favY - 14, client.right - 4, favY + 2 };
         POINT pt = { x, y };
         if (msg == WM_LBUTTONDOWN && PtInRect(&pin, pt)) {
             PushUniqueFront(st->favorites, st->fg, kFavMax);
@@ -597,6 +599,17 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 PushUniqueFront(st->recent, c, kRecentMax);
                 NotifyParent(hwnd, 1);
             }
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        }
+
+        // Empty favorites row: LMB pins current FG (same as +).
+        if (msg == WM_LBUTTONDOWN
+            && y >= favY && y < favY + ChipRowsHeight(chip)
+            && x >= 2 && x < client.right - 2
+            && st->favorites.empty()) {
+            PushUniqueFront(st->favorites, st->fg, kFavMax);
+            Persist(st);
             InvalidateRect(hwnd, NULL, FALSE);
             return 0;
         }
