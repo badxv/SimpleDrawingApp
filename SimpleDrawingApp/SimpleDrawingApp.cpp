@@ -1704,25 +1704,21 @@ static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (!target) return;
 
     // Draw fully opaque ink onto the stroke layer; opacity is applied once when compositing.
-    // Eraser on non-background layers punches transparent holes via SourceCopy on commit.
+    // Eraser on non-background layers builds an alpha coverage mask (committed as transparent holes).
     const Layer* layer = gLayers.ActiveLayer();
     const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
-    COLORREF strokeColor = (currentTool == DrawTool::Eraser)
-        ? (eraseTransparent ? RGB(0, 0, 0) : gTheme.canvasBg)
-        : penColor;
     if (eraseTransparent) {
-        target->SetCompositingMode(CompositingModeSourceCopy);
-        Pen pen(Color(255, 0, 0, 0), static_cast<REAL>(penWidth)); // alpha marker stored in A
-        // Use opaque magenta as erase mask; commit will clear those pixels.
-        pen.SetColor(Color(255, 255, 0, 255));
+        // SourceOver + white ink: AA coverage accumulates in alpha (SourceCopy left speckled gaps).
+        target->SetCompositingMode(CompositingModeSourceOver);
+        Pen pen(Color(255, 255, 255, 255), static_cast<REAL>(penWidth));
         pen.SetStartCap(LineCapRound);
         pen.SetEndCap(LineCapRound);
         pen.SetLineJoin(LineJoinRound);
         target->DrawLine(&pen, x0, y0, x1, y1);
-        target->SetCompositingMode(CompositingModeSourceOver);
         return;
     }
 
+    COLORREF strokeColor = (currentTool == DrawTool::Eraser) ? gTheme.canvasBg : penColor;
     Pen pen(GdiplusFromColor(strokeColor, 255), static_cast<REAL>(penWidth));
     pen.SetStartCap(LineCapRound);
     pen.SetEndCap(LineCapRound);
@@ -1900,13 +1896,16 @@ static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
         &attrs);
 }
 
-static void ApplyTransparentEraseMask(Graphics* dest, Bitmap* mask) {
-    if (!dest || !mask) return;
-    Bitmap* target = gLayers.ActiveBitmap();
-    if (!target) return;
+static void ApplyTransparentEraseMask(Bitmap* target, Bitmap* mask) {
+    if (!target || !mask) return;
 
     const int width = static_cast<int>(mask->GetWidth());
     const int height = static_cast<int>(mask->GetHeight());
+    if (width < 1 || height < 1) return;
+    if (static_cast<int>(target->GetWidth()) < width || static_cast<int>(target->GetHeight()) < height) {
+        return;
+    }
+
     BitmapData maskData = {};
     BitmapData targetData = {};
     Rect lockRect(0, 0, width, height);
@@ -1923,18 +1922,85 @@ static void ApplyTransparentEraseMask(Graphics* dest, Bitmap* mask) {
         BYTE* trow = targetPx + y * targetData.Stride;
         for (int x = 0; x < width; ++x) {
             BYTE* m = mrow + x * 4;
-            if (m[3] == 0) continue;
-            // Magenta erase marker: punch to transparent.
-            if (m[2] == 255 && m[1] == 0 && m[0] == 255) {
-                BYTE* t = trow + x * 4;
-                t[0] = t[1] = t[2] = t[3] = 0;
-            }
+            const unsigned ma = m[3];
+            if (ma == 0) continue;
+
+            BYTE* t = trow + x * 4;
+            // Soft erase: scale destination by inverse mask coverage (AA fringes included).
+            const unsigned inv = 255u - ma;
+            t[0] = static_cast<BYTE>((t[0] * inv) / 255u);
+            t[1] = static_cast<BYTE>((t[1] * inv) / 255u);
+            t[2] = static_cast<BYTE>((t[2] * inv) / 255u);
+            t[3] = static_cast<BYTE>((t[3] * inv) / 255u);
         }
     }
 
     target->UnlockBits(&targetData);
     mask->UnlockBits(&maskData);
-    (void)dest;
+}
+
+static Bitmap* CreateErasePreviewComposite(Bitmap* eraseMask) {
+    if (!eraseMask || gLayers.Width() < 1 || gLayers.Height() < 1) return nullptr;
+
+    Bitmap* out = new Bitmap(gLayers.Width(), gLayers.Height(), PixelFormat32bppARGB);
+    if (!out || out->GetLastStatus() != Ok) {
+        delete out;
+        return nullptr;
+    }
+
+    Graphics g(out);
+    g.Clear(Color(0, 0, 0, 0));
+    g.SetCompositingMode(CompositingModeSourceOver);
+    g.SetSmoothingMode(SmoothingModeNone);
+
+    const int active = gLayers.ActiveIndex();
+    Bitmap* erasedActive = nullptr;
+    if (const Layer* activeLayer = gLayers.ActiveLayer()) {
+        if (activeLayer->bitmap) {
+            erasedActive = activeLayer->bitmap->Clone(0, 0,
+                static_cast<INT>(activeLayer->bitmap->GetWidth()),
+                static_cast<INT>(activeLayer->bitmap->GetHeight()),
+                PixelFormat32bppARGB);
+            if (erasedActive && erasedActive->GetLastStatus() == Ok) {
+                ApplyTransparentEraseMask(erasedActive, eraseMask);
+            } else {
+                delete erasedActive;
+                erasedActive = nullptr;
+            }
+        }
+    }
+
+    for (int i = 0; i < gLayers.Count(); ++i) {
+        const Layer* layer = gLayers.At(i);
+        if (!layer || !layer->visible) continue;
+        Bitmap* bmp = (i == active && erasedActive) ? erasedActive : layer->bitmap;
+        if (!bmp) continue;
+
+        int opacity = layer->opacity;
+        if (opacity < 1) continue;
+        if (opacity > 100) opacity = 100;
+
+        if (opacity >= 100) {
+            g.DrawImage(bmp, 0, 0);
+        } else {
+            const REAL alpha = static_cast<REAL>(opacity) / 100.0f;
+            ColorMatrix matrix = {
+                1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, alpha, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+            };
+            ImageAttributes attrs;
+            attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+            const int w = static_cast<int>(bmp->GetWidth());
+            const int h = static_cast<int>(bmp->GetHeight());
+            g.DrawImage(bmp, Rect(0, 0, w, h), 0, 0, w, h, UnitPixel, &attrs);
+        }
+    }
+
+    delete erasedActive;
+    return out;
 }
 
 static void CommitStrokeLayer() {
@@ -1947,7 +2013,7 @@ static void CommitStrokeLayer() {
     const Layer* layer = gLayers.ActiveLayer();
     const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
     if (eraseTransparent) {
-        ApplyTransparentEraseMask(ag, strokeLayer);
+        ApplyTransparentEraseMask(gLayers.ActiveBitmap(), strokeLayer);
     }
     else {
         DrawStrokeLayerWithOpacity(ag, 0, 0);
@@ -2240,28 +2306,43 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                 const Rect dest(-scrollX, -scrollY, scaledW, scaledH);
 
                 Bitmap* flat = GetCompositeBitmap();
-                if (flat) {
-                    g.DrawImage(flat, dest);
-                }
-                if (strokeLayer) {
-                    const REAL alpha = static_cast<REAL>(OpacityToAlpha()) / 255.0f;
-                    ColorMatrix matrix = {
-                        1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 0.0f, alpha, 0.0f,
-                        0.0f, 0.0f, 0.0f, 0.0f, 1.0f
-                    };
-                    ImageAttributes attrs;
-                    attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
-                    g.DrawImage(
-                        strokeLayer,
-                        dest,
-                        0, 0,
-                        static_cast<int>(strokeLayer->GetWidth()),
-                        static_cast<int>(strokeLayer->GetHeight()),
-                        UnitPixel,
-                        &attrs);
+                const Layer* layer = gLayers.ActiveLayer();
+                const bool erasePreview = strokeLayer
+                    && currentTool == DrawTool::Eraser
+                    && layer && !layer->isBackground;
+
+                if (erasePreview) {
+                    Bitmap* preview = CreateErasePreviewComposite(strokeLayer);
+                    if (preview) {
+                        g.DrawImage(preview, dest);
+                        delete preview;
+                    } else if (flat) {
+                        g.DrawImage(flat, dest);
+                    }
+                } else {
+                    if (flat) {
+                        g.DrawImage(flat, dest);
+                    }
+                    if (strokeLayer) {
+                        const REAL alpha = static_cast<REAL>(OpacityToAlpha()) / 255.0f;
+                        ColorMatrix matrix = {
+                            1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                            0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                            0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                            0.0f, 0.0f, 0.0f, alpha, 0.0f,
+                            0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+                        };
+                        ImageAttributes attrs;
+                        attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+                        g.DrawImage(
+                            strokeLayer,
+                            dest,
+                            0, 0,
+                            static_cast<int>(strokeLayer->GetWidth()),
+                            static_cast<int>(strokeLayer->GetHeight()),
+                            UnitPixel,
+                            &attrs);
+                    }
                 }
 
                 // Selection overlay in document space via transform.
