@@ -2042,11 +2042,13 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
     RectF topR(0.0f, 0.0f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH));
     DrawFrescoPanel(g, topR, stoneA, stoneB, true);
     DrawFrescoGrain(g, topR, grain);
+    DrawFrescoMotifs(g, topR, Color(18, 120, 78, 28), false);
 
     RectF railR(0.0f, static_cast<REAL>(chrome.topH), static_cast<REAL>(chrome.railW),
         static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, railR, deepA, deepB, false);
     DrawFrescoGrain(g, railR, grain);
+    DrawFrescoMotifs(g, railR, Color(24, 110, 72, 28), true);
 
     RectF bottomR(static_cast<REAL>(chrome.railW),
         static_cast<REAL>(height - chrome.statusH - chrome.bottomH),
@@ -2054,12 +2056,14 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
         static_cast<REAL>(chrome.bottomH));
     DrawFrescoPanel(g, bottomR, stoneB, stoneA, true);
     DrawFrescoGrain(g, bottomR, grain);
+    DrawFrescoMotifs(g, bottomR, Color(16, 120, 78, 28), false);
 
     RectF panelR(static_cast<REAL>(width - chrome.layerW), static_cast<REAL>(chrome.topH),
         static_cast<REAL>(chrome.layerW),
         static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, panelR, stoneA, Color(255, 230, 220, 204), true);
     DrawFrescoGrain(g, panelR, grain);
+    DrawFrescoMotifs(g, panelR, Color(22, 120, 78, 28), true);
 
     {
         LinearGradientBrush wash(
