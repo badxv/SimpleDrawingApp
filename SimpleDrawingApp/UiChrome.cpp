@@ -11,8 +11,17 @@ UiIcon UiIconFromControlId(int controlId) {
     case IDC_TOOL_FILL: return UiIcon::Fill;
     case IDC_TOOL_SELECT: return UiIcon::Select;
     case IDC_TOOL_LINE: return UiIcon::Line;
-    case IDC_TOOL_RECT: return UiIcon::Rect;
-    case IDC_TOOL_ELLIPSE: return UiIcon::Ellipse;
+    case IDC_TOOL_SHAPES: return UiIcon::Shapes;
+    case IDC_SHAPE_RECT: return UiIcon::Rect;
+    case IDC_SHAPE_ELLIPSE: return UiIcon::Ellipse;
+    case IDC_SHAPE_TRIANGLE: return UiIcon::Triangle;
+    case IDC_SHAPE_STAR: return UiIcon::Star;
+    case IDC_SHAPE_DIAMOND: return UiIcon::Diamond;
+    case IDC_SHAPE_ROUNDRECT: return UiIcon::RoundRect;
+    case IDC_SHAPE_MODE_STROKE: return UiIcon::ShapeStroke;
+    case IDC_SHAPE_MODE_FILL: return UiIcon::ShapeFill;
+    case IDC_SHAPE_MODE_BOTH: return UiIcon::ShapeBoth;
+    case IDC_SWAP_COLORS: return UiIcon::SwapColors;
     case IDC_NEW_BUTTON: return UiIcon::NewDoc;
     case IDC_LOAD_BUTTON: return UiIcon::Open;
     case IDC_SAVE_BUTTON: return UiIcon::Save;
@@ -20,6 +29,7 @@ UiIcon UiIconFromControlId(int controlId) {
     case IDC_REDO_BUTTON: return UiIcon::Redo;
     case IDC_CLEAR_BUTTON: return UiIcon::Clear;
     case IDC_COLOR_BUTTON: return UiIcon::Color;
+    case IDC_BG_BUTTON: return UiIcon::Color;
     case IDC_LAYER_ADD: return UiIcon::LayerAdd;
     case IDC_LAYER_DEL: return UiIcon::LayerDel;
     case IDC_LAYER_UP: return UiIcon::LayerUp;
@@ -35,8 +45,17 @@ bool IsIconControlId(int controlId) {
     case IDC_TOOL_FILL:
     case IDC_TOOL_SELECT:
     case IDC_TOOL_LINE:
-    case IDC_TOOL_RECT:
-    case IDC_TOOL_ELLIPSE:
+    case IDC_TOOL_SHAPES:
+    case IDC_SHAPE_RECT:
+    case IDC_SHAPE_ELLIPSE:
+    case IDC_SHAPE_TRIANGLE:
+    case IDC_SHAPE_STAR:
+    case IDC_SHAPE_DIAMOND:
+    case IDC_SHAPE_ROUNDRECT:
+    case IDC_SHAPE_MODE_STROKE:
+    case IDC_SHAPE_MODE_FILL:
+    case IDC_SHAPE_MODE_BOTH:
+    case IDC_SWAP_COLORS:
     case IDC_NEW_BUTTON:
     case IDC_LOAD_BUTTON:
     case IDC_SAVE_BUTTON:
@@ -44,6 +63,7 @@ bool IsIconControlId(int controlId) {
     case IDC_REDO_BUTTON:
     case IDC_CLEAR_BUTTON:
     case IDC_COLOR_BUTTON:
+    case IDC_BG_BUTTON:
     case IDC_LAYER_ADD:
     case IDC_LAYER_DEL:
     case IDC_LAYER_UP:
@@ -61,9 +81,10 @@ bool IsToolRailControlId(int controlId) {
     case IDC_TOOL_FILL:
     case IDC_TOOL_SELECT:
     case IDC_TOOL_LINE:
-    case IDC_TOOL_RECT:
-    case IDC_TOOL_ELLIPSE:
+    case IDC_TOOL_SHAPES:
     case IDC_COLOR_BUTTON:
+    case IDC_BG_BUTTON:
+    case IDC_SWAP_COLORS:
         return true;
     default:
         return false;
@@ -415,6 +436,76 @@ void DrawUiIcon(Graphics& g, UiIcon icon, const RectF& b, Color color) {
     case UiIcon::Ellipse:
         g.DrawEllipse(&pen, RectF(r.X + 2, r.Y + 3, r.Width - 4, r.Height - 6));
         break;
+    case UiIcon::Triangle: {
+        PointF pts[3] = {
+            { cx, r.Y + 2 },
+            { r.X + 2, bottom - 2 },
+            { right - 2, bottom - 2 }
+        };
+        g.DrawPolygon(&pen, pts, 3);
+        break;
+    }
+    case UiIcon::Star: {
+        PointF pts[10];
+        for (int i = 0; i < 10; ++i) {
+            const float ang = -1.5707963f + i * 3.14159265f / 5.0f;
+            const float rad = (i % 2 == 0) ? 0.48f : 0.20f;
+            pts[i] = PointF(cx + cosf(ang) * r.Width * rad, cy + sinf(ang) * r.Height * rad);
+        }
+        g.DrawPolygon(&pen, pts, 10);
+        break;
+    }
+    case UiIcon::Diamond: {
+        PointF pts[4] = {
+            { cx, r.Y + 2 },
+            { right - 2, cy },
+            { cx, bottom - 2 },
+            { r.X + 2, cy }
+        };
+        g.DrawPolygon(&pen, pts, 4);
+        break;
+    }
+    case UiIcon::RoundRect: {
+        const REAL rr = 4.0f;
+        GraphicsPath path;
+        RectF box(r.X + 2, r.Y + 3, r.Width - 4, r.Height - 6);
+        path.AddArc(box.X, box.Y, rr * 2, rr * 2, 180, 90);
+        path.AddArc(box.X + box.Width - rr * 2, box.Y, rr * 2, rr * 2, 270, 90);
+        path.AddArc(box.X + box.Width - rr * 2, box.Y + box.Height - rr * 2, rr * 2, rr * 2, 0, 90);
+        path.AddArc(box.X, box.Y + box.Height - rr * 2, rr * 2, rr * 2, 90, 90);
+        path.CloseFigure();
+        g.DrawPath(&pen, &path);
+        break;
+    }
+    case UiIcon::Shapes: {
+        g.DrawRectangle(&pen, RectF(r.X + 3, r.Y + 8, r.Width * 0.42f, r.Height * 0.42f));
+        g.DrawEllipse(&pen, RectF(cx - 1, r.Y + 3, r.Width * 0.42f, r.Height * 0.42f));
+        break;
+    }
+    case UiIcon::ShapeStroke:
+        g.DrawRectangle(&pen, RectF(r.X + 4, r.Y + 5, r.Width - 8, r.Height - 10));
+        break;
+    case UiIcon::ShapeFill: {
+        SolidBrush fill(color);
+        g.FillRectangle(&fill, RectF(r.X + 4, r.Y + 5, r.Width - 8, r.Height - 10));
+        break;
+    }
+    case UiIcon::ShapeBoth: {
+        SolidBrush fill(Color(160, color.GetR(), color.GetG(), color.GetB()));
+        RectF box(r.X + 4, r.Y + 5, r.Width - 8, r.Height - 10);
+        g.FillRectangle(&fill, box);
+        g.DrawRectangle(&pen, box);
+        break;
+    }
+    case UiIcon::SwapColors: {
+        g.DrawLine(&pen, r.X + 4, cy - 4, right - 4, cy - 4);
+        g.DrawLine(&pen, right - 8, cy - 8, right - 4, cy - 4);
+        g.DrawLine(&pen, right - 8, cy, right - 4, cy - 4);
+        g.DrawLine(&pen, right - 4, cy + 4, r.X + 4, cy + 4);
+        g.DrawLine(&pen, r.X + 4, cy + 4, r.X + 8, cy);
+        g.DrawLine(&pen, r.X + 4, cy + 4, r.X + 8, cy + 8);
+        break;
+    }
     case UiIcon::NewDoc: {
         RectF page(r.X + 3, r.Y + 2, r.Width - 6, r.Height - 4);
         g.DrawRectangle(&pen, page);
@@ -804,7 +895,17 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
         ink = Color(255, GetRValue(opts.accentDeep), GetGValue(opts.accentDeep), GetBValue(opts.accentDeep));
     }
     if (icon == UiIcon::Color && opts.useColorFill) {
-        ink = Color(255, GetRValue(opts.colorFill), GetGValue(opts.colorFill), GetBValue(opts.colorFill));
+        SolidBrush fill(Color(255, GetRValue(opts.colorFill), GetGValue(opts.colorFill), GetBValue(opts.colorFill)));
+        const RectF chip(bounds.X + 3.0f, bounds.Y + 3.0f, bounds.Width - 6.0f, bounds.Height - 6.0f);
+        g.FillRectangle(&fill, chip);
+        Pen rim(Color(230, GetRValue(opts.accentDeep), GetGValue(opts.accentDeep), GetBValue(opts.accentDeep)), 1.2f);
+        g.DrawRectangle(&rim, chip);
+        // Checker hint for near-white colors.
+        if (GetRValue(opts.colorFill) > 245 && GetGValue(opts.colorFill) > 245 && GetBValue(opts.colorFill) > 245) {
+            Pen edge(Color(180, 160, 150, 140), 1.0f);
+            g.DrawRectangle(&edge, chip);
+        }
+        return;
     }
     DrawUiIcon(g, icon, bounds, ink);
 }
