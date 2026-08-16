@@ -705,14 +705,22 @@ void DrawCanvasWell(Graphics& g, const RectF& bounds, Color rim, Color gilt) {
 void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     if (!dis) return;
 
-    bool checked = (dis->itemState & ODS_CHECKED) != 0;
-    if (dis->hwndItem && (SendMessageA(dis->hwndItem, BM_GETCHECK, 0, 0) == BST_CHECKED)) {
-        checked = true;
+    bool checked = false;
+    if (opts.useAppSelected) {
+        checked = opts.appSelected;
+    } else {
+        checked = (dis->itemState & ODS_CHECKED) != 0;
+        if (dis->hwndItem && (SendMessageA(dis->hwndItem, BM_GETCHECK, 0, 0) == BST_CHECKED)) {
+            checked = true;
+        }
     }
+    // Momentary mouse-down only — do not treat as sticky selection.
     const bool pressed = (dis->itemState & ODS_SELECTED) != 0;
-    const bool selected = pressed || checked;
     const bool hot = (dis->itemState & ODS_HOTLIGHT) != 0;
     const bool disabled = (dis->itemState & ODS_DISABLED) != 0;
+    // Sticky selected plate = checked/appSelected. Pressed is transient overlay.
+    const bool selected = checked;
+    const bool showPlate = selected || pressed || hot;
 
     RectF bounds(
         static_cast<REAL>(dis->rcItem.left),
@@ -724,36 +732,35 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetCompositingMode(CompositingModeSourceCopy);
 
-    // Idle tools: sample parent fresco so panel artwork shows through.
-    // Selected/hot keep a gilt plate so affordance stays clear.
-    bool sampledParent = false;
-    if (!selected && !hot && !pressed && dis->hwndItem) {
-        HWND parent = GetParent(dis->hwndItem);
-        if (parent) {
-            POINT pt = { dis->rcItem.left, dis->rcItem.top };
-            MapWindowPoints(dis->hwndItem, parent, &pt, 1);
-            HDC parentDc = GetDC(parent);
-            if (parentDc) {
-                BitBlt(dis->hDC, 0, 0,
-                    dis->rcItem.right - dis->rcItem.left,
-                    dis->rcItem.bottom - dis->rcItem.top,
-                    parentDc, pt.x, pt.y, SRCCOPY);
-                ReleaseDC(parent, parentDc);
-                sampledParent = true;
-            }
+    const int bw = dis->rcItem.right - dis->rcItem.left;
+    const int bh = dis->rcItem.bottom - dis->rcItem.top;
+
+    bool sampledFresco = false;
+    if (!showPlate && opts.frescoCache && bw > 0 && bh > 0) {
+        const int cw = opts.frescoCache->GetWidth();
+        const int ch = opts.frescoCache->GetHeight();
+        if (opts.frescoX >= 0 && opts.frescoY >= 0
+            && opts.frescoX + bw <= cw && opts.frescoY + bh <= ch) {
+            g.DrawImage(
+                opts.frescoCache,
+                Rect(0, 0, bw, bh),
+                opts.frescoX, opts.frescoY, bw, bh,
+                UnitPixel);
+            sampledFresco = true;
         }
     }
-    if (!sampledParent) {
+    if (!sampledFresco) {
         SolidBrush base(Color(255, GetRValue(opts.chromeBg), GetGValue(opts.chromeBg), GetBValue(opts.chromeBg)));
         g.FillRectangle(&base, bounds);
     }
     g.SetCompositingMode(CompositingModeSourceOver);
 
-    if (selected || hot || pressed) {
-        const Color top = selected
+    if (showPlate) {
+        const bool sticky = selected;
+        const Color top = sticky
             ? Color(255, GetRValue(opts.selectedBg), GetGValue(opts.selectedBg), GetBValue(opts.selectedBg))
             : Color(255, GetRValue(opts.elevated), GetGValue(opts.elevated), GetBValue(opts.elevated));
-        const Color bot = selected
+        const Color bot = sticky
             ? Color(255,
                 (GetRValue(opts.selectedBg) * 3 + GetRValue(opts.accent)) / 4,
                 (GetGValue(opts.selectedBg) * 3 + GetGValue(opts.accent)) / 4,
@@ -764,15 +771,19 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
 
         const Color bronze(255, GetRValue(opts.accent), GetGValue(opts.accent), GetBValue(opts.accent));
         const Color deep(255, GetRValue(opts.accentDeep), GetGValue(opts.accentDeep), GetBValue(opts.accentDeep));
-        Pen rim(selected ? deep : bronze, selected ? 1.5f : 1.1f);
+        Pen rim(sticky ? deep : bronze, sticky ? 1.5f : 1.1f);
         g.DrawRectangle(&rim, RectF(bounds.X + 0.5f, bounds.Y + 0.5f, bounds.Width - 1.0f, bounds.Height - 1.0f));
-        if (selected) {
+        if (sticky) {
             Pen inner(Color(static_cast<BYTE>(100 + static_cast<int>(opts.pulse * 80)), bronze.GetR(), bronze.GetG(), bronze.GetB()), 1.0f);
             g.DrawRectangle(&inner, RectF(bounds.X + 2.0f, bounds.Y + 2.0f, bounds.Width - 4.0f, bounds.Height - 4.0f));
         }
     }
 
+    // Transient press: slight icon scale (does not stick after mouse-up).
     float scale = opts.pressScale;
+    if (pressed && !selected) {
+        scale = 0.92f;
+    }
     if (scale < 0.88f) scale = 0.88f;
     if (scale > 1.10f) scale = 1.10f;
     if (scale != 1.0f) {
