@@ -36,6 +36,14 @@ struct IconPaintOpts {
     float pressScale = 1.0f;
     COLORREF colorFill = 0;
     bool useColorFill = false;
+    // When set, idle buttons sample this fresco (never BitBlt parent — that
+    // re-captures the button's own pressed pixels and sticks the press look).
+    Gdiplus::Bitmap* frescoCache = nullptr;
+    int frescoX = 0;
+    int frescoY = 0;
+    // App-owned selection (tool rail). Prefer over ODS_CHECKED when set.
+    bool useAppSelected = false;
+    bool appSelected = false;
 };
 
 UiIcon UiIconFromControlId(int controlId);
