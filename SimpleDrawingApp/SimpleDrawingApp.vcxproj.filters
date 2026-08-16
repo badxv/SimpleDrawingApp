@@ -57,6 +57,9 @@
     <ClInclude Include="AtelierArtwork.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AtelierPalette.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SimpleDrawingApp.cpp">
@@ -69,6 +72,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AtelierArtwork.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AtelierPalette.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ColorPicker.cpp">
