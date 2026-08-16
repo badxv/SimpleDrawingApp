@@ -286,7 +286,9 @@ static void SetActiveTool(DrawTool tool) {
         if (!hwndToolButtons[i]) continue;
         const bool selected = (static_cast<int>(tool) == i);
         SendMessageA(hwndToolButtons[i], BM_SETCHECK, selected ? BST_CHECKED : BST_UNCHECKED, 0);
-        InvalidateRect(hwndToolButtons[i], NULL, FALSE);
+        // Force a full redraw so any transient press plate cannot linger.
+        RedrawWindow(hwndToolButtons[i], NULL, NULL,
+            RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
 }
 
@@ -2371,6 +2373,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             case DrawTool::Ellipse: activeToolId = IDC_TOOL_ELLIPSE; break;
             case DrawTool::Select: activeToolId = IDC_TOOL_SELECT; break;
             }
+            if (IsToolRailControlId(id)) {
+                opts.useAppSelected = true;
+                opts.appSelected = (id == activeToolId);
+            }
             if (id == activeToolId) {
                 opts.pressScale = 1.0f + gToolFlash * 0.10f;
                 opts.pulse = gUiPulse;
@@ -2378,6 +2384,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (id == IDC_COLOR_BUTTON) {
                 opts.useColorFill = true;
                 opts.colorFill = penColor;
+            }
+            if (gChromeCache && dis->hwndItem) {
+                POINT pt = { dis->rcItem.left, dis->rcItem.top };
+                MapWindowPoints(dis->hwndItem, hwnd, &pt, 1);
+                opts.frescoCache = gChromeCache;
+                opts.frescoX = pt.x;
+                opts.frescoY = pt.y;
             }
             PaintIconButton(dis, opts);
             return TRUE;
