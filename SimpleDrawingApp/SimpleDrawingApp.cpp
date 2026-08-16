@@ -10,6 +10,7 @@
 #include "UiChrome.h"
 #include "AtelierFonts.h"
 #include "AtelierControls.h"
+#include "AtelierArtwork.h"
 #include "Resource.h"
 
 #include <commctrl.h>
@@ -2045,13 +2046,12 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
     RectF topR(0.0f, 0.0f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH));
     DrawFrescoPanel(g, topR, stoneA, stoneB, true);
     DrawFrescoGrain(g, topR, grain);
-    DrawFrescoMotifs(g, topR, Color(22, 120, 78, 28), false);
 
     RectF railR(0.0f, static_cast<REAL>(chrome.topH), static_cast<REAL>(chrome.railW),
         static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, railR, deepA, deepB, false);
     DrawFrescoGrain(g, railR, grain);
-    DrawFrescoMotifs(g, railR, Color(34, 108, 70, 26), true);
+    DrawFrescoArtwork(g, railR, true); // Renaissance×futurism sketch watermark
 
     RectF bottomR(static_cast<REAL>(chrome.railW),
         static_cast<REAL>(height - chrome.statusH - chrome.bottomH),
@@ -2059,14 +2059,13 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
         static_cast<REAL>(chrome.bottomH));
     DrawFrescoPanel(g, bottomR, stoneB, stoneA, true);
     DrawFrescoGrain(g, bottomR, grain);
-    DrawFrescoMotifs(g, bottomR, Color(20, 120, 78, 28), false);
 
     RectF panelR(static_cast<REAL>(width - chrome.layerW), static_cast<REAL>(chrome.topH),
         static_cast<REAL>(chrome.layerW),
         static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, panelR, stoneA, Color(255, 230, 220, 204), true);
     DrawFrescoGrain(g, panelR, grain);
-    DrawFrescoMotifs(g, panelR, Color(32, 118, 76, 28), true);
+    DrawFrescoArtwork(g, panelR, false); // armillary manuscript watermark
 
     {
         LinearGradientBrush wash(
@@ -2774,19 +2773,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
     AtelierFonts_Init();
+    AtelierArtwork_Init();
     AtelierControls_SetTheme(&gTheme);
     if (!AtelierControls_Register()) {
+        AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
 
     if (!RegisterViewportClass(hInstance)) {
+        AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
     }
     if (!RegisterBrandClass(hInstance)) {
+        AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
@@ -2803,6 +2806,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     wc.style = CS_DBLCLKS;
 
     if (!RegisterClassA(&wc)) {
+        AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
@@ -2814,6 +2818,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
+        AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
         return 0;
@@ -2832,6 +2837,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         }
     }
 
+    AtelierArtwork_Shutdown();
     AtelierFonts_Shutdown();
     GdiplusShutdown(gdiplusToken);
     return static_cast<int>(msg.wParam);
