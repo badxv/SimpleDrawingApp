@@ -35,6 +35,7 @@ const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
 constexpr int TOPBAR_HEIGHT = 48;
 constexpr int TOOL_RAIL_WIDTH = 108; // room for round color well
+constexpr int PANEL_EDGE_WIDTH = 28; // collapsed rail / layers strip
 constexpr int BOTTOMBAR_HEIGHT = 44;
 constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 176;
@@ -89,6 +90,8 @@ Bitmap* gChromeCache = nullptr;
 int gChromeCacheW = 0;
 int gChromeCacheH = 0;
 int gChromeCacheStatusH = -1;
+int gChromeCacheRailW = -1;
+int gChromeCacheLayerW = -1;
 Bitmap* gBrandStrip = nullptr; // offscreen compose target
 HBITMAP gBrandStripHbmp = nullptr; // GDI handle for single BitBlt to screen
 int gBrandStripH = 0;
@@ -119,6 +122,11 @@ HWND hwndSwapColors = nullptr;
 HWND hwndShapeFlyout = nullptr;
 HWND hwndShapeButtons[6] = {};
 HWND hwndShapeModeButtons[3] = {};
+HWND hwndToggleRail = nullptr;
+HWND hwndToggleLayers = nullptr;
+
+bool gRailOpen = true;
+bool gLayersOpen = true;
 
 POINT lastPoint = {};
 POINT shapeStart = {};
@@ -351,6 +359,8 @@ static void DestroyChromeCache() {
     gChromeCacheW = 0;
     gChromeCacheH = 0;
     gChromeCacheStatusH = -1;
+    gChromeCacheRailW = -1;
+    gChromeCacheLayerW = -1;
     DestroyBrandStrip();
 }
 
@@ -473,6 +483,8 @@ struct ChromeLayout {
 
 static ChromeLayout GetChromeLayout(HWND hwnd) {
     ChromeLayout layout;
+    layout.railW = gRailOpen ? TOOL_RAIL_WIDTH : PANEL_EDGE_WIDTH;
+    layout.layerW = gLayersOpen ? LAYER_PANEL_WIDTH : PANEL_EDGE_WIDTH;
     if (hwndStatus) {
         RECT sb = {};
         GetWindowRect(hwndStatus, &sb);
@@ -509,6 +521,10 @@ static Bitmap* GetCompositeBitmap();
 static void LayoutViewport(HWND hwnd);
 static void LayoutLayerPanel(HWND hwnd);
 static void LayoutChromeControls(HWND hwnd);
+static void ApplyPanelVisibility();
+static void SetRailOpen(HWND hwnd, bool open);
+static void SetLayersOpen(HWND hwnd, bool open);
+static void UpdateButtonTooltip(HWND parent, HWND btn, const char* text);
 static void RefreshLayerList();
 static void ClearSelection(bool stampFloating);
 static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink);
@@ -611,6 +627,56 @@ static void UpdateScrollBars() {
     }
 }
 
+static void ApplyPanelVisibility() {
+    const int railShow = gRailOpen ? SW_SHOW : SW_HIDE;
+    for (HWND btn : hwndToolButtons) {
+        if (btn) ShowWindow(btn, railShow);
+    }
+    if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], railShow);
+    if (hwndBgButton) ShowWindow(hwndBgButton, railShow);
+    if (hwndSwapColors) ShowWindow(hwndSwapColors, railShow);
+    if (hwndPalette) ShowWindow(hwndPalette, railShow);
+
+    const int layerShow = gLayersOpen ? SW_SHOW : SW_HIDE;
+    if (hwndLayerList) ShowWindow(hwndLayerList, layerShow);
+    if (hwndLayerAdd) ShowWindow(hwndLayerAdd, layerShow);
+    if (hwndLayerDel) ShowWindow(hwndLayerDel, layerShow);
+    if (hwndLayerUp) ShowWindow(hwndLayerUp, layerShow);
+    if (hwndLayerDown) ShowWindow(hwndLayerDown, layerShow);
+    if (hwndLayerVisible) ShowWindow(hwndLayerVisible, layerShow);
+    if (hwndLayerOpacity) ShowWindow(hwndLayerOpacity, layerShow);
+
+    if (hwndToggleRail) ShowWindow(hwndToggleRail, SW_SHOW);
+    if (hwndToggleLayers) ShowWindow(hwndToggleLayers, SW_SHOW);
+}
+
+static void SetRailOpen(HWND hwnd, bool open) {
+    if (gRailOpen == open) return;
+    gRailOpen = open;
+    if (!gRailOpen && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
+        CloseShapeFlyout();
+    }
+    ApplyPanelVisibility();
+    UpdateButtonTooltip(hwnd, hwndToggleRail, gRailOpen ? "Hide tools" : "Show tools");
+    DestroyChromeCache();
+    LayoutViewport(hwnd);
+    if (hwndToggleRail) InvalidateRect(hwndToggleRail, NULL, FALSE);
+    InvalidateRect(hwnd, NULL, FALSE);
+    SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+}
+
+static void SetLayersOpen(HWND hwnd, bool open) {
+    if (gLayersOpen == open) return;
+    gLayersOpen = open;
+    ApplyPanelVisibility();
+    UpdateButtonTooltip(hwnd, hwndToggleLayers, gLayersOpen ? "Hide layers" : "Show layers");
+    DestroyChromeCache();
+    LayoutViewport(hwnd);
+    if (hwndToggleLayers) InvalidateRect(hwndToggleLayers, NULL, FALSE);
+    InvalidateRect(hwnd, NULL, FALSE);
+    SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+}
+
 static void LayoutViewport(HWND hwnd) {
     if (!hwndViewport) return;
 
@@ -631,7 +697,7 @@ static void LayoutViewport(HWND hwnd) {
 }
 
 static void LayoutLayerPanel(HWND hwnd) {
-    if (!hwndLayerList) return;
+    if (!hwndLayerList && !hwndToggleLayers) return;
 
     const ChromeLayout chrome = GetChromeLayout(hwnd);
     RECT client = {};
@@ -639,6 +705,17 @@ static void LayoutLayerPanel(HWND hwnd) {
     const int panelX = client.right - chrome.layerW;
     const int panelY = chrome.topH;
     const int panelH = MaxInt(1, client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH);
+
+    if (hwndToggleLayers) {
+        const int tb = 22;
+        if (gLayersOpen) {
+            MoveWindow(hwndToggleLayers, panelX + chrome.layerW - tb - 6, panelY + 4, tb, tb, TRUE);
+        } else {
+            MoveWindow(hwndToggleLayers, panelX + (chrome.layerW - tb) / 2, panelY + 8, tb, tb, TRUE);
+        }
+    }
+
+    if (!gLayersOpen) return;
 
     const int btn = 28;
     const int pad = 10;
@@ -659,7 +736,9 @@ static void LayoutLayerPanel(HWND hwnd) {
     const int opacityH = 28;
     const int motifBand = 68;
     const int listH = MaxInt(60, panelH - (y - panelY) - opacityH - motifBand - 14);
-    MoveWindow(hwndLayerList, panelX + pad, y, chrome.layerW - pad * 2, listH, TRUE);
+    if (hwndLayerList) {
+        MoveWindow(hwndLayerList, panelX + pad, y, chrome.layerW - pad * 2, listH, TRUE);
+    }
 
     if (hwndLayerOpacity) {
         const int opacityY = panelY + panelH - opacityH - 8;
@@ -689,9 +768,33 @@ static void LayoutChromeControls(HWND hwnd) {
     x += ICON_BTN + 4;
     if (hwndActionButtons[5]) MoveWindow(hwndActionButtons[5], x, topY, ICON_BTN, ICON_BTN, TRUE); // Save
 
+    // Panel collapse controls live on the panel edges (not the top bar).
+    const int tb = 22;
+    if (hwndToggleRail) {
+        if (gRailOpen) {
+            MoveWindow(hwndToggleRail, chrome.railW - tb - 6, chrome.topH + 4, tb, tb, TRUE);
+        } else {
+            MoveWindow(hwndToggleRail, (chrome.railW - tb) / 2, chrome.topH + 8, tb, tb, TRUE);
+        }
+    }
+
+    if (!gRailOpen) {
+        // Bottom bar still needs positioning; tool rail contents are hidden.
+        const int bottomY = client.bottom - chrome.statusH - chrome.bottomH;
+        const int bottomX = chrome.railW + 12;
+        if (hwndSizeLabel) MoveWindow(hwndSizeLabel, bottomX, bottomY + 10, 34, 18, TRUE);
+        if (hwndSlider) MoveWindow(hwndSlider, bottomX + 36, bottomY + 4, 150, 30, TRUE);
+        if (hwndPenWidthBox) MoveWindow(hwndPenWidthBox, bottomX + 194, bottomY + 8, 40, 22, TRUE);
+        if (hwndOpacityLabel) MoveWindow(hwndOpacityLabel, bottomX + 250, bottomY + 10, 54, 18, TRUE);
+        if (hwndOpacitySlider) MoveWindow(hwndOpacitySlider, bottomX + 306, bottomY + 4, 150, 30, TRUE);
+        if (hwndOpacityBox) MoveWindow(hwndOpacityBox, bottomX + 464, bottomY + 8, 40, 22, TRUE);
+        (void)hwnd;
+        return;
+    }
+
     // Left tool rail — keep tools toward the inner edge so parchment art reads on the outer strip.
     const int railX = 10;
-    int y = chrome.topH + 14;
+    int y = chrome.topH + 30; // leave room for collapse control
     // Pen Eraser Fill | Select | Line Shapes
     const int order[kToolButtonCount] = { 0, 1, 2, 3, 4, 5 };
     for (int i = 0; i < kToolButtonCount; ++i) {
@@ -2101,6 +2204,17 @@ static HWND CreateIconButton(HWND parent, int id, const char* tooltip, bool push
     return btn;
 }
 
+static void UpdateButtonTooltip(HWND parent, HWND btn, const char* text) {
+    if (!hwndTooltip || !btn || !text) return;
+    TOOLINFOA ti = {};
+    ti.cbSize = sizeof(ti);
+    ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    ti.hwnd = parent;
+    ti.uId = (UINT_PTR)btn;
+    ti.lpszText = const_cast<char*>(text);
+    SendMessageA(hwndTooltip, TTM_UPDATETIPTEXTA, 0, (LPARAM)&ti);
+}
+
 static void SyncShapeFlyoutChecks() {
     const int shapeIds[6] = {
         IDC_SHAPE_RECT, IDC_SHAPE_ELLIPSE, IDC_SHAPE_TRIANGLE,
@@ -2295,6 +2409,9 @@ static void CreateToolbar(HWND hwnd) {
     hwndActionButtons[5] = CreateIconButton(hwnd, IDC_SAVE_BUTTON, "Save (Ctrl+S)", false);
     hwndActionButtons[6] = CreateIconButton(hwnd, IDC_LOAD_BUTTON, "Open (Ctrl+O)", false);
 
+    hwndToggleRail = CreateIconButton(hwnd, IDC_TOGGLE_RAIL, "Hide tools", false);
+    hwndToggleLayers = CreateIconButton(hwnd, IDC_TOGGLE_LAYERS, "Hide layers", false);
+
     // Bottom inspectors
     hwndSizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
         0, 0, 34, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
@@ -2408,8 +2525,12 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
         HGDIOBJ old = caption ? SelectObject(hdcCaps, caption) : nullptr;
         SetBkMode(hdcCaps, TRANSPARENT);
         SetTextColor(hdcCaps, gTheme.accentDeep);
-        TextOutA(hdcCaps, width - chrome.layerW + 10, chrome.topH + 4, "LAYERS", 6);
-        TextOutA(hdcCaps, chrome.railW + 14, height - chrome.statusH - chrome.bottomH + 6, "INSTRUMENT", 10);
+        if (chrome.layerW > 64) {
+            TextOutA(hdcCaps, width - chrome.layerW + 10, chrome.topH + 4, "LAYERS", 6);
+        }
+        if (chrome.railW > 40) {
+            TextOutA(hdcCaps, chrome.railW + 14, height - chrome.statusH - chrome.bottomH + 6, "INSTRUMENT", 10);
+        }
         if (old) SelectObject(hdcCaps, old);
         g.ReleaseHDC(hdcCaps);
     }
@@ -2420,7 +2541,9 @@ static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome)
     if (gChromeCache
         && gChromeCacheW == width
         && gChromeCacheH == height
-        && gChromeCacheStatusH == chrome.statusH) {
+        && gChromeCacheStatusH == chrome.statusH
+        && gChromeCacheRailW == chrome.railW
+        && gChromeCacheLayerW == chrome.layerW) {
         return;
     }
 
@@ -2430,6 +2553,8 @@ static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome)
     gChromeCacheW = width;
     gChromeCacheH = height;
     gChromeCacheStatusH = chrome.statusH;
+    gChromeCacheRailW = chrome.railW;
+    gChromeCacheLayerW = chrome.layerW;
 
     Graphics g(gChromeCache);
     PaintChromeInto(g, width, height, chrome);
@@ -2479,7 +2604,9 @@ static void DrawToolbarBackground(HDC hdc, const RECT& client) {
     const bool cacheReady = gChromeCache
         && gChromeCacheW == width
         && gChromeCacheH == height
-        && gChromeCacheStatusH == chrome.statusH;
+        && gChromeCacheStatusH == chrome.statusH
+        && gChromeCacheRailW == chrome.railW
+        && gChromeCacheLayerW == chrome.layerW;
     if (!cacheReady) {
         DrawToolbarBackgroundCheap(hdc, client, chrome);
         return;
@@ -2689,6 +2816,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 opts.useColorFill = true;
                 opts.colorFill = backColor;
             }
+            if (id == IDC_TOGGLE_RAIL) {
+                opts.useAppSelected = true;
+                opts.appSelected = gRailOpen;
+                opts.chromeBg = gTheme.chromeDeep;
+            }
+            if (id == IDC_TOGGLE_LAYERS) {
+                opts.useAppSelected = true;
+                opts.appSelected = gLayersOpen;
+            }
             if (gChromeCache && dis->hwndItem) {
                 POINT pt = { dis->rcItem.left, dis->rcItem.top };
                 MapWindowPoints(dis->hwndItem, hwnd, &pt, 1);
@@ -2867,6 +3003,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             InvalidateColorChips();
             break;
         }
+        case IDC_TOGGLE_RAIL:
+            SetRailOpen(hwnd, !gRailOpen);
+            break;
+        case IDC_TOGGLE_LAYERS:
+            SetLayersOpen(hwnd, !gLayersOpen);
+            break;
         case IDC_BG_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
             backColor = newColor;
