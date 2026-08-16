@@ -121,9 +121,14 @@ HWND hwndLayerUp = nullptr;
 HWND hwndLayerDown = nullptr;
 HWND hwndLayerVisible = nullptr;
 HWND hwndLayerOpacity = nullptr;
-HWND hwndToolButtons[7] = {};
+HWND hwndToolButtons[kToolButtonCount] = {};
 HWND hwndSwatches[8] = {};
-HWND hwndActionButtons[7] = {}; // 0 Color, 1 New, 2 Undo, 3 Redo, 4 Clear, 5 Save, 6 Open
+HWND hwndActionButtons[7] = {}; // 0 Color(FG), 1 New, 2 Undo, 3 Redo, 4 Clear, 5 Save, 6 Open
+HWND hwndBgButton = nullptr;
+HWND hwndSwapColors = nullptr;
+HWND hwndShapeFlyout = nullptr;
+HWND hwndShapeButtons[6] = {};
+HWND hwndShapeModeButtons[3] = {};
 
 POINT lastPoint = {};
 POINT shapeStart = {};
@@ -163,10 +168,13 @@ Graphics* strokeGraphics = nullptr;
 ULONG_PTR gdiplusToken = 0;
 }
 
-COLORREF penColor = RGB(0, 0, 0);
+COLORREF penColor = RGB(0, 0, 0);       // foreground (stroke / brush / fill-bucket)
+COLORREF backColor = RGB(255, 255, 255); // background (shape fill)
 int penWidth = 5;
 int penOpacity = 100; // percent 1-100
 DrawTool currentTool = DrawTool::Pen;
+ShapeKind currentShape = ShapeKind::Rectangle;
+ShapePaintMode shapePaintMode = ShapePaintMode::Stroke;
 bool documentDirty = false;
 
 static BYTE OpacityToAlpha() {
@@ -235,8 +243,16 @@ void UpdateStatusBar(HWND hwnd) {
     if (currentTool == DrawTool::Eraser) toolName = "Eraser";
     else if (currentTool == DrawTool::Fill) toolName = "Fill";
     else if (currentTool == DrawTool::Line) toolName = "Line";
-    else if (currentTool == DrawTool::Rectangle) toolName = "Rectangle";
-    else if (currentTool == DrawTool::Ellipse) toolName = "Ellipse";
+    else if (currentTool == DrawTool::Shape) {
+        switch (currentShape) {
+        case ShapeKind::Rectangle: toolName = "Rectangle"; break;
+        case ShapeKind::Ellipse: toolName = "Ellipse"; break;
+        case ShapeKind::Triangle: toolName = "Triangle"; break;
+        case ShapeKind::Star: toolName = "Star"; break;
+        case ShapeKind::Diamond: toolName = "Diamond"; break;
+        case ShapeKind::RoundRect: toolName = "Round rect"; break;
+        }
+    }
     else if (currentTool == DrawTool::Select) toolName = "Select";
 
     const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
@@ -277,27 +293,39 @@ static void ApplyUiFont(HWND control) {
     }
 }
 
+static void CloseShapeFlyout();
+static void OpenShapeFlyout(HWND parent);
+static void SyncShapeFlyoutChecks();
+
 static void SetActiveTool(DrawTool tool) {
     const bool changed = (currentTool != tool);
     currentTool = tool;
     if (changed) {
         gToolFlash = 1.0f;
+        if (tool != DrawTool::Shape) {
+            CloseShapeFlyout();
+        }
     }
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < kToolButtonCount; ++i) {
         if (!hwndToolButtons[i]) continue;
         const bool selected = (static_cast<int>(tool) == i);
         SendMessageA(hwndToolButtons[i], BM_SETCHECK, selected ? BST_CHECKED : BST_UNCHECKED, 0);
-        // Force a full redraw so any transient press plate cannot linger.
         RedrawWindow(hwndToolButtons[i], NULL, NULL,
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
+    SyncShapeFlyoutChecks();
 }
 
 static void InvalidateActiveToolButton() {
     const int idx = static_cast<int>(currentTool);
-    if (idx >= 0 && idx < 7 && hwndToolButtons[idx]) {
+    if (idx >= 0 && idx < kToolButtonCount && hwndToolButtons[idx]) {
         InvalidateRect(hwndToolButtons[idx], NULL, FALSE);
     }
+}
+
+static void InvalidateColorChips() {
+    if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
+    if (hwndBgButton) InvalidateRect(hwndBgButton, NULL, FALSE);
 }
 
 static bool ShouldRunIdleMotion(HWND hwnd) {
@@ -667,8 +695,9 @@ static void LayoutChromeControls(HWND hwnd) {
     // Left tool rail — keep tools toward the inner edge so parchment art reads on the outer strip.
     const int railX = 10;
     int y = chrome.topH + 14;
-    const int order[7] = { 0, 1, 2, 6, 3, 4, 5 }; // Pen Eraser Fill Select Line Rect Ellipse
-    for (int i = 0; i < 7; ++i) {
+    // Pen Eraser Fill | Select | Line Shapes
+    const int order[kToolButtonCount] = { 0, 1, 2, 3, 4, 5 };
+    for (int i = 0; i < kToolButtonCount; ++i) {
         const int idx = order[i];
         if (hwndToolButtons[idx]) {
             MoveWindow(hwndToolButtons[idx], railX, y, ICON_BTN, ICON_BTN, TRUE);
@@ -677,11 +706,18 @@ static void LayoutChromeControls(HWND hwnd) {
         if (i == 2 || i == 3) y += 6; // group spacing
     }
 
-    y += 4;
-    if (hwndActionButtons[0]) {
-        MoveWindow(hwndActionButtons[0], railX, y, ICON_BTN, ICON_BTN, TRUE); // Color
+    y += 8;
+    // Photoshop-style FG/BG chips (FG in front).
+    if (hwndBgButton) {
+        MoveWindow(hwndBgButton, railX + 14, y + 12, 22, 22, TRUE);
     }
-    y += ICON_BTN + 8;
+    if (hwndActionButtons[0]) {
+        MoveWindow(hwndActionButtons[0], railX, y, 24, 24, TRUE); // FG
+    }
+    if (hwndSwapColors) {
+        MoveWindow(hwndSwapColors, railX + 28, y - 2, 18, 18, TRUE);
+    }
+    y += 40;
 
     for (int i = 0; i < 8; ++i) {
         const int col = i % 2;
@@ -1537,6 +1573,66 @@ static void ConstrainShapeEnd(int x0, int y0, int& x1, int& y1) {
     y1 = y0 + ((dy >= 0) ? s : -s);
 }
 
+static void BuildShapePath(GraphicsPath& path, ShapeKind kind, int left, int top, int width, int height) {
+    const RectF box(
+        static_cast<REAL>(left),
+        static_cast<REAL>(top),
+        static_cast<REAL>(MaxInt(1, width)),
+        static_cast<REAL>(MaxInt(1, height)));
+    const REAL cx = box.X + box.Width * 0.5f;
+    const REAL cy = box.Y + box.Height * 0.5f;
+
+    switch (kind) {
+    case ShapeKind::Rectangle:
+        path.AddRectangle(box);
+        break;
+    case ShapeKind::Ellipse:
+        path.AddEllipse(box);
+        break;
+    case ShapeKind::Triangle: {
+        PointF pts[3] = {
+            { cx, box.Y },
+            { box.X, box.Y + box.Height },
+            { box.X + box.Width, box.Y + box.Height }
+        };
+        path.AddPolygon(pts, 3);
+        break;
+    }
+    case ShapeKind::Star: {
+        PointF pts[10];
+        for (int i = 0; i < 10; ++i) {
+            const float ang = -1.5707963f + i * 3.14159265f / 5.0f;
+            const float rad = (i % 2 == 0) ? 0.5f : 0.22f;
+            pts[i] = PointF(cx + cosf(ang) * box.Width * rad, cy + sinf(ang) * box.Height * rad);
+        }
+        path.AddPolygon(pts, 10);
+        break;
+    }
+    case ShapeKind::Diamond: {
+        PointF pts[4] = {
+            { cx, box.Y },
+            { box.X + box.Width, cy },
+            { cx, box.Y + box.Height },
+            { box.X, cy }
+        };
+        path.AddPolygon(pts, 4);
+        break;
+    }
+    case ShapeKind::RoundRect: {
+        REAL rr = (box.Width < box.Height ? box.Width : box.Height) * 0.18f;
+        if (rr < 2.0f) rr = 2.0f;
+        if (rr * 2.0f > box.Width) rr = box.Width * 0.5f;
+        if (rr * 2.0f > box.Height) rr = box.Height * 0.5f;
+        path.AddArc(box.X, box.Y, rr * 2, rr * 2, 180, 90);
+        path.AddArc(box.X + box.Width - rr * 2, box.Y, rr * 2, rr * 2, 270, 90);
+        path.AddArc(box.X + box.Width - rr * 2, box.Y + box.Height - rr * 2, rr * 2, rr * 2, 0, 90);
+        path.AddArc(box.X, box.Y + box.Height - rr * 2, rr * 2, rr * 2, 90, 90);
+        path.CloseFigure();
+        break;
+    }
+    }
+}
+
 static void DrawShapeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (!target) return;
 
@@ -1559,12 +1655,17 @@ static void DrawShapeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (width < 1) width = 1;
     if (height < 1) height = 1;
 
-    Rect bounds(left, top, width, height);
-    if (currentTool == DrawTool::Rectangle) {
-        target->DrawRectangle(&pen, bounds);
+    const bool doFill = (shapePaintMode == ShapePaintMode::Fill || shapePaintMode == ShapePaintMode::Both);
+    const bool doStroke = (shapePaintMode == ShapePaintMode::Stroke || shapePaintMode == ShapePaintMode::Both);
+
+    GraphicsPath path;
+    BuildShapePath(path, currentShape, left, top, width, height);
+    if (doFill) {
+        SolidBrush fill(GdiplusFromColor(backColor, 255));
+        target->FillPath(&fill, &path);
     }
-    else if (currentTool == DrawTool::Ellipse) {
-        target->DrawEllipse(&pen, bounds);
+    if (doStroke) {
+        target->DrawPath(&pen, &path);
     }
 }
 
@@ -2006,6 +2107,166 @@ static HWND CreateIconButton(HWND parent, int id, const char* tooltip, bool push
     return btn;
 }
 
+static void SyncShapeFlyoutChecks() {
+    const int shapeIds[6] = {
+        IDC_SHAPE_RECT, IDC_SHAPE_ELLIPSE, IDC_SHAPE_TRIANGLE,
+        IDC_SHAPE_STAR, IDC_SHAPE_DIAMOND, IDC_SHAPE_ROUNDRECT
+    };
+    for (int i = 0; i < 6; ++i) {
+        if (!hwndShapeButtons[i]) continue;
+        const bool on = (currentTool == DrawTool::Shape && static_cast<int>(currentShape) == i);
+        SendMessageA(hwndShapeButtons[i], BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
+        InvalidateRect(hwndShapeButtons[i], NULL, FALSE);
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (!hwndShapeModeButtons[i]) continue;
+        const bool on = (static_cast<int>(shapePaintMode) == i);
+        SendMessageA(hwndShapeModeButtons[i], BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
+        InvalidateRect(hwndShapeModeButtons[i], NULL, FALSE);
+    }
+}
+
+static void CloseShapeFlyout() {
+    if (hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
+        ShowWindow(hwndShapeFlyout, SW_HIDE);
+    }
+}
+
+static LRESULT CALLBACK ShapeFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            // Defer hide so a click on the Shapes rail button can toggle cleanly.
+            PostMessageA(hwnd, WM_APP + 7, 0, 0);
+        }
+        return 0;
+    case WM_APP + 7: {
+        POINT pt = {};
+        GetCursorPos(&pt);
+        HWND under = WindowFromPoint(pt);
+        if (under) {
+            if (under == hwndShapeFlyout || IsChild(hwndShapeFlyout, under)) return 0;
+            if (under == hwndToolButtons[static_cast<int>(DrawTool::Shape)]) return 0;
+        }
+        if (hwndShapeFlyout == hwnd) {
+            CloseShapeFlyout();
+        }
+        return 0;
+    }
+    case WM_COMMAND: {
+        HWND parent = GetParent(hwnd);
+        if (!parent) parent = GetWindow(hwnd, GW_OWNER);
+        if (parent) {
+            SendMessageA(parent, WM_COMMAND, wParam, lParam);
+        }
+        return 0;
+    }
+    case WM_DRAWITEM: {
+        HWND parent = GetWindow(hwnd, GW_OWNER);
+        if (parent) {
+            return SendMessageA(parent, WM_DRAWITEM, wParam, lParam);
+        }
+        break;
+    }
+    case WM_CTLCOLORBTN:
+        return (LRESULT)gChromeElevatedBrush;
+    case WM_ERASEBKGND: {
+        HDC hdc = (HDC)wParam;
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+        FillRect(hdc, &rc, gChromeElevatedBrush ? gChromeElevatedBrush : gChromeBrush);
+        return 1;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+        FillRect(hdc, &rc, gChromeElevatedBrush ? gChromeElevatedBrush : gChromeBrush);
+        HPEN pen = CreatePen(PS_SOLID, 1, gTheme.chromeLine);
+        HGDIOBJ old = SelectObject(hdc, pen);
+        HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
+        // Separator under shape grid.
+        MoveToEx(hdc, 8, 84, NULL);
+        LineTo(hdc, rc.right - 8, 84);
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, old);
+        DeleteObject(pen);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    default:
+        break;
+    }
+    return DefWindowProcA(hwnd, msg, wParam, lParam);
+}
+
+static bool RegisterShapeFlyoutClass(HINSTANCE hInstance) {
+    WNDCLASSA wc = {};
+    wc.lpfnWndProc = ShapeFlyoutProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = "SimpleDrawingAppShapeFlyout";
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = NULL;
+    wc.style = CS_DROPSHADOW;
+    return RegisterClassA(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+}
+
+static void EnsureShapeFlyout(HWND owner) {
+    if (hwndShapeFlyout) return;
+    hwndShapeFlyout = CreateWindowExA(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        "SimpleDrawingAppShapeFlyout",
+        "",
+        WS_POPUP | WS_CLIPCHILDREN,
+        0, 0, 156, 128,
+        owner, NULL, GetModuleHandle(NULL), NULL);
+    if (!hwndShapeFlyout) return;
+
+    const int ids[6] = {
+        IDC_SHAPE_RECT, IDC_SHAPE_ELLIPSE, IDC_SHAPE_TRIANGLE,
+        IDC_SHAPE_STAR, IDC_SHAPE_DIAMOND, IDC_SHAPE_ROUNDRECT
+    };
+    const char* tips[6] = {
+        "Rectangle", "Ellipse", "Triangle", "Star", "Diamond", "Rounded rectangle"
+    };
+    for (int i = 0; i < 6; ++i) {
+        hwndShapeButtons[i] = CreateIconButton(hwndShapeFlyout, ids[i], tips[i], true);
+        const int col = i % 3;
+        const int row = i / 3;
+        MoveWindow(hwndShapeButtons[i], 10 + col * (ICON_BTN + 6), 10 + row * (ICON_BTN + 6), ICON_BTN, ICON_BTN, TRUE);
+    }
+
+    const int modeIds[3] = { IDC_SHAPE_MODE_STROKE, IDC_SHAPE_MODE_FILL, IDC_SHAPE_MODE_BOTH };
+    const char* modeTips[3] = {
+        "Stroke only (foreground)",
+        "Fill only (background)",
+        "Fill + stroke (BG fill, FG stroke)"
+    };
+    for (int i = 0; i < 3; ++i) {
+        hwndShapeModeButtons[i] = CreateIconButton(hwndShapeFlyout, modeIds[i], modeTips[i], true);
+        MoveWindow(hwndShapeModeButtons[i], 10 + i * (ICON_BTN + 6), 92, ICON_BTN, ICON_BTN, TRUE);
+    }
+    SyncShapeFlyoutChecks();
+}
+
+static void OpenShapeFlyout(HWND parent) {
+    if (!parent) return;
+    EnsureShapeFlyout(parent);
+    if (!hwndShapeFlyout || !hwndToolButtons[static_cast<int>(DrawTool::Shape)]) return;
+
+    RECT br = {};
+    GetWindowRect(hwndToolButtons[static_cast<int>(DrawTool::Shape)], &br);
+    const int w = 156;
+    const int h = 128;
+    SetWindowPos(hwndShapeFlyout, HWND_TOPMOST, br.right + 6, br.top - 4, w, h,
+        SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    // Activate so click-away dismiss works.
+    SetForegroundWindow(hwndShapeFlyout);
+    SyncShapeFlyoutChecks();
+}
+
 static void CreateToolbar(HWND hwnd) {
     hwndTooltip = CreateWindowExA(0, TOOLTIPS_CLASSA, NULL,
         WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
@@ -2014,14 +2275,13 @@ static void CreateToolbar(HWND hwnd) {
         SendMessageA(hwndTooltip, TTM_SETMAXTIPWIDTH, 0, 240);
     }
 
-    // Tools (left rail)
+    // Tools (left rail): Pen Eraser Fill | Select | Line Shapes
     hwndToolButtons[0] = CreateIconButton(hwnd, IDC_TOOL_PEN, "Pen", true);
     hwndToolButtons[1] = CreateIconButton(hwnd, IDC_TOOL_ERASER, "Eraser", true);
     hwndToolButtons[2] = CreateIconButton(hwnd, IDC_TOOL_FILL, "Fill", true);
-    hwndToolButtons[6] = CreateIconButton(hwnd, IDC_TOOL_SELECT, "Select", true);
-    hwndToolButtons[3] = CreateIconButton(hwnd, IDC_TOOL_LINE, "Line", true);
-    hwndToolButtons[4] = CreateIconButton(hwnd, IDC_TOOL_RECT, "Rectangle", true);
-    hwndToolButtons[5] = CreateIconButton(hwnd, IDC_TOOL_ELLIPSE, "Ellipse", true);
+    hwndToolButtons[3] = CreateIconButton(hwnd, IDC_TOOL_SELECT, "Select", true);
+    hwndToolButtons[4] = CreateIconButton(hwnd, IDC_TOOL_LINE, "Line", true);
+    hwndToolButtons[5] = CreateIconButton(hwnd, IDC_TOOL_SHAPES, "Shapes…", true);
 
     for (int i = 0; i < 8; ++i) {
         hwndSwatches[i] = CreateWindowA("BUTTON", "",
@@ -2030,8 +2290,11 @@ static void CreateToolbar(HWND hwnd) {
             hwnd, (HMENU)(INT_PTR)(IDC_SWATCH0 + i), GetModuleHandle(NULL), NULL);
     }
 
-    // Actions
-    hwndActionButtons[0] = CreateIconButton(hwnd, IDC_COLOR_BUTTON, "Color…", false);
+    // FG / BG chips (Photoshop-style). FG is IDC_COLOR_BUTTON.
+    hwndActionButtons[0] = CreateIconButton(hwnd, IDC_COLOR_BUTTON, "Foreground color", false);
+    hwndBgButton = CreateIconButton(hwnd, IDC_BG_BUTTON, "Background color (shape fill)", false);
+    hwndSwapColors = CreateIconButton(hwnd, IDC_SWAP_COLORS, "Swap FG/BG (X)", false);
+
     hwndActionButtons[1] = CreateIconButton(hwnd, IDC_NEW_BUTTON, "New (Ctrl+N)", false);
     hwndActionButtons[2] = CreateIconButton(hwnd, IDC_UNDO_BUTTON, "Undo (Ctrl+Z)", false);
     hwndActionButtons[3] = CreateIconButton(hwnd, IDC_REDO_BUTTON, "Redo (Ctrl+Y)", false);
@@ -2416,14 +2679,25 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             case DrawTool::Pen: activeToolId = IDC_TOOL_PEN; break;
             case DrawTool::Eraser: activeToolId = IDC_TOOL_ERASER; break;
             case DrawTool::Fill: activeToolId = IDC_TOOL_FILL; break;
-            case DrawTool::Line: activeToolId = IDC_TOOL_LINE; break;
-            case DrawTool::Rectangle: activeToolId = IDC_TOOL_RECT; break;
-            case DrawTool::Ellipse: activeToolId = IDC_TOOL_ELLIPSE; break;
             case DrawTool::Select: activeToolId = IDC_TOOL_SELECT; break;
+            case DrawTool::Line: activeToolId = IDC_TOOL_LINE; break;
+            case DrawTool::Shape: activeToolId = IDC_TOOL_SHAPES; break;
             }
-            if (IsToolRailControlId(id)) {
+            if (IsToolRailControlId(id) && id != IDC_COLOR_BUTTON && id != IDC_BG_BUTTON && id != IDC_SWAP_COLORS) {
                 opts.useAppSelected = true;
                 opts.appSelected = (id == activeToolId);
+            }
+            // Shape flyout selection / paint mode.
+            if (id >= IDC_SHAPE_RECT && id <= IDC_SHAPE_ROUNDRECT) {
+                opts.useAppSelected = true;
+                opts.appSelected = (currentTool == DrawTool::Shape
+                    && static_cast<int>(currentShape) == (id - IDC_SHAPE_RECT));
+                opts.chromeBg = gTheme.chromeElevated;
+            }
+            if (id >= IDC_SHAPE_MODE_STROKE && id <= IDC_SHAPE_MODE_BOTH) {
+                opts.useAppSelected = true;
+                opts.appSelected = (static_cast<int>(shapePaintMode) == (id - IDC_SHAPE_MODE_STROKE));
+                opts.chromeBg = gTheme.chromeElevated;
             }
             if (id == activeToolId) {
                 opts.pressScale = 1.0f + gToolFlash * 0.10f;
@@ -2432,6 +2706,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (id == IDC_COLOR_BUTTON) {
                 opts.useColorFill = true;
                 opts.colorFill = penColor;
+            }
+            if (id == IDC_BG_BUTTON) {
+                opts.useColorFill = true;
+                opts.colorFill = backColor;
             }
             if (gChromeCache && dis->hwndItem) {
                 POINT pt = { dis->rcItem.left, dis->rcItem.top };
@@ -2532,7 +2810,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             for (HWND sw : hwndSwatches) {
                 InvalidateRect(sw, NULL, TRUE);
             }
-            if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
+            InvalidateColorChips();
+            break;
+        }
+
+        if (cmdId >= IDC_SHAPE_RECT && cmdId <= IDC_SHAPE_ROUNDRECT) {
+            currentShape = static_cast<ShapeKind>(cmdId - IDC_SHAPE_RECT);
+            SetActiveTool(DrawTool::Shape);
+            CloseShapeFlyout();
+            UpdateStatusBar(hwnd);
+            break;
+        }
+        if (cmdId >= IDC_SHAPE_MODE_STROKE && cmdId <= IDC_SHAPE_MODE_BOTH) {
+            shapePaintMode = static_cast<ShapePaintMode>(cmdId - IDC_SHAPE_MODE_STROKE);
+            SyncShapeFlyoutChecks();
+            if (currentTool != DrawTool::Shape) {
+                SetActiveTool(DrawTool::Shape);
+            }
+            UpdateStatusBar(hwnd);
             break;
         }
 
@@ -2557,20 +2852,33 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             SetActiveTool(DrawTool::Line);
             UpdateStatusBar(hwnd);
             break;
-        case IDC_TOOL_RECT:
+        case IDC_TOOL_SHAPES:
             ClearSelection(true);
-            SetActiveTool(DrawTool::Rectangle);
-            UpdateStatusBar(hwnd);
-            break;
-        case IDC_TOOL_ELLIPSE:
-            ClearSelection(true);
-            SetActiveTool(DrawTool::Ellipse);
+            if (currentTool == DrawTool::Shape && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
+                CloseShapeFlyout();
+            } else {
+                SetActiveTool(DrawTool::Shape);
+                OpenShapeFlyout(hwnd);
+            }
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_SELECT:
             SetActiveTool(DrawTool::Select);
             UpdateStatusBar(hwnd);
             break;
+        case IDC_SWAP_COLORS: {
+            const COLORREF tmp = penColor;
+            penColor = backColor;
+            backColor = tmp;
+            InvalidateColorChips();
+            break;
+        }
+        case IDC_BG_BUTTON: {
+            COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
+            backColor = newColor;
+            InvalidateColorChips();
+            break;
+        }
         case IDC_LAYER_ADD:
             ClearSelection(true);
             gHistory.Push(gLayers);
@@ -2671,7 +2979,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             for (HWND sw : hwndSwatches) {
                 InvalidateRect(sw, NULL, TRUE);
             }
-            if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
+            InvalidateColorChips();
             break;
         }
         case IDC_NEW_BUTTON:
@@ -2747,9 +3055,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_KEYDOWN: {
         if (wParam == VK_ESCAPE) {
+            if (hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
+                CloseShapeFlyout();
+                break;
+            }
             ClearSelection(true);
             InvalidateCanvas();
             UpdateStatusBar(hwnd);
+            break;
+        }
+        if (wParam == 'X' || wParam == 'x') {
+            const COLORREF tmp = penColor;
+            penColor = backColor;
+            backColor = tmp;
+            InvalidateColorChips();
             break;
         }
         if (wParam == VK_OEM_4) { // [
@@ -2790,6 +3109,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         DestroyCompositeCache();
         DestroyChromeCache();
         gLayers.Destroy();
+        if (hwndShapeFlyout) {
+            DestroyWindow(hwndShapeFlyout);
+            hwndShapeFlyout = nullptr;
+        }
         hwndBrand = nullptr;
         hwndViewport = nullptr;
         if (gUiFont) {
@@ -2850,6 +3173,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 0;
     }
     if (!RegisterBrandClass(hInstance)) {
+        AtelierArtwork_Shutdown();
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
+    if (!RegisterShapeFlyoutClass(hInstance)) {
         AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);

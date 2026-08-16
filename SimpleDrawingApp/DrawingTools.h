@@ -8,10 +8,28 @@ enum class DrawTool {
     Pen = 0,
     Eraser = 1,
     Fill = 2,
-    Line = 3,
-    Rectangle = 4,
-    Ellipse = 5,
-    Select = 6
+    Select = 3,
+    Line = 4,
+    Shape = 5
+};
+
+constexpr int kToolButtonCount = 6;
+
+// Geometric kinds used when DrawTool::Shape is active.
+enum class ShapeKind {
+    Rectangle = 0,
+    Ellipse,
+    Triangle,
+    Star,
+    Diamond,
+    RoundRect
+};
+
+// Photoshop / Paint style: stroke uses FG, fill uses BG.
+enum class ShapePaintMode {
+    Stroke = 0, // outline only (FG)
+    Fill = 1,   // fill only (BG)
+    Both = 2    // fill (BG) + stroke (FG)
 };
 
 inline bool IsFreehandTool(DrawTool tool) {
@@ -19,9 +37,11 @@ inline bool IsFreehandTool(DrawTool tool) {
 }
 
 inline bool IsShapeTool(DrawTool tool) {
-    return tool == DrawTool::Line
-        || tool == DrawTool::Rectangle
-        || tool == DrawTool::Ellipse;
+    return tool == DrawTool::Line || tool == DrawTool::Shape;
+}
+
+inline bool IsGeometricShapeTool(DrawTool tool) {
+    return tool == DrawTool::Shape;
 }
 
 struct AppTheme {
