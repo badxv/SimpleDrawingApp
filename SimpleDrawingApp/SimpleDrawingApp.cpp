@@ -626,12 +626,15 @@ static void LayoutLayerPanel(HWND hwnd) {
     }
     y += 28;
 
-    const int listH = MaxInt(60, panelH - (y - panelY) - 48);
+    // Reserve a quiet motif band above the opacity slider so fresco artwork reads.
+    const int opacityH = 28;
+    const int motifBand = 68;
+    const int listH = MaxInt(60, panelH - (y - panelY) - opacityH - motifBand - 14);
     MoveWindow(hwndLayerList, panelX + pad, y, chrome.layerW - pad * 2, listH, TRUE);
-    y += listH + 6;
 
     if (hwndLayerOpacity) {
-        MoveWindow(hwndLayerOpacity, panelX + pad, y, chrome.layerW - pad * 2, 28, TRUE);
+        const int opacityY = panelY + panelH - opacityH - 8;
+        MoveWindow(hwndLayerOpacity, panelX + pad, opacityY, chrome.layerW - pad * 2, opacityH, TRUE);
     }
 }
 
@@ -2042,13 +2045,13 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
     RectF topR(0.0f, 0.0f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH));
     DrawFrescoPanel(g, topR, stoneA, stoneB, true);
     DrawFrescoGrain(g, topR, grain);
-    DrawFrescoMotifs(g, topR, Color(18, 120, 78, 28), false);
+    DrawFrescoMotifs(g, topR, Color(22, 120, 78, 28), false);
 
     RectF railR(0.0f, static_cast<REAL>(chrome.topH), static_cast<REAL>(chrome.railW),
         static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, railR, deepA, deepB, false);
     DrawFrescoGrain(g, railR, grain);
-    DrawFrescoMotifs(g, railR, Color(24, 110, 72, 28), true);
+    DrawFrescoMotifs(g, railR, Color(34, 108, 70, 26), true);
 
     RectF bottomR(static_cast<REAL>(chrome.railW),
         static_cast<REAL>(height - chrome.statusH - chrome.bottomH),
@@ -2056,14 +2059,14 @@ static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayo
         static_cast<REAL>(chrome.bottomH));
     DrawFrescoPanel(g, bottomR, stoneB, stoneA, true);
     DrawFrescoGrain(g, bottomR, grain);
-    DrawFrescoMotifs(g, bottomR, Color(16, 120, 78, 28), false);
+    DrawFrescoMotifs(g, bottomR, Color(20, 120, 78, 28), false);
 
     RectF panelR(static_cast<REAL>(width - chrome.layerW), static_cast<REAL>(chrome.topH),
         static_cast<REAL>(chrome.layerW),
         static_cast<REAL>((height - chrome.statusH) - chrome.topH));
     DrawFrescoPanel(g, panelR, stoneA, Color(255, 230, 220, 204), true);
     DrawFrescoGrain(g, panelR, grain);
-    DrawFrescoMotifs(g, panelR, Color(22, 120, 78, 28), true);
+    DrawFrescoMotifs(g, panelR, Color(32, 118, 76, 28), true);
 
     {
         LinearGradientBrush wash(
