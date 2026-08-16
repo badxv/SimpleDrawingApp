@@ -34,6 +34,11 @@ UiIcon UiIconFromControlId(int controlId) {
     case IDC_LAYER_DEL: return UiIcon::LayerDel;
     case IDC_LAYER_UP: return UiIcon::LayerUp;
     case IDC_LAYER_DOWN: return UiIcon::LayerDown;
+    case IDC_TOGGLE_RAIL:
+        // Direction filled by paint opts via selected state — default left.
+        return UiIcon::ChevronLeft;
+    case IDC_TOGGLE_LAYERS:
+        return UiIcon::ChevronRight;
     default: return UiIcon::Pen;
     }
 }
@@ -68,6 +73,8 @@ bool IsIconControlId(int controlId) {
     case IDC_LAYER_DEL:
     case IDC_LAYER_UP:
     case IDC_LAYER_DOWN:
+    case IDC_TOGGLE_RAIL:
+    case IDC_TOGGLE_LAYERS:
         return true;
     default:
         return false;
@@ -586,6 +593,24 @@ void DrawUiIcon(Graphics& g, UiIcon icon, const RectF& b, Color color) {
         g.DrawPolygon(&pen, pts, 3);
         break;
     }
+    case UiIcon::ChevronLeft: {
+        PointF pts[3] = {
+            { r.X + 5, cy },
+            { right - 5, r.Y + 4 },
+            { right - 5, bottom - 4 }
+        };
+        g.DrawPolygon(&pen, pts, 3);
+        break;
+    }
+    case UiIcon::ChevronRight: {
+        PointF pts[3] = {
+            { right - 5, cy },
+            { r.X + 5, r.Y + 4 },
+            { r.X + 5, bottom - 4 }
+        };
+        g.DrawPolygon(&pen, pts, 3);
+        break;
+    }
     }
 }
 
@@ -887,7 +912,13 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
         g.SetTransform(&m);
     }
 
-    const UiIcon icon = UiIconFromControlId(static_cast<int>(dis->CtlID));
+    const UiIcon iconBase = UiIconFromControlId(static_cast<int>(dis->CtlID));
+    UiIcon icon = iconBase;
+    if (dis->CtlID == IDC_TOGGLE_RAIL) {
+        icon = opts.appSelected ? UiIcon::ChevronLeft : UiIcon::ChevronRight;
+    } else if (dis->CtlID == IDC_TOGGLE_LAYERS) {
+        icon = opts.appSelected ? UiIcon::ChevronRight : UiIcon::ChevronLeft;
+    }
     Color ink = disabled
         ? Color(255, 150, 140, 125)
         : Color(255, GetRValue(opts.text), GetGValue(opts.text), GetBValue(opts.text));

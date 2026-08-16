@@ -78,6 +78,8 @@
 #define IDC_SWAP_COLORS			1059
 #define IDC_BG_BUTTON			1060
 #define ID_PALETTE				1062
+#define IDC_TOGGLE_RAIL			1063
+#define IDC_TOGGLE_LAYERS		1064
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
