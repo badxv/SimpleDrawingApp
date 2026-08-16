@@ -77,6 +77,7 @@
 #define IDC_SHAPE_MODE_BOTH		1058
 #define IDC_SWAP_COLORS			1059
 #define IDC_BG_BUTTON			1060
+#define ID_PALETTE				1062
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
