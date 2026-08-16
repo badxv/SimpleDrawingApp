@@ -33,7 +33,7 @@ using namespace Gdiplus;
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
-constexpr int TOPBAR_HEIGHT = 38;       // compact Firefox-like top chrome
+constexpr int TOPBAR_HEIGHT = 38;       // doubles as custom titlebar height
 constexpr int TOOL_RAIL_WIDTH = 100;
 constexpr int PANEL_EDGE_WIDTH = 22;    // collapsed rail / layers strip
 constexpr int BOTTOMBAR_HEIGHT = 34;
@@ -45,6 +45,23 @@ constexpr int BRAND_STRIP_W = 118;
 constexpr int MENU_BTN_W = 44;
 constexpr int FLOAT_DRAG_H = 22;
 constexpr int FLOAT_CHIP_H = 36;
+constexpr int CAPTION_BTN_W = 46;
+
+#ifndef SM_CXPADDEDBORDER
+#define SM_CXPADDEDBORDER 92
+#endif
+#ifndef SM_CYPADDEDBORDER
+#define SM_CYPADDEDBORDER 92
+#endif
+
+static bool IsRunningUnderWine() {
+    static int cached = -1;
+    if (cached < 0) {
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        cached = (ntdll && GetProcAddress(ntdll, "wine_get_version")) ? 1 : 0;
+    }
+    return cached == 1;
+}
 constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;      // low-rate compass + tool pulse
@@ -138,6 +155,7 @@ bool gPaletteFloating = false;
 POINT gPaletteFloatPos = { 80, 120 };
 bool gFloatDragging = false;
 POINT gFloatDragHot = {};
+int gCaptionHover = 0; // 0 none, 1 min, 2 max, 3 close
 
 POINT lastPoint = {};
 POINT shapeStart = {};
@@ -1038,7 +1056,7 @@ static void LayoutChromeControls(HWND hwnd) {
     x += ICON_BTN + 8;
     if (hwndActionButtons[4]) MoveWindow(hwndActionButtons[4], x, topY, ICON_BTN, ICON_BTN, TRUE); // Clear
 
-    x = right - chrome.layerW - (ICON_BTN + 4) * 3 - 12;
+    x = right - (IsRunningUnderWine() ? 0 : CAPTION_BTN_W * 3) - (ICON_BTN + 4) * 3 - 12;
     if (hwndActionButtons[1]) MoveWindow(hwndActionButtons[1], x, topY, ICON_BTN, ICON_BTN, TRUE); // New
     x += ICON_BTN + 4;
     if (hwndActionButtons[6]) MoveWindow(hwndActionButtons[6], x, topY, ICON_BTN, ICON_BTN, TRUE); // Open
@@ -1620,6 +1638,131 @@ static void EnableDarkTitleBar(HWND hwnd) {
 #endif
     BOOL useDark = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
+}
+
+static int FrameBorderX() {
+    return GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+}
+
+static int FrameBorderY() {
+    return GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYPADDEDBORDER);
+}
+
+static void EnableCustomTitleBar(HWND hwnd) {
+    EnableDarkTitleBar(hwnd);
+    // Wine still draws a WM caption; expanding the client under it hides our chrome.
+    if (IsRunningUnderWine()) return;
+    // Keep DWM borders; caption is drawn in-client (see WM_NCCALCSIZE).
+    MARGINS margins = { 0, 0, 0, 0 };
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+static void GetCaptionButtonRects(HWND hwnd, RECT* minR, RECT* maxR, RECT* closeR) {
+    RECT rc = {};
+    GetClientRect(hwnd, &rc);
+    const int h = TOPBAR_HEIGHT;
+    const int w = CAPTION_BTN_W;
+    if (closeR) {
+        closeR->right = rc.right;
+        closeR->left = rc.right - w;
+        closeR->top = 0;
+        closeR->bottom = h;
+    }
+    if (maxR) {
+        maxR->right = rc.right - w;
+        maxR->left = maxR->right - w;
+        maxR->top = 0;
+        maxR->bottom = h;
+    }
+    if (minR) {
+        minR->right = rc.right - w * 2;
+        minR->left = minR->right - w;
+        minR->top = 0;
+        minR->bottom = h;
+    }
+}
+
+static int CaptionHoverAt(HWND hwnd, POINT ptClient) {
+    RECT minR{}, maxR{}, closeR{};
+    GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
+    if (PtInRect(&closeR, ptClient)) return 3;
+    if (PtInRect(&maxR, ptClient)) return 2;
+    if (PtInRect(&minR, ptClient)) return 1;
+    return 0;
+}
+
+static bool PointOverTopBarControl(HWND hwnd, POINT ptClient) {
+    HWND hit = ChildWindowFromPointEx(hwnd, ptClient, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+    if (!hit || hit == hwnd) return false;
+    if (hit == hwndBrand) return false; // decorative — allow window drag
+    return true;
+}
+
+static void PaintCaptionButtons(HDC hdc, HWND hwnd) {
+    RECT minR{}, maxR{}, closeR{};
+    GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
+    const bool maximized = IsZoomed(hwnd) != FALSE;
+
+    auto fillBtn = [&](const RECT& r, int which) {
+        COLORREF bg = gTheme.chromeBg;
+        if (gCaptionHover == which) {
+            bg = (which == 3) ? RGB(196, 43, 28) : gTheme.chromeElevated;
+        }
+        HBRUSH br = CreateSolidBrush(bg);
+        FillRect(hdc, &r, br);
+        DeleteObject(br);
+    };
+    fillBtn(minR, 1);
+    fillBtn(maxR, 2);
+    fillBtn(closeR, 3);
+
+    HPEN pen = CreatePen(PS_SOLID, 1,
+        gCaptionHover == 3 ? RGB(255, 255, 255) : gTheme.ink);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
+    // Minimize —
+    {
+        const int cy = (minR.top + minR.bottom) / 2;
+        const int cx = (minR.left + minR.right) / 2;
+        MoveToEx(hdc, cx - 5, cy, nullptr);
+        LineTo(hdc, cx + 6, cy);
+    }
+    // Maximize / restore
+    {
+        const int cx = (maxR.left + maxR.right) / 2;
+        const int cy = (maxR.top + maxR.bottom) / 2;
+        if (maximized) {
+            Rectangle(hdc, cx - 3, cy - 5, cx + 5, cy + 3);
+            Rectangle(hdc, cx - 5, cy - 3, cx + 3, cy + 5);
+        } else {
+            Rectangle(hdc, cx - 5, cy - 5, cx + 6, cy + 6);
+        }
+    }
+    // Close ×
+    {
+        const int cx = (closeR.left + closeR.right) / 2;
+        const int cy = (closeR.top + closeR.bottom) / 2;
+        MoveToEx(hdc, cx - 5, cy - 5, nullptr);
+        LineTo(hdc, cx + 6, cy + 6);
+        MoveToEx(hdc, cx + 5, cy - 5, nullptr);
+        LineTo(hdc, cx - 6, cy + 6);
+    }
+
+    SelectObject(hdc, oldBr);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
+static void SetCaptionHover(HWND hwnd, int hover) {
+    if (gCaptionHover == hover) return;
+    gCaptionHover = hover;
+    RECT band = { 0, 0, 0, TOPBAR_HEIGHT };
+    GetClientRect(hwnd, &band);
+    band.bottom = TOPBAR_HEIGHT;
+    InvalidateRect(hwnd, &band, FALSE);
 }
 
 static INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM) {
@@ -3028,8 +3171,8 @@ static void DrawToolbarBackgroundCheap(HDC hdc, const RECT& client, const Chrome
     // Brand mark is owned by hwndBrand (WS_CLIPCHILDREN excludes it from parent paint).
 }
 
-static void DrawToolbarBackground(HDC hdc, const RECT& client) {
-    const ChromeLayout chrome = GetChromeLayout(nullptr);
+static void DrawToolbarBackground(HDC hdc, HWND hwnd, const RECT& client) {
+    const ChromeLayout chrome = GetChromeLayout(hwnd);
     const int width = client.right - client.left;
     const int height = client.bottom - client.top;
     if (width < 1 || height < 1) return;
@@ -3042,14 +3185,15 @@ static void DrawToolbarBackground(HDC hdc, const RECT& client) {
         && gChromeCacheLayerW == chrome.layerW;
     if (!cacheReady) {
         DrawToolbarBackgroundCheap(hdc, client, chrome);
-        return;
+    } else {
+        Graphics g(hdc);
+        g.SetCompositingMode(CompositingModeSourceCopy);
+        g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+        g.DrawImage(gChromeCache, 0, 0, width, height);
     }
-
-    Graphics g(hdc);
-    g.SetCompositingMode(CompositingModeSourceCopy);
-    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
-    g.DrawImage(gChromeCache, 0, 0, width, height);
-    // Do not paint brand here — dedicated child BitBlts a precomposed frame.
+    if (hwnd) {
+        if (!IsRunningUnderWine()) PaintCaptionButtons(hdc, hwnd);
+    }
 }
 
 static void CreateLayerPanel(HWND hwnd) {
@@ -3139,7 +3283,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         LayoutViewport(hwnd);
         UpdateStatusBar(hwnd);
         UpdateWindowTitle(hwnd);
-        EnableDarkTitleBar(hwnd);
+        EnableCustomTitleBar(hwnd);
         // Fresco cache once; low-rate idle motion (pauses while drawing/resizing).
         SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
@@ -3273,6 +3417,92 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_ERASEBKGND:
         // Avoid double-paint flicker: chrome is drawn once in WM_PAINT from cache.
         return 1;
+
+    case WM_NCCALCSIZE: {
+        // Replace the OS caption with our in-client top bar; keep resize borders.
+        // Skip on Wine — its window manager still draws a caption and our expanded
+        // client would sit underneath it, clipping brand/menus.
+        if (wParam == TRUE && !IsRunningUnderWine()) {
+            auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+            const int frameX = FrameBorderX();
+            const int frameY = FrameBorderY();
+            params->rgrc[0].left += frameX;
+            params->rgrc[0].right -= frameX;
+            params->rgrc[0].bottom -= frameY;
+            if (IsZoomed(hwnd)) {
+                params->rgrc[0].top += frameY;
+            }
+            return 0;
+        }
+        break;
+    }
+
+    case WM_NCHITTEST: {
+        if (IsRunningUnderWine()) break;
+
+        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        RECT wr = {};
+        GetWindowRect(hwnd, &wr);
+        const int frameX = FrameBorderX();
+        const int frameY = FrameBorderY();
+
+        if (pt.y >= wr.top && pt.y < wr.top + frameY) {
+            if (pt.x < wr.left + frameX) return HTTOPLEFT;
+            if (pt.x >= wr.right - frameX) return HTTOPRIGHT;
+            return HTTOP;
+        }
+        if (pt.y >= wr.bottom - frameY && pt.y < wr.bottom) {
+            if (pt.x < wr.left + frameX) return HTBOTTOMLEFT;
+            if (pt.x >= wr.right - frameX) return HTBOTTOMRIGHT;
+            return HTBOTTOM;
+        }
+        if (pt.x >= wr.left && pt.x < wr.left + frameX) return HTLEFT;
+        if (pt.x >= wr.right - frameX && pt.x < wr.right) return HTRIGHT;
+
+        POINT clientPt = pt;
+        ScreenToClient(hwnd, &clientPt);
+        RECT client = {};
+        GetClientRect(hwnd, &client);
+
+        RECT minR{}, maxR{}, closeR{};
+        GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
+        if (PtInRect(&closeR, clientPt)) return HTCLOSE;
+        if (PtInRect(&maxR, clientPt)) return HTMAXBUTTON;
+        if (PtInRect(&minR, clientPt)) return HTMINBUTTON;
+
+        if (clientPt.y >= 0 && clientPt.y < TOPBAR_HEIGHT) {
+            if (PointOverTopBarControl(hwnd, clientPt)) return HTCLIENT;
+            return HTCAPTION;
+        }
+
+        if (PtInRect(&client, clientPt)) return HTCLIENT;
+        return HTNOWHERE;
+    }
+
+    case WM_NCACTIVATE:
+        if (IsRunningUnderWine()) break;
+        // Keep custom chrome painted; skip default caption redraw flash.
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return TRUE;
+
+    case WM_NCMOUSEMOVE: {
+        if (IsRunningUnderWine()) break;
+        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        ScreenToClient(hwnd, &pt);
+        SetCaptionHover(hwnd, CaptionHoverAt(hwnd, pt));
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE | TME_NONCLIENT;
+        tme.hwndTrack = hwnd;
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+
+    case WM_NCMOUSELEAVE:
+        if (IsRunningUnderWine()) break;
+        SetCaptionHover(hwnd, 0);
+        return 0;
+
     case WM_ENTERSIZEMOVE:
         gUiSizing = true;
         break;
@@ -3717,7 +3947,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT client = {};
         GetClientRect(hwnd, &client);
-        DrawToolbarBackground(hdc, client);
+        DrawToolbarBackground(hdc, hwnd, client);
         EndPaint(hwnd, &ps);
         break;
     }
