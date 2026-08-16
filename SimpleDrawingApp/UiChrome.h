@@ -31,7 +31,9 @@ enum class UiIcon {
     LayerAdd,
     LayerDel,
     LayerUp,
-    LayerDown
+    LayerDown,
+    ChevronLeft,
+    ChevronRight
 };
 
 struct IconPaintOpts {
