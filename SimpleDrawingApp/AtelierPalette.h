@@ -19,7 +19,7 @@ int AtelierPalette_IdealHeight(int width);
 
 void AtelierPalette_SetColors(HWND hwnd, COLORREF fg, COLORREF bg);
 void AtelierPalette_GetColors(HWND hwnd, COLORREF* fg, COLORREF* bg);
-void AtelierPalette_NoteColor(HWND hwnd, COLORREF color); // push into recent
+void AtelierPalette_NoteColor(HWND hwnd, COLORREF color); // push into recent (call after paint)
 void AtelierPalette_Load(HWND hwnd);
 void AtelierPalette_Save(HWND hwnd);
 

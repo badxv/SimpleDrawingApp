@@ -551,7 +551,6 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 NotifyParent(hwnd, 2);
             } else {
                 st->fg = c;
-                PushUniqueFront(st->recent, c, kRecentMax);
                 NotifyParent(hwnd, 1);
             }
             InvalidateRect(hwnd, NULL, FALSE);
@@ -568,7 +567,6 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             float fh, fs, fv;
             RgbToHsv(st->fg, fh, fs, fv);
             st->fg = HsvToRgb(fh, fs, st->value);
-            PushUniqueFront(st->recent, st->fg, kRecentMax);
             NotifyParent(hwnd, 1);
             InvalidateRect(hwnd, NULL, FALSE);
             return 0;
@@ -596,7 +594,6 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 Persist(st);
             } else {
                 st->fg = c;
-                PushUniqueFront(st->recent, c, kRecentMax);
                 NotifyParent(hwnd, 1);
             }
             InvalidateRect(hwnd, NULL, FALSE);
@@ -611,7 +608,6 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 Persist(st);
             } else {
                 st->fg = c;
-                PushUniqueFront(st->recent, c, kRecentMax);
                 NotifyParent(hwnd, 1);
             }
             InvalidateRect(hwnd, NULL, FALSE);
@@ -660,10 +656,6 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         if (st && st->dragging) {
             st->dragging = false;
             ReleaseCapture();
-            if (!st->dragBg) {
-                PushUniqueFront(st->recent, st->fg, kRecentMax);
-                Persist(st);
-            }
             InvalidateRect(hwnd, NULL, FALSE);
         }
         return 0;
