@@ -1995,6 +1995,16 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     switch (uMsg) {
     case WM_ERASEBKGND:
         return 1;
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        // Canvas often holds focus after drawing; forward keys to the frame
+        // so tool shortcuts and shape Alt/Ctrl modifiers still work.
+        if (HWND parent = GetParent(hwnd)) {
+            return SendMessageA(parent, uMsg, wParam, lParam);
+        }
+        return 0;
     case WM_SIZE:
         UpdateScrollBars();
         InvalidateRect(hwnd, NULL, FALSE);
@@ -3494,10 +3504,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     MSG msg = {};
     while (GetMessage(&msg, NULL, 0, 0)) {
-        if (!TranslateAcceleratorA(hwnd, gAccel, &msg)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
+        // Bare letter tool accelerators must not steal keys from Size/Opacity edits.
+        // Ctrl/Alt chords (Save, Undo, …) still translate while typing.
+        const bool keyMsg = (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN);
+        const bool typing = keyMsg && IsTypingInEdit();
+        const bool ctrlOrAlt = (GetKeyState(VK_CONTROL) & 0x8000) != 0
+            || (GetKeyState(VK_MENU) & 0x8000) != 0;
+        const bool tryAccel = !typing || ctrlOrAlt;
+        if (tryAccel && TranslateAcceleratorA(hwnd, gAccel, &msg)) {
+            continue;
         }
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 
     AtelierArtwork_Shutdown();
