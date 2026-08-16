@@ -327,6 +327,45 @@ static void SyncPaletteFromApp() {
     }
 }
 
+static ShapePaintMode EffectiveShapePaintMode() {
+    // Hold Alt → fill only; hold Ctrl (or Alt+Ctrl) → stroke + fill.
+    const bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    if (ctrl) return ShapePaintMode::Both;
+    if (alt) return ShapePaintMode::Fill;
+    return shapePaintMode;
+}
+
+static void NoteDrawnColors() {
+    if (!hwndPalette) return;
+    if (currentTool == DrawTool::Eraser || currentTool == DrawTool::Select) return;
+
+    if (currentTool == DrawTool::Pen
+        || currentTool == DrawTool::Line
+        || currentTool == DrawTool::Fill) {
+        AtelierPalette_NoteColor(hwndPalette, penColor);
+        return;
+    }
+
+    if (currentTool == DrawTool::Shape) {
+        const ShapePaintMode mode = EffectiveShapePaintMode();
+        if (mode == ShapePaintMode::Stroke || mode == ShapePaintMode::Both) {
+            AtelierPalette_NoteColor(hwndPalette, penColor);
+        }
+        if (mode == ShapePaintMode::Fill || mode == ShapePaintMode::Both) {
+            AtelierPalette_NoteColor(hwndPalette, backColor);
+        }
+    }
+}
+
+static bool IsTypingInEdit() {
+    HWND focus = GetFocus();
+    if (!focus) return false;
+    char cls[32] = {};
+    GetClassNameA(focus, cls, static_cast<int>(sizeof(cls)));
+    return _stricmp(cls, "Edit") == 0;
+}
+
 static void InvalidateColorChips() {
     if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
     if (hwndBgButton) InvalidateRect(hwndBgButton, NULL, FALSE);
@@ -512,6 +551,7 @@ static void CommitStrokeLayer();
 static void BeginStrokeLayer();
 static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1);
 static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY);
+static void RedrawShapePreview(int endX, int endY, bool shiftConstrained);
 static void UpdateScrollBars();
 static void SyncDocSizeFromBitmap();
 static void InvalidateCanvas();
@@ -1368,6 +1408,54 @@ static INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPA
     return FALSE;
 }
 
+static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM) {
+    switch (message) {
+    case WM_INITDIALOG: {
+        const char* text =
+            "Tools\r\n"
+            "  B          Pen\r\n"
+            "  E          Eraser\r\n"
+            "  G          Fill (bucket)\r\n"
+            "  M          Select\r\n"
+            "  L          Line\r\n"
+            "  U          Shapes\r\n"
+            "  X          Swap foreground / background\r\n"
+            "\r\n"
+            "While drawing a shape\r\n"
+            "  Alt        Fill only (hold)\r\n"
+            "  Ctrl       Stroke + Fill (hold)\r\n"
+            "  Shift      Constrain proportions\r\n"
+            "\r\n"
+            "Brush\r\n"
+            "  [ / ]      Decrease / increase size\r\n"
+            "\r\n"
+            "File & edit\r\n"
+            "  Ctrl+N     New\r\n"
+            "  Ctrl+O     Open\r\n"
+            "  Ctrl+S     Save\r\n"
+            "  Ctrl+Z/Y   Undo / Redo\r\n"
+            "  Ctrl+X/C/V Cut / Copy / Paste\r\n"
+            "  Ctrl+A     Select all\r\n"
+            "  Del        Delete selection\r\n"
+            "  Ctrl+E     Canvas size\r\n"
+            "\r\n"
+            "View\r\n"
+            "  Ctrl++/-   Zoom in / out\r\n"
+            "  Ctrl+0     Actual size\r\n"
+            "  F1         This shortcuts list\r\n";
+        SetDlgItemTextA(hDlg, IDC_SHORTCUTS_TEXT, text);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, LOWORD(wParam));
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
 static void SyncPresetSelection(HWND hDlg) {
     HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
     if (!list) return;
@@ -1752,8 +1840,9 @@ static void DrawShapeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (width < 1) width = 1;
     if (height < 1) height = 1;
 
-    const bool doFill = (shapePaintMode == ShapePaintMode::Fill || shapePaintMode == ShapePaintMode::Both);
-    const bool doStroke = (shapePaintMode == ShapePaintMode::Stroke || shapePaintMode == ShapePaintMode::Both);
+    const ShapePaintMode paintMode = EffectiveShapePaintMode();
+    const bool doFill = (paintMode == ShapePaintMode::Fill || paintMode == ShapePaintMode::Both);
+    const bool doStroke = (paintMode == ShapePaintMode::Stroke || paintMode == ShapePaintMode::Both);
 
     GraphicsPath path;
     BuildShapePath(path, currentShape, left, top, width, height);
@@ -1777,6 +1866,13 @@ static void RedrawShapePreview(int endX, int endY, bool shiftConstrained) {
     DrawShapeOnto(strokeGraphics, shapeStart.x, shapeStart.y, x1, y1);
     lastPoint.x = x1;
     lastPoint.y = y1;
+}
+
+static void RefreshShapePreviewIfDrawing() {
+    if (!isDrawing || !strokeGraphics || !IsShapeTool(currentTool)) return;
+    const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    RedrawShapePreview(lastPoint.x, lastPoint.y, shift);
+    InvalidateCanvas();
 }
 
 static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
@@ -1858,6 +1954,7 @@ static void CommitStrokeLayer() {
     }
     DestroyStrokeLayer();
     InvalidateComposite();
+    NoteDrawnColors();
 }
 
 static int ScrollByMessage(HWND scrollBar, WPARAM wParam, int current, int maxScroll) {
@@ -1991,6 +2088,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             gHistory.Push(gLayers);
             if (FloodFillCanvas(gLayers.ActiveBitmap(), docX, docY, penColor, OpacityToAlpha())) {
                 InvalidateComposite();
+                NoteDrawnColors();
                 MarkDirty(parent);
                 InvalidateCanvas();
             }
@@ -2384,17 +2482,17 @@ static void CreateToolbar(HWND hwnd) {
     }
 
     // Tools (left rail): Pen Eraser Fill | Select | Line Shapes
-    hwndToolButtons[0] = CreateIconButton(hwnd, IDC_TOOL_PEN, "Pen", true);
-    hwndToolButtons[1] = CreateIconButton(hwnd, IDC_TOOL_ERASER, "Eraser", true);
-    hwndToolButtons[2] = CreateIconButton(hwnd, IDC_TOOL_FILL, "Fill", true);
-    hwndToolButtons[3] = CreateIconButton(hwnd, IDC_TOOL_SELECT, "Select", true);
-    hwndToolButtons[4] = CreateIconButton(hwnd, IDC_TOOL_LINE, "Line", true);
-    hwndToolButtons[5] = CreateIconButton(hwnd, IDC_TOOL_SHAPES, "Shapes…", true);
+    hwndToolButtons[0] = CreateIconButton(hwnd, IDC_TOOL_PEN, "Pen\r\nShortcut: B", true);
+    hwndToolButtons[1] = CreateIconButton(hwnd, IDC_TOOL_ERASER, "Eraser\r\nShortcut: E", true);
+    hwndToolButtons[2] = CreateIconButton(hwnd, IDC_TOOL_FILL, "Fill\r\nShortcut: G", true);
+    hwndToolButtons[3] = CreateIconButton(hwnd, IDC_TOOL_SELECT, "Select\r\nShortcut: M", true);
+    hwndToolButtons[4] = CreateIconButton(hwnd, IDC_TOOL_LINE, "Line\r\nShortcut: L", true);
+    hwndToolButtons[5] = CreateIconButton(hwnd, IDC_TOOL_SHAPES, "Shapes…\r\nShortcut: U", true);
 
     // FG / BG chips (Photoshop-style). FG is IDC_COLOR_BUTTON.
-    hwndActionButtons[0] = CreateIconButton(hwnd, IDC_COLOR_BUTTON, "Foreground color", false);
-    hwndBgButton = CreateIconButton(hwnd, IDC_BG_BUTTON, "Background color (shape fill)", false);
-    hwndSwapColors = CreateIconButton(hwnd, IDC_SWAP_COLORS, "Swap FG/BG (X)", false);
+    hwndActionButtons[0] = CreateIconButton(hwnd, IDC_COLOR_BUTTON, "Foreground color\r\nClick to pick", false);
+    hwndBgButton = CreateIconButton(hwnd, IDC_BG_BUTTON, "Background color (shape fill)\r\nClick to pick", false);
+    hwndSwapColors = CreateIconButton(hwnd, IDC_SWAP_COLORS, "Swap FG/BG\r\nShortcut: X", false);
 
     AtelierPalette_SetTheme(&gTheme);
     hwndPalette = AtelierPalette_Create(hwnd, 0, 0, TOOL_RAIL_WIDTH - 12, 160);
@@ -2929,15 +3027,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             } else if (notifyCode == 2) {
                 backColor = bg;
                 if (hwndBgButton) InvalidateRect(hwndBgButton, NULL, FALSE);
-            } else if (notifyCode == 3) {
+            } else             if (notifyCode == 3) {
                 COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
                 penColor = newColor;
-                AtelierPalette_NoteColor(hwndPalette, penColor);
                 InvalidateColorChips();
             } else if (notifyCode == 4) {
                 COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
                 backColor = newColor;
-                AtelierPalette_NoteColor(hwndPalette, backColor);
                 InvalidateColorChips();
             }
             UpdateStatusBar(hwnd);
@@ -2963,28 +3059,34 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         switch (cmdId) {
         case IDC_TOOL_PEN:
+        case IDM_TOOL_PEN:
             ClearSelection(true);
             SetActiveTool(DrawTool::Pen);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_ERASER:
+        case IDM_TOOL_ERASER:
             ClearSelection(true);
             SetActiveTool(DrawTool::Eraser);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_FILL:
+        case IDM_TOOL_FILL:
             ClearSelection(true);
             SetActiveTool(DrawTool::Fill);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_LINE:
+        case IDM_TOOL_LINE:
             ClearSelection(true);
             SetActiveTool(DrawTool::Line);
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_SHAPES:
+        case IDM_TOOL_SHAPES:
             ClearSelection(true);
-            if (currentTool == DrawTool::Shape && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
+            if (cmdId == IDC_TOOL_SHAPES
+                && currentTool == DrawTool::Shape && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
                 CloseShapeFlyout();
             } else {
                 SetActiveTool(DrawTool::Shape);
@@ -2993,10 +3095,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             UpdateStatusBar(hwnd);
             break;
         case IDC_TOOL_SELECT:
+        case IDM_TOOL_SELECT:
             SetActiveTool(DrawTool::Select);
             UpdateStatusBar(hwnd);
             break;
-        case IDC_SWAP_COLORS: {
+        case IDC_SWAP_COLORS:
+        case IDM_SWAP_COLORS: {
             const COLORREF tmp = penColor;
             penColor = backColor;
             backColor = tmp;
@@ -3012,7 +3116,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDC_BG_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
             backColor = newColor;
-            AtelierPalette_NoteColor(hwndPalette, backColor);
             InvalidateColorChips();
             break;
         }
@@ -3113,7 +3216,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDC_COLOR_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
             penColor = newColor;
-            AtelierPalette_NoteColor(hwndPalette, penColor);
             InvalidateColorChips();
             break;
         }
@@ -3147,6 +3249,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         case IDM_ABOUT:
             DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_ABOUTBOX), hwnd, AboutDlgProc);
+            break;
+        case IDM_SHORTCUTS:
+            DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_SHORTCUTS), hwnd, ShortcutsDlgProc);
             break;
         case IDM_EXIT:
             SendMessageA(hwnd, WM_CLOSE, 0, 0);
@@ -3188,7 +3293,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         return 0;
     }
-    case WM_KEYDOWN: {
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
         if (wParam == VK_ESCAPE) {
             if (hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
                 CloseShapeFlyout();
@@ -3199,13 +3305,28 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             UpdateStatusBar(hwnd);
             break;
         }
-        if (wParam == 'X' || wParam == 'x') {
-            const COLORREF tmp = penColor;
-            penColor = backColor;
-            backColor = tmp;
-            InvalidateColorChips();
-            break;
+
+        // Live shape fill/stroke modifiers while dragging.
+        if (wParam == VK_MENU || wParam == VK_CONTROL || wParam == VK_SHIFT) {
+            RefreshShapePreviewIfDrawing();
         }
+
+        if (!IsTypingInEdit()
+            && (GetKeyState(VK_CONTROL) & 0x8000) == 0
+            && (GetKeyState(VK_MENU) & 0x8000) == 0) {
+            const WPARAM key = (wParam >= 'a' && wParam <= 'z') ? (wParam - 'a' + 'A') : wParam;
+            switch (key) {
+            case 'B': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_PEN, 0), 0); break;
+            case 'E': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_ERASER, 0), 0); break;
+            case 'G': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_FILL, 0), 0); break;
+            case 'M': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_SELECT, 0), 0); break;
+            case 'L': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_LINE, 0), 0); break;
+            case 'U': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_TOOL_SHAPES, 0), 0); break;
+            case 'X': SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_SWAP_COLORS, 0), 0); break;
+            default: break;
+            }
+        }
+
         if (wParam == VK_OEM_4) { // [
             AdjustPenWidth(hwnd, -1);
         }
@@ -3214,6 +3335,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         break;
     }
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        if (wParam == VK_MENU || wParam == VK_CONTROL || wParam == VK_SHIFT) {
+            RefreshShapePreviewIfDrawing();
+        }
+        break;
     case WM_CLOSE:
         if (!PromptSaveIfDirty(hwnd)) {
             return 0;
