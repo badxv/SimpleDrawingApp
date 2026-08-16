@@ -724,8 +724,26 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetCompositingMode(CompositingModeSourceCopy);
 
-    // Always paint chrome behind so we never flash system button face (90s look).
-    {
+    // Idle tools: sample parent fresco so panel artwork shows through.
+    // Selected/hot keep a gilt plate so affordance stays clear.
+    bool sampledParent = false;
+    if (!selected && !hot && !pressed && dis->hwndItem) {
+        HWND parent = GetParent(dis->hwndItem);
+        if (parent) {
+            POINT pt = { dis->rcItem.left, dis->rcItem.top };
+            MapWindowPoints(dis->hwndItem, parent, &pt, 1);
+            HDC parentDc = GetDC(parent);
+            if (parentDc) {
+                BitBlt(dis->hDC, 0, 0,
+                    dis->rcItem.right - dis->rcItem.left,
+                    dis->rcItem.bottom - dis->rcItem.top,
+                    parentDc, pt.x, pt.y, SRCCOPY);
+                ReleaseDC(parent, parentDc);
+                sampledParent = true;
+            }
+        }
+    }
+    if (!sampledParent) {
         SolidBrush base(Color(255, GetRValue(opts.chromeBg), GetGValue(opts.chromeBg), GetBValue(opts.chromeBg)));
         g.FillRectangle(&base, bounds);
     }

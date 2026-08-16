@@ -75,26 +75,26 @@ void DrawWatermark(Graphics& g, Bitmap* art, const RectF& bounds, REAL opacity, 
     g.SetClip(bounds, CombineModeIntersect);
 
     if (cover) {
-        // Scale to cover panel width, stack vertically to fill tall chrome.
-        const REAL drawW = bounds.Width * 0.92f;
+        // Prefer filling the panel: scale to panel width, stack with slight overlap.
+        const REAL drawW = bounds.Width * 0.96f;
         const REAL drawH = drawW * (static_cast<REAL>(ah) / static_cast<REAL>(aw));
-        REAL y = bounds.Y + 8.0f;
+        REAL y = bounds.Y + 4.0f;
         int pass = 0;
-        while (y < bounds.Y + bounds.Height - 8.0f && pass < 6) {
+        while (y < bounds.Y + bounds.Height - 4.0f && pass < 8) {
             const REAL x = bounds.X + (bounds.Width - drawW) * 0.5f;
-            const REAL fade = (pass == 0) ? opacity : (opacity * 0.72f);
+            // Later passes slightly softer so stacking doesn’t mud.
+            const REAL fade = (pass == 0) ? opacity : (opacity * (pass == 1 ? 0.85f : 0.7f));
             cm.m[3][3] = fade;
             attr.SetColorMatrix(&cm, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
             RectF dest(x, y, drawW, drawH);
             g.DrawImage(art, dest, 0.0f, 0.0f,
                 static_cast<REAL>(aw), static_cast<REAL>(ah),
                 UnitPixel, &attr);
-            y += drawH * 0.88f;
+            y += drawH * 0.82f;
             ++pass;
         }
     } else {
-        // Single centered plate for shorter bands.
-        const REAL drawH = bounds.Height * 0.86f;
+        const REAL drawH = bounds.Height * 0.9f;
         const REAL drawW = drawH * (static_cast<REAL>(aw) / static_cast<REAL>(ah));
         const REAL x = bounds.X + (bounds.Width - drawW) * 0.5f;
         const REAL y = bounds.Y + (bounds.Height - drawH) * 0.5f;
@@ -130,8 +130,19 @@ void AtelierArtwork_Shutdown() {
 void DrawFrescoArtwork(Graphics& g, const RectF& bounds, bool leftRail) {
     if (!gInited) AtelierArtwork_Init();
     if (leftRail) {
-        DrawWatermark(g, gRailArt, bounds, 0.20f, true);
+        // Stronger on the outer strip + lower half where controls are sparse.
+        DrawWatermark(g, gRailArt, bounds, 0.46f, true);
+        if (bounds.Height > 160.0f) {
+            RectF lower(bounds.X, bounds.Y + bounds.Height * 0.48f,
+                bounds.Width, bounds.Height * 0.52f);
+            DrawWatermark(g, gRailArt, lower, 0.55f, true);
+        }
     } else {
-        DrawWatermark(g, gLayersArt, bounds, 0.24f, true);
+        DrawWatermark(g, gLayersArt, bounds, 0.42f, true);
+        if (bounds.Height > 180.0f) {
+            RectF lower(bounds.X + 6.0f, bounds.Y + bounds.Height * 0.42f,
+                bounds.Width - 12.0f, bounds.Height * 0.55f);
+            DrawWatermark(g, gLayersArt, lower, 0.58f, false);
+        }
     }
 }

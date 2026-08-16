@@ -33,7 +33,7 @@ namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
 constexpr int TOPBAR_HEIGHT = 48;
-constexpr int TOOL_RAIL_WIDTH = 56;
+constexpr int TOOL_RAIL_WIDTH = 84;
 constexpr int BOTTOMBAR_HEIGHT = 44;
 constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 176;
@@ -661,8 +661,8 @@ static void LayoutChromeControls(HWND hwnd) {
     x += ICON_BTN + 4;
     if (hwndActionButtons[5]) MoveWindow(hwndActionButtons[5], x, topY, ICON_BTN, ICON_BTN, TRUE); // Save
 
-    // Left tool rail (top → bottom).
-    const int railX = (chrome.railW - ICON_BTN) / 2;
+    // Left tool rail — keep tools toward the inner edge so parchment art reads on the outer strip.
+    const int railX = 10;
     int y = chrome.topH + 14;
     const int order[7] = { 0, 1, 2, 6, 3, 4, 5 }; // Pen Eraser Fill Select Line Rect Ellipse
     for (int i = 0; i < 7; ++i) {
@@ -685,7 +685,7 @@ static void LayoutChromeControls(HWND hwnd) {
         const int row = i / 2;
         if (hwndSwatches[i]) {
             MoveWindow(hwndSwatches[i],
-                8 + col * 20,
+                10 + col * 20,
                 y + row * 20,
                 18, 18, TRUE);
         }
