@@ -11,6 +11,7 @@
 #include "AtelierFonts.h"
 #include "AtelierControls.h"
 #include "AtelierArtwork.h"
+#include "AtelierPalette.h"
 #include "Resource.h"
 
 #include <commctrl.h>
@@ -33,7 +34,7 @@ namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
 constexpr int TOPBAR_HEIGHT = 48;
-constexpr int TOOL_RAIL_WIDTH = 84;
+constexpr int TOOL_RAIL_WIDTH = 108; // room for round color well
 constexpr int BOTTOMBAR_HEIGHT = 44;
 constexpr int STATUS_HEIGHT = 24;
 constexpr int LAYER_PANEL_WIDTH = 176;
@@ -52,17 +53,6 @@ constexpr COLORREF WORKSPACE_COLOR = RGB(168, 158, 146);
 constexpr float ZOOM_MIN = 0.25f;
 constexpr float ZOOM_MAX = 8.0f;
 constexpr float ZOOM_STEP = 1.25f;
-
-const COLORREF kSwatches[8] = {
-    RGB(0, 0, 0),
-    RGB(255, 255, 255),
-    RGB(232, 17, 35),
-    RGB(247, 99, 12),
-    RGB(255, 185, 0),
-    RGB(16, 124, 16),
-    RGB(0, 120, 212),
-    RGB(136, 23, 152)
-};
 
 struct CanvasPreset {
     const char* label;
@@ -122,7 +112,7 @@ HWND hwndLayerDown = nullptr;
 HWND hwndLayerVisible = nullptr;
 HWND hwndLayerOpacity = nullptr;
 HWND hwndToolButtons[kToolButtonCount] = {};
-HWND hwndSwatches[8] = {};
+HWND hwndPalette = nullptr;
 HWND hwndActionButtons[7] = {}; // 0 Color(FG), 1 New, 2 Undo, 3 Redo, 4 Clear, 5 Save, 6 Open
 HWND hwndBgButton = nullptr;
 HWND hwndSwapColors = nullptr;
@@ -323,9 +313,16 @@ static void InvalidateActiveToolButton() {
     }
 }
 
+static void SyncPaletteFromApp() {
+    if (hwndPalette) {
+        AtelierPalette_SetColors(hwndPalette, penColor, backColor);
+    }
+}
+
 static void InvalidateColorChips() {
     if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
     if (hwndBgButton) InvalidateRect(hwndBgButton, NULL, FALSE);
+    SyncPaletteFromApp();
 }
 
 static bool ShouldRunIdleMotion(HWND hwnd) {
@@ -719,15 +716,12 @@ static void LayoutChromeControls(HWND hwnd) {
     }
     y += 40;
 
-    for (int i = 0; i < 8; ++i) {
-        const int col = i % 2;
-        const int row = i / 2;
-        if (hwndSwatches[i]) {
-            MoveWindow(hwndSwatches[i],
-                10 + col * 20,
-                y + row * 20,
-                18, 18, TRUE);
-        }
+    if (hwndPalette) {
+        const int palW = chrome.railW - 12;
+        const int palH = AtelierPalette_IdealHeight(palW);
+        const int maxH = (client.bottom - chrome.statusH - chrome.bottomH) - y - 8;
+        const int h = (palH < maxH) ? palH : (maxH > 80 ? maxH : 80);
+        MoveWindow(hwndPalette, 6, y, palW, h, TRUE);
     }
 
     // Bottom bar under canvas: size + opacity.
@@ -2283,17 +2277,16 @@ static void CreateToolbar(HWND hwnd) {
     hwndToolButtons[4] = CreateIconButton(hwnd, IDC_TOOL_LINE, "Line", true);
     hwndToolButtons[5] = CreateIconButton(hwnd, IDC_TOOL_SHAPES, "Shapes…", true);
 
-    for (int i = 0; i < 8; ++i) {
-        hwndSwatches[i] = CreateWindowA("BUTTON", "",
-            WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_OWNERDRAW,
-            0, 0, 18, 18,
-            hwnd, (HMENU)(INT_PTR)(IDC_SWATCH0 + i), GetModuleHandle(NULL), NULL);
-    }
-
     // FG / BG chips (Photoshop-style). FG is IDC_COLOR_BUTTON.
     hwndActionButtons[0] = CreateIconButton(hwnd, IDC_COLOR_BUTTON, "Foreground color", false);
     hwndBgButton = CreateIconButton(hwnd, IDC_BG_BUTTON, "Background color (shape fill)", false);
     hwndSwapColors = CreateIconButton(hwnd, IDC_SWAP_COLORS, "Swap FG/BG (X)", false);
+
+    AtelierPalette_SetTheme(&gTheme);
+    hwndPalette = AtelierPalette_Create(hwnd, 0, 0, TOOL_RAIL_WIDTH - 12, 160);
+    if (hwndPalette) {
+        AtelierPalette_SetColors(hwndPalette, penColor, backColor);
+    }
 
     hwndActionButtons[1] = CreateIconButton(hwnd, IDC_NEW_BUTTON, "New (Ctrl+N)", false);
     hwndActionButtons[2] = CreateIconButton(hwnd, IDC_UNDO_BUTTON, "Undo (Ctrl+Z)", false);
@@ -2544,6 +2537,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         gChromeDeepBrush = CreateSolidBrush(gTheme.chromeDeep);
         gChromeElevatedBrush = CreateSolidBrush(gTheme.chromeElevated);
         AtelierControls_SetTheme(&gTheme);
+        AtelierPalette_SetTheme(&gTheme);
 
         hwndBrand = CreateWindowExA(
             0,
@@ -2647,22 +2641,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_DRAWITEM: {
         const DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
         if (!dis) break;
-        if (dis->CtlID >= IDC_SWATCH0 && dis->CtlID <= IDC_SWATCH7) {
-            const int index = dis->CtlID - IDC_SWATCH0;
-            HBRUSH fill = CreateSolidBrush(kSwatches[index]);
-            FillRect(dis->hDC, &dis->rcItem, fill);
-            DeleteObject(fill);
-
-            const bool selected = (penColor == kSwatches[index]);
-            HPEN border = CreatePen(PS_SOLID, selected ? 2 : 1, selected ? gTheme.accent : RGB(90, 90, 90));
-            HGDIOBJ oldPen = SelectObject(dis->hDC, border);
-            HGDIOBJ oldBrush = SelectObject(dis->hDC, GetStockObject(NULL_BRUSH));
-            Rectangle(dis->hDC, dis->rcItem.left, dis->rcItem.top, dis->rcItem.right, dis->rcItem.bottom);
-            SelectObject(dis->hDC, oldBrush);
-            SelectObject(dis->hDC, oldPen);
-            DeleteObject(border);
-            return TRUE;
-        }
         if (IsIconControlId(static_cast<int>(dis->CtlID))) {
             const int id = static_cast<int>(dis->CtlID);
             IconPaintOpts opts;
@@ -2805,12 +2783,28 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         }
 
-        if (cmdId >= IDC_SWATCH0 && cmdId <= IDC_SWATCH7) {
-            penColor = kSwatches[cmdId - IDC_SWATCH0];
-            for (HWND sw : hwndSwatches) {
-                InvalidateRect(sw, NULL, TRUE);
+        if (cmdId == ID_PALETTE) {
+            COLORREF fg = penColor;
+            COLORREF bg = backColor;
+            AtelierPalette_GetColors(hwndPalette, &fg, &bg);
+            if (notifyCode == 1) {
+                penColor = fg;
+                if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
+            } else if (notifyCode == 2) {
+                backColor = bg;
+                if (hwndBgButton) InvalidateRect(hwndBgButton, NULL, FALSE);
+            } else if (notifyCode == 3) {
+                COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
+                penColor = newColor;
+                AtelierPalette_NoteColor(hwndPalette, penColor);
+                InvalidateColorChips();
+            } else if (notifyCode == 4) {
+                COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
+                backColor = newColor;
+                AtelierPalette_NoteColor(hwndPalette, backColor);
+                InvalidateColorChips();
             }
-            InvalidateColorChips();
+            UpdateStatusBar(hwnd);
             break;
         }
 
@@ -2876,6 +2870,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDC_BG_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, backColor);
             backColor = newColor;
+            AtelierPalette_NoteColor(hwndPalette, backColor);
             InvalidateColorChips();
             break;
         }
@@ -2976,9 +2971,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDC_COLOR_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
             penColor = newColor;
-            for (HWND sw : hwndSwatches) {
-                InvalidateRect(sw, NULL, TRUE);
-            }
+            AtelierPalette_NoteColor(hwndPalette, penColor);
             InvalidateColorChips();
             break;
         }
@@ -3113,6 +3106,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DestroyWindow(hwndShapeFlyout);
             hwndShapeFlyout = nullptr;
         }
+        if (hwndPalette) {
+            AtelierPalette_Save(hwndPalette);
+            hwndPalette = nullptr;
+        }
         hwndBrand = nullptr;
         hwndViewport = nullptr;
         if (gUiFont) {
@@ -3160,6 +3157,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     AtelierArtwork_Init();
     AtelierControls_SetTheme(&gTheme);
     if (!AtelierControls_Register()) {
+        AtelierArtwork_Shutdown();
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
+    AtelierPalette_SetTheme(&gTheme);
+    if (!AtelierPalette_Register()) {
         AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
