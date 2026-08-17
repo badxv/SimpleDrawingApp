@@ -40,30 +40,44 @@ static bool GetEncoderClsid(const char* filename, CLSID* clsid) {
 }
 
 bool SaveBitmapToFile(HWND hwnd, const char* filename) {
-    RECT rc;
+    if (!hwnd || !filename) return false;
+
+    RECT rc = {};
     GetClientRect(hwnd, &rc);
-    int width = rc.right - rc.left;
-    int height = rc.bottom - rc.top;
+    const int width = rc.right - rc.left;
+    const int height = rc.bottom - rc.top;
+    if (width < 1 || height < 1) return false;
 
     HDC hdcWindow = GetDC(hwnd);
+    if (!hdcWindow) return false;
     HDC hdcMem = CreateCompatibleDC(hdcWindow);
+    if (!hdcMem) {
+        ReleaseDC(hwnd, hdcWindow);
+        return false;
+    }
     HBITMAP hbmMem = CreateCompatibleBitmap(hdcWindow, width, height);
+    if (!hbmMem) {
+        DeleteDC(hdcMem);
+        ReleaseDC(hwnd, hdcWindow);
+        return false;
+    }
     HGDIOBJ oldBitmap = SelectObject(hdcMem, hbmMem);
-
     BitBlt(hdcMem, 0, 0, width, height, hdcWindow, 0, 0, SRCCOPY);
 
-    Bitmap bitmap(hbmMem, nullptr);
-
-    CLSID clsid;
-    GetEncoderClsid(filename, &clsid);
-
-    bool result = (bitmap.Save(StringToWString(filename).c_str(), &clsid, NULL) == Ok);
+    bool result = false;
+    {
+        // Bitmap(HBITMAP) does not take ownership — HBITMAP must outlive Bitmap.
+        Bitmap bitmap(hbmMem, nullptr);
+        CLSID clsid = {};
+        if (GetEncoderClsid(filename, &clsid)) {
+            result = (bitmap.Save(StringToWString(filename).c_str(), &clsid, nullptr) == Ok);
+        }
+    }
 
     SelectObject(hdcMem, oldBitmap);
     DeleteObject(hbmMem);
     DeleteDC(hdcMem);
     ReleaseDC(hwnd, hdcWindow);
-
     return result;
 }
 

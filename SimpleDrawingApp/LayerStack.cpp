@@ -35,7 +35,19 @@ Layer LayerStack::CreateLayer(int w, int h, const char* name, bool background, C
     layer.visible = true;
     layer.opacity = 100;
     layer.bitmap = new Bitmap(w, h, PixelFormat32bppARGB);
+    if (!layer.bitmap || layer.bitmap->GetLastStatus() != Ok) {
+        delete layer.bitmap;
+        layer.bitmap = nullptr;
+        return layer;
+    }
     layer.graphics = Graphics::FromImage(layer.bitmap);
+    if (!layer.graphics || layer.graphics->GetLastStatus() != Ok) {
+        delete layer.graphics;
+        delete layer.bitmap;
+        layer.graphics = nullptr;
+        layer.bitmap = nullptr;
+        return layer;
+    }
     Configure(layer.graphics);
     if (background) {
         layer.graphics->Clear(GdiplusFromColor(bg));
@@ -173,7 +185,16 @@ void LayerStack::Resize(int width, int height, COLORREF backgroundPad) {
 
     for (Layer& layer : layers_) {
         Bitmap* nextBmp = new Bitmap(width, height, PixelFormat32bppARGB);
+        if (!nextBmp || nextBmp->GetLastStatus() != Ok) {
+            delete nextBmp;
+            continue; // keep previous bitmap for this layer
+        }
         Graphics* nextG = Graphics::FromImage(nextBmp);
+        if (!nextG || nextG->GetLastStatus() != Ok) {
+            delete nextG;
+            delete nextBmp;
+            continue;
+        }
         Configure(nextG);
         if (layer.isBackground) {
             nextG->Clear(GdiplusFromColor(backgroundPad));
@@ -215,6 +236,12 @@ bool LayerStack::ReplaceWithImage(Bitmap* image) {
     width_ = w;
     height_ = h;
     Layer layer = CreateLayer(w, h, "Background", true, RGB(255, 255, 255));
+    if (!layer.bitmap || !layer.graphics) {
+        FreeLayer(layer);
+        width_ = 0;
+        height_ = 0;
+        return false;
+    }
     layer.graphics->DrawImage(image, 0, 0);
     layers_.push_back(layer);
     layers_.push_back(CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0)));
@@ -254,6 +281,10 @@ void LayerStack::CompositeTo(Graphics* dest) const {
 Bitmap* LayerStack::CreateComposite() const {
     if (width_ < 1 || height_ < 1) return nullptr;
     Bitmap* out = new Bitmap(width_, height_, PixelFormat32bppARGB);
+    if (!out || out->GetLastStatus() != Ok) {
+        delete out;
+        return nullptr;
+    }
     Graphics g(out);
     // Transparent clear: the pinned Background layer (or workspace chrome) provides
     // the visible white. Content layers stay PNG-like with real alpha.
@@ -281,6 +312,12 @@ LayerStack* LayerStack::Clone() const {
             return nullptr;
         }
         dst.graphics = Graphics::FromImage(dst.bitmap);
+        if (!dst.graphics || dst.graphics->GetLastStatus() != Ok) {
+            delete dst.graphics;
+            delete dst.bitmap;
+            delete copy;
+            return nullptr;
+        }
         Configure(dst.graphics);
         copy->layers_.push_back(dst);
     }
