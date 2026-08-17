@@ -50,7 +50,8 @@ public:
     void SetActiveVisible(bool visible);
     void SetActiveOpacity(int opacity);
 
-    void Resize(int width, int height, COLORREF backgroundPad);
+    // Returns false if allocation fails; existing layers unchanged.
+    bool Resize(int width, int height, COLORREF backgroundPad);
     void ClearAllContent(COLORREF background);
     // Replaces the stack with a single background layer cloned from image.
     bool ReplaceWithImage(Gdiplus::Bitmap* image);

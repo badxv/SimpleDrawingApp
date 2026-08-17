@@ -1229,7 +1229,10 @@ static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHist
         gHistory.Push(gLayers);
     }
 
-    gLayers.Resize(newWidth, newHeight, gTheme.canvasBg);
+    if (!gLayers.Resize(newWidth, newHeight, gTheme.canvasBg)) {
+        MessageBoxA(hwnd, "Could not resize the canvas (out of memory).", "Canvas Size", MB_OK | MB_ICONERROR);
+        return false;
+    }
     docWidth = newWidth;
     docHeight = newHeight;
     scrollX = 0;
