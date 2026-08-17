@@ -3466,9 +3466,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         RECT minR{}, maxR{}, closeR{};
         GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
-        if (PtInRect(&closeR, clientPt)) return HTCLOSE;
-        if (PtInRect(&maxR, clientPt)) return HTMAXBUTTON;
-        if (PtInRect(&minR, clientPt)) return HTMINBUTTON;
+        // HTCLIENT (not HTMIN/MAX/CLOSE): returning the system button codes makes
+        // DWM paint a second set of caption buttons on top of ours.
+        if (PtInRect(&closeR, clientPt) || PtInRect(&maxR, clientPt) || PtInRect(&minR, clientPt)) {
+            return HTCLIENT;
+        }
 
         if (clientPt.y >= 0 && clientPt.y < TOPBAR_HEIGHT) {
             if (PointOverTopBarControl(hwnd, clientPt)) return HTCLIENT;
@@ -3502,6 +3504,43 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         if (IsRunningUnderWine()) break;
         SetCaptionHover(hwnd, 0);
         return 0;
+
+    case WM_MOUSEMOVE: {
+        if (!IsRunningUnderWine()) {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            SetCaptionHover(hwnd, CaptionHoverAt(hwnd, pt));
+            TRACKMOUSEEVENT tme = {};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+            TrackMouseEvent(&tme);
+        }
+        break;
+    }
+
+    case WM_MOUSELEAVE:
+        if (!IsRunningUnderWine()) SetCaptionHover(hwnd, 0);
+        break;
+
+    case WM_LBUTTONDOWN: {
+        if (!IsRunningUnderWine()) {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            const int which = CaptionHoverAt(hwnd, pt);
+            if (which == 1) {
+                SendMessageA(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+                return 0;
+            }
+            if (which == 2) {
+                SendMessageA(hwnd, WM_SYSCOMMAND, IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
+                return 0;
+            }
+            if (which == 3) {
+                SendMessageA(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+                return 0;
+            }
+        }
+        break;
+    }
 
     case WM_ENTERSIZEMOVE:
         gUiSizing = true;
