@@ -167,7 +167,14 @@ LRESULT CALLBACK SliderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         const int w = rc.right > 0 ? rc.right : 1;
         const int h = rc.bottom > 0 ? rc.bottom : 1;
         HDC mem = CreateCompatibleDC(hdc);
-        HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
+        HBITMAP bmp = mem ? CreateCompatibleBitmap(hdc, w, h) : nullptr;
+        if (!mem || !bmp) {
+            if (bmp) DeleteObject(bmp);
+            if (mem) DeleteDC(mem);
+            PaintSlider(hwnd, hdc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         HGDIOBJ old = SelectObject(mem, bmp);
         PaintSlider(hwnd, mem);
         BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
@@ -365,7 +372,14 @@ LRESULT CALLBACK ScrollProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         const int w = rc.right > 0 ? rc.right : 1;
         const int h = rc.bottom > 0 ? rc.bottom : 1;
         HDC mem = CreateCompatibleDC(hdc);
-        HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
+        HBITMAP bmp = mem ? CreateCompatibleBitmap(hdc, w, h) : nullptr;
+        if (!mem || !bmp) {
+            if (bmp) DeleteObject(bmp);
+            if (mem) DeleteDC(mem);
+            PaintScroll(hwnd, hdc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         HGDIOBJ old = SelectObject(mem, bmp);
         PaintScroll(hwnd, mem);
         BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
