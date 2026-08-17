@@ -5,14 +5,7 @@
 #include <gdiplus.h>
 #include "Resource.h"
 #include "DrawingTools.h"
-
-using namespace Gdiplus;
-
-extern COLORREF penColor;
-extern int penWidth;
-extern int penOpacity;
-extern DrawTool currentTool;
-extern bool documentDirty;
+#include "AppState.h"
 
 void UpdatePenWidthDisplay();
 void UpdateOpacityDisplay();
