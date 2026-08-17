@@ -149,24 +149,27 @@ void RebuildWheel(PaletteState* st, int size) {
             DWORD out = 0;
             if (dist <= radius + 0.5f) {
                 if (dist <= inner) {
-                    // Neutral center — shows current value grey ring later in paint.
+                    // Neutral center — value grey (B,G,R,A for 32-bpp DIB + AlphaBlend).
                     const int g = static_cast<int>(st->value * 230.0f);
-                    out = RGB(g, g, g) | 0xFF000000;
+                    out = (0xFFu << 24) | (g) | (g << 8) | (g << 16);
                 } else {
                     float ang = std::atan2(dy, dx) * 180.0f / 3.14159265f;
                     if (ang < 0.0f) ang += 360.0f;
                     const float sat = (dist - inner) / (radius - inner);
                     COLORREF c = HsvToRgb(ang, sat, st->value);
-                    // Soft edge AA
+                    // Soft edge AA — AlphaBlend needs premultiplied BGRA.
                     float a = 1.0f;
                     if (dist > radius - 1.0f) a = radius + 0.5f - dist;
                     if (a < 0.0f) a = 0.0f;
                     if (a > 1.0f) a = 1.0f;
-                    const int aa = static_cast<int>(a * 255.0f);
-                    out = (aa << 24)
-                        | (GetRValue(c))
-                        | (GetGValue(c) << 8)
-                        | (GetBValue(c) << 16);
+                    const int aa = static_cast<int>(a * 255.0f + 0.5f);
+                    const int r = (GetRValue(c) * aa + 127) / 255;
+                    const int g = (GetGValue(c) * aa + 127) / 255;
+                    const int b = (GetBValue(c) * aa + 127) / 255;
+                    out = (static_cast<DWORD>(aa) << 24)
+                        | (static_cast<DWORD>(b))
+                        | (static_cast<DWORD>(g) << 8)
+                        | (static_cast<DWORD>(r) << 16);
                 }
             }
             px[y * size + x] = out;

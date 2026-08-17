@@ -928,13 +928,13 @@ void PaintIconButton(const DRAWITEMSTRUCT* dis, const IconPaintOpts& opts) {
     if (icon == UiIcon::Color && opts.useColorFill) {
         SolidBrush fill(Color(255, GetRValue(opts.colorFill), GetGValue(opts.colorFill), GetBValue(opts.colorFill)));
         const RectF chip(bounds.X + 3.0f, bounds.Y + 3.0f, bounds.Width - 6.0f, bounds.Height - 6.0f);
-        g.FillRectangle(&fill, chip);
+        g.FillEllipse(&fill, chip);
         Pen rim(Color(230, GetRValue(opts.accentDeep), GetGValue(opts.accentDeep), GetBValue(opts.accentDeep)), 1.2f);
-        g.DrawRectangle(&rim, chip);
+        g.DrawEllipse(&rim, chip);
         // Checker hint for near-white colors.
         if (GetRValue(opts.colorFill) > 245 && GetGValue(opts.colorFill) > 245 && GetBValue(opts.colorFill) > 245) {
             Pen edge(Color(180, 160, 150, 140), 1.0f);
-            g.DrawRectangle(&edge, chip);
+            g.DrawEllipse(&edge, chip);
         }
         return;
     }
