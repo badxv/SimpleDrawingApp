@@ -46,6 +46,7 @@ constexpr int MENU_BTN_W = 44;
 constexpr int FLOAT_DRAG_H = 22;
 constexpr int FLOAT_CHIP_H = 36;
 constexpr int CAPTION_BTN_W = 46;
+constexpr int CAPTION_BTN_H = 30; // top-aligned; shorter than TOPBAR to avoid droop
 
 #ifndef SM_CXPADDEDBORDER
 #define SM_CXPADDEDBORDER 92
@@ -146,6 +147,10 @@ HWND hwndToggleRail = nullptr;
 HWND hwndToggleLayers = nullptr;
 HWND hwndPaletteFloat = nullptr;
 HWND hwndMenuButtons[6] = {}; // File Edit Image View Tools Help
+HWND hwndCaptionMin = nullptr;
+HWND hwndCaptionMax = nullptr;
+HWND hwndCaptionClose = nullptr;
+HWND gCaptionHot = nullptr; // which caption child is hovered
 HMENU gAppMenu = nullptr;
 
 bool gRailOpen = true;
@@ -155,7 +160,6 @@ bool gPaletteFloating = false;
 POINT gPaletteFloatPos = { 80, 120 };
 bool gFloatDragging = false;
 POINT gFloatDragHot = {};
-int gCaptionHover = 0; // 0 none, 1 min, 2 max, 3 close
 
 POINT lastPoint = {};
 POINT shapeStart = {};
@@ -591,6 +595,7 @@ static Bitmap* GetCompositeBitmap();
 static void LayoutViewport(HWND hwnd);
 static void LayoutLayerPanel(HWND hwnd);
 static void LayoutChromeControls(HWND hwnd);
+static void LayoutCaptionButtons(HWND hwnd);
 static void ApplyPanelVisibility();
 static void SetRailOpen(HWND hwnd, bool open);
 static void SetLayersOpen(HWND hwnd, bool open);
@@ -1062,6 +1067,8 @@ static void LayoutChromeControls(HWND hwnd) {
     if (hwndActionButtons[6]) MoveWindow(hwndActionButtons[6], x, topY, ICON_BTN, ICON_BTN, TRUE); // Open
     x += ICON_BTN + 4;
     if (hwndActionButtons[5]) MoveWindow(hwndActionButtons[5], x, topY, ICON_BTN, ICON_BTN, TRUE); // Save
+
+    LayoutCaptionButtons(hwnd);
 
     if (hwndBrand) {
         MoveWindow(hwndBrand, 0, 0, BRAND_STRIP_W, chrome.topH, TRUE);
@@ -1659,92 +1666,63 @@ static void EnableCustomTitleBar(HWND hwnd) {
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
-static void GetCaptionButtonRects(HWND hwnd, RECT* minR, RECT* maxR, RECT* closeR) {
+static void LayoutCaptionButtons(HWND hwnd) {
     RECT rc = {};
     GetClientRect(hwnd, &rc);
-    const int h = TOPBAR_HEIGHT;
     const int w = CAPTION_BTN_W;
-    if (closeR) {
-        closeR->right = rc.right;
-        closeR->left = rc.right - w;
-        closeR->top = 0;
-        closeR->bottom = h;
+    const int h = CAPTION_BTN_H;
+    const int y = 0; // flush to top of client chrome
+    if (hwndCaptionClose) {
+        MoveWindow(hwndCaptionClose, rc.right - w, y, w, h, TRUE);
     }
-    if (maxR) {
-        maxR->right = rc.right - w;
-        maxR->left = maxR->right - w;
-        maxR->top = 0;
-        maxR->bottom = h;
+    if (hwndCaptionMax) {
+        MoveWindow(hwndCaptionMax, rc.right - w * 2, y, w, h, TRUE);
     }
-    if (minR) {
-        minR->right = rc.right - w * 2;
-        minR->left = minR->right - w;
-        minR->top = 0;
-        minR->bottom = h;
+    if (hwndCaptionMin) {
+        MoveWindow(hwndCaptionMin, rc.right - w * 3, y, w, h, TRUE);
     }
 }
 
-static int CaptionHoverAt(HWND hwnd, POINT ptClient) {
-    RECT minR{}, maxR{}, closeR{};
-    GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
-    if (PtInRect(&closeR, ptClient)) return 3;
-    if (PtInRect(&maxR, ptClient)) return 2;
-    if (PtInRect(&minR, ptClient)) return 1;
-    return 0;
+static void SetCaptionHot(HWND btn) {
+    if (gCaptionHot == btn) return;
+    HWND prev = gCaptionHot;
+    gCaptionHot = btn;
+    if (prev) InvalidateRect(prev, nullptr, FALSE);
+    if (btn) InvalidateRect(btn, nullptr, FALSE);
 }
 
-static bool PointOverTopBarControl(HWND hwnd, POINT ptClient) {
-    HWND hit = ChildWindowFromPointEx(hwnd, ptClient, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
-    if (!hit || hit == hwnd) return false;
-    if (hit == hwndBrand) return false; // decorative — allow window drag
-    return true;
-}
+static void PaintOneCaptionButton(HDC hdc, HWND btn, int id) {
+    RECT r = {};
+    GetClientRect(btn, &r);
+    const bool hot = (gCaptionHot == btn);
+    const bool maximized = IsZoomed(GetParent(btn)) != FALSE;
 
-static void PaintCaptionButtons(HDC hdc, HWND hwnd) {
-    RECT minR{}, maxR{}, closeR{};
-    GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
-    const bool maximized = IsZoomed(hwnd) != FALSE;
-
-    auto fillBtn = [&](const RECT& r, int which) {
-        COLORREF bg = gTheme.chromeBg;
-        if (gCaptionHover == which) {
-            bg = (which == 3) ? RGB(196, 43, 28) : gTheme.chromeElevated;
-        }
-        HBRUSH br = CreateSolidBrush(bg);
-        FillRect(hdc, &r, br);
-        DeleteObject(br);
-    };
-    fillBtn(minR, 1);
-    fillBtn(maxR, 2);
-    fillBtn(closeR, 3);
+    COLORREF bg = gTheme.chromeBg;
+    if (hot) {
+        bg = (id == IDC_CAPTION_CLOSE) ? RGB(196, 43, 28) : gTheme.chromeElevated;
+    }
+    HBRUSH br = CreateSolidBrush(bg);
+    FillRect(hdc, &r, br);
+    DeleteObject(br);
 
     HPEN pen = CreatePen(PS_SOLID, 1,
-        gCaptionHover == 3 ? RGB(255, 255, 255) : gTheme.ink);
+        (hot && id == IDC_CAPTION_CLOSE) ? RGB(255, 255, 255) : gTheme.ink);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
 
-    // Minimize —
-    {
-        const int cy = (minR.top + minR.bottom) / 2;
-        const int cx = (minR.left + minR.right) / 2;
+    const int cx = (r.left + r.right) / 2;
+    const int cy = (r.top + r.bottom) / 2;
+    if (id == IDC_CAPTION_MIN) {
         MoveToEx(hdc, cx - 5, cy, nullptr);
         LineTo(hdc, cx + 6, cy);
-    }
-    // Maximize / restore
-    {
-        const int cx = (maxR.left + maxR.right) / 2;
-        const int cy = (maxR.top + maxR.bottom) / 2;
+    } else if (id == IDC_CAPTION_MAX) {
         if (maximized) {
             Rectangle(hdc, cx - 3, cy - 5, cx + 5, cy + 3);
             Rectangle(hdc, cx - 5, cy - 3, cx + 3, cy + 5);
         } else {
             Rectangle(hdc, cx - 5, cy - 5, cx + 6, cy + 6);
         }
-    }
-    // Close ×
-    {
-        const int cx = (closeR.left + closeR.right) / 2;
-        const int cy = (closeR.top + closeR.bottom) / 2;
+    } else if (id == IDC_CAPTION_CLOSE) {
         MoveToEx(hdc, cx - 5, cy - 5, nullptr);
         LineTo(hdc, cx + 6, cy + 6);
         MoveToEx(hdc, cx + 5, cy - 5, nullptr);
@@ -1756,13 +1734,72 @@ static void PaintCaptionButtons(HDC hdc, HWND hwnd) {
     DeleteObject(pen);
 }
 
-static void SetCaptionHover(HWND hwnd, int hover) {
-    if (gCaptionHover == hover) return;
-    gCaptionHover = hover;
-    RECT band = { 0, 0, 0, TOPBAR_HEIGHT };
-    GetClientRect(hwnd, &band);
-    band.bottom = TOPBAR_HEIGHT;
-    InvalidateRect(hwnd, &band, FALSE);
+static LRESULT CALLBACK CaptionBtnProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        PaintOneCaptionButton(hdc, hwnd, GetDlgCtrlID(hwnd));
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        SetCaptionHot(hwnd);
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        if (gCaptionHot == hwnd) SetCaptionHot(nullptr);
+        return 0;
+    case WM_LBUTTONUP: {
+        HWND parent = GetParent(hwnd);
+        if (parent) {
+            SendMessageA(parent, WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(hwnd), BN_CLICKED), (LPARAM)hwnd);
+        }
+        return 0;
+    }
+    default:
+        break;
+    }
+    return DefWindowProcA(hwnd, msg, wParam, lParam);
+}
+
+static bool RegisterCaptionBtnClass(HINSTANCE hInstance) {
+    WNDCLASSA wc = {};
+    wc.lpfnWndProc = CaptionBtnProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = "SimpleDrawingAppCaptionBtn";
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
+    return RegisterClassA(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+}
+
+static void CreateCaptionButtons(HWND hwnd) {
+    if (IsRunningUnderWine()) return;
+    HINSTANCE inst = GetModuleHandle(nullptr);
+    auto make = [&](int id) -> HWND {
+        return CreateWindowExA(0, "SimpleDrawingAppCaptionBtn", "",
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+            0, 0, CAPTION_BTN_W, CAPTION_BTN_H,
+            hwnd, (HMENU)(INT_PTR)id, inst, nullptr);
+    };
+    hwndCaptionMin = make(IDC_CAPTION_MIN);
+    hwndCaptionMax = make(IDC_CAPTION_MAX);
+    hwndCaptionClose = make(IDC_CAPTION_CLOSE);
+    LayoutCaptionButtons(hwnd);
+}
+
+static bool PointOverTopBarControl(HWND hwnd, POINT ptClient) {
+    HWND hit = ChildWindowFromPointEx(hwnd, ptClient, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+    if (!hit || hit == hwnd) return false;
+    if (hit == hwndBrand) return false; // decorative — allow window drag
+    return true;
 }
 
 static INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM) {
@@ -3191,9 +3228,6 @@ static void DrawToolbarBackground(HDC hdc, HWND hwnd, const RECT& client) {
         g.SetInterpolationMode(InterpolationModeNearestNeighbor);
         g.DrawImage(gChromeCache, 0, 0, width, height);
     }
-    if (hwnd) {
-        if (!IsRunningUnderWine()) PaintCaptionButtons(hdc, hwnd);
-    }
 }
 
 static void CreateLayerPanel(HWND hwnd) {
@@ -3284,6 +3318,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         UpdateStatusBar(hwnd);
         UpdateWindowTitle(hwnd);
         EnableCustomTitleBar(hwnd);
+        CreateCaptionButtons(hwnd);
+        LayoutChromeControls(hwnd);
         // Fresco cache once; low-rate idle motion (pauses while drawing/resizing).
         SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
@@ -3464,14 +3500,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         RECT client = {};
         GetClientRect(hwnd, &client);
 
-        RECT minR{}, maxR{}, closeR{};
-        GetCaptionButtonRects(hwnd, &minR, &maxR, &closeR);
-        // HTCLIENT (not HTMIN/MAX/CLOSE): returning the system button codes makes
-        // DWM paint a second set of caption buttons on top of ours.
-        if (PtInRect(&closeR, clientPt) || PtInRect(&maxR, clientPt) || PtInRect(&minR, clientPt)) {
-            return HTCLIENT;
-        }
-
         if (clientPt.y >= 0 && clientPt.y < TOPBAR_HEIGHT) {
             if (PointOverTopBarControl(hwnd, clientPt)) return HTCLIENT;
             return HTCAPTION;
@@ -3487,61 +3515,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
 
-    case WM_NCMOUSEMOVE: {
-        if (IsRunningUnderWine()) break;
-        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        ScreenToClient(hwnd, &pt);
-        SetCaptionHover(hwnd, CaptionHoverAt(hwnd, pt));
-        TRACKMOUSEEVENT tme = {};
-        tme.cbSize = sizeof(tme);
-        tme.dwFlags = TME_LEAVE | TME_NONCLIENT;
-        tme.hwndTrack = hwnd;
-        TrackMouseEvent(&tme);
-        return 0;
-    }
-
-    case WM_NCMOUSELEAVE:
-        if (IsRunningUnderWine()) break;
-        SetCaptionHover(hwnd, 0);
-        return 0;
-
-    case WM_MOUSEMOVE: {
-        if (!IsRunningUnderWine()) {
-            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-            SetCaptionHover(hwnd, CaptionHoverAt(hwnd, pt));
-            TRACKMOUSEEVENT tme = {};
-            tme.cbSize = sizeof(tme);
-            tme.dwFlags = TME_LEAVE;
-            tme.hwndTrack = hwnd;
-            TrackMouseEvent(&tme);
-        }
-        break;
-    }
-
-    case WM_MOUSELEAVE:
-        if (!IsRunningUnderWine()) SetCaptionHover(hwnd, 0);
-        break;
-
-    case WM_LBUTTONDOWN: {
-        if (!IsRunningUnderWine()) {
-            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-            const int which = CaptionHoverAt(hwnd, pt);
-            if (which == 1) {
-                SendMessageA(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-                return 0;
-            }
-            if (which == 2) {
-                SendMessageA(hwnd, WM_SYSCOMMAND, IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
-                return 0;
-            }
-            if (which == 3) {
-                SendMessageA(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
-                return 0;
-            }
-        }
-        break;
-    }
-
     case WM_ENTERSIZEMOVE:
         gUiSizing = true;
         break;
@@ -3555,6 +3528,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DestroyChromeCache();
             SetTimer(hwnd, IDT_CHROME_REBUILD, 60, NULL);
             InvalidateRect(hwnd, NULL, FALSE);
+            if (hwndCaptionMax) InvalidateRect(hwndCaptionMax, nullptr, FALSE);
         }
         break;
     case WM_EXITSIZEMOVE: {
@@ -3848,6 +3822,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case IDM_NEW:
             DoNew(hwnd);
             break;
+        case IDC_CAPTION_MIN:
+            SendMessageA(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+            break;
+        case IDC_CAPTION_MAX:
+            SendMessageA(hwnd, WM_SYSCOMMAND, IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
+            break;
+        case IDC_CAPTION_CLOSE:
+            SendMessageA(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+            break;
         case IDC_CLEAR_BUTTON:
         case IDM_CLEAR:
             ClearCanvas(hwnd, true);
@@ -4019,6 +4002,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         gAppMenu = nullptr;
         hwndBrand = nullptr;
+        hwndCaptionMin = nullptr;
+        hwndCaptionMax = nullptr;
+        hwndCaptionClose = nullptr;
+        gCaptionHot = nullptr;
         hwndViewport = nullptr;
         if (gUiFont) {
             DeleteObject(gUiFont);
@@ -4085,6 +4072,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 0;
     }
     if (!RegisterBrandClass(hInstance)) {
+        AtelierArtwork_Shutdown();
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
+    if (!RegisterCaptionBtnClass(hInstance)) {
         AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);
