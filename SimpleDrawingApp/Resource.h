@@ -97,6 +97,9 @@
 #define IDC_MENU_TOOLS			1074
 #define IDC_MENU_HELP			1075
 #define IDC_TOGGLE_BOTTOM		1076
+#define IDC_CAPTION_MIN			1080
+#define IDC_CAPTION_MAX			1081
+#define IDC_CAPTION_CLOSE		1082
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
