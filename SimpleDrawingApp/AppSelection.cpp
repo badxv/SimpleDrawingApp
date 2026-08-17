@@ -3,6 +3,7 @@
 #include "SimpleDrawingApp.h"
 #include "Resource.h"
 #include <windowsx.h>
+#include <cmath>
 
 using namespace Gdiplus;
 
