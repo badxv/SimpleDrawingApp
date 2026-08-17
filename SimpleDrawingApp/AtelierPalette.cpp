@@ -132,7 +132,10 @@ void RebuildWheel(PaletteState* st, int size) {
     HDC screen = GetDC(nullptr);
     st->wheelBmp = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
     ReleaseDC(nullptr, screen);
-    if (!st->wheelBmp || !bits) return;
+    if (!st->wheelBmp || !bits) {
+        DestroyWheel(st);
+        return;
+    }
     st->wheelSize = size;
 
     auto* px = static_cast<DWORD*>(bits);
