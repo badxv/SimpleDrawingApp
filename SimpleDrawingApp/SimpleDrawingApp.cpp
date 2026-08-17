@@ -441,6 +441,12 @@ static void EnsureBrandStrip(int topH) {
     if (!gBrandStrip || gBrandStripH != topH) {
         DestroyBrandStrip();
         gBrandStrip = new Bitmap(BRAND_STRIP_W, topH, PixelFormat32bppPARGB);
+        if (!gBrandStrip || gBrandStrip->GetLastStatus() != Ok) {
+            delete gBrandStrip;
+            gBrandStrip = nullptr;
+            gBrandStripH = 0;
+            return;
+        }
         gBrandStripH = topH;
     }
     if (!gBrandStrip) return;
@@ -637,8 +643,14 @@ static Bitmap* GetCompositeBitmap() {
     if (!compositeDirty && compositeCache) {
         return compositeCache;
     }
+    Bitmap* next = gLayers.CreateComposite();
+    if (!next) {
+        // Keep previous cache if any; stay dirty so we retry.
+        compositeDirty = true;
+        return compositeCache;
+    }
     delete compositeCache;
-    compositeCache = gLayers.CreateComposite();
+    compositeCache = next;
     compositeDirty = false;
     return compositeCache;
 }
@@ -1313,6 +1325,10 @@ static bool SelectionHitTest(int docX, int docY) {
 static Bitmap* CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
     if (!src || w < 1 || h < 1) return nullptr;
     Bitmap* out = new Bitmap(w, h, PixelFormat32bppARGB);
+    if (!out || out->GetLastStatus() != Ok) {
+        delete out;
+        return nullptr;
+    }
     Graphics g(out);
     g.Clear(Color(0, 0, 0, 0));
     g.DrawImage(src, Rect(0, 0, w, h), x, y, w, h, UnitPixel);
@@ -1545,9 +1561,8 @@ static void DrawSelectionOverlay(Graphics* g) {
 static void DoCopy(HWND hwnd) {
     Bitmap* shot = CaptureSelectionPixels();
     if (!shot) return;
-    SetInternalClipboard(CloneBitmapRect(shot, 0, 0, static_cast<int>(shot->GetWidth()), static_cast<int>(shot->GetHeight())));
     CopyBitmapToWinClipboard(shot);
-    delete shot;
+    SetInternalClipboard(shot); // takes ownership
     (void)hwnd;
 }
 
@@ -2105,7 +2120,15 @@ static void BeginStrokeLayer() {
     const int width = gLayers.Width();
     const int height = gLayers.Height();
     strokeLayer = new Bitmap(width, height, PixelFormat32bppARGB);
+    if (!strokeLayer || strokeLayer->GetLastStatus() != Ok) {
+        DestroyStrokeLayer();
+        return;
+    }
     strokeGraphics = Graphics::FromImage(strokeLayer);
+    if (!strokeGraphics || strokeGraphics->GetLastStatus() != Ok) {
+        DestroyStrokeLayer();
+        return;
+    }
     strokeGraphics->Clear(Color(0, 0, 0, 0));
     strokeGraphics->SetSmoothingMode(SmoothingModeAntiAlias);
     strokeGraphics->SetCompositingMode(CompositingModeSourceOver);
@@ -2702,7 +2725,13 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
         if (viewW > 0 && viewH > 0) {
             HDC memDC = CreateCompatibleDC(hdc);
-            HBITMAP memBmp = CreateCompatibleBitmap(hdc, viewW, viewH);
+            HBITMAP memBmp = memDC ? CreateCompatibleBitmap(hdc, viewW, viewH) : nullptr;
+            if (!memDC || !memBmp) {
+                if (memBmp) DeleteObject(memBmp);
+                if (memDC) DeleteDC(memDC);
+                EndPaint(hwnd, &ps);
+                return 0;
+            }
             HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
 
             {
@@ -3162,7 +3191,11 @@ static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome)
 
     DestroyChromeCache();
     gChromeCache = new Bitmap(width, height, PixelFormat32bppPARGB);
-    if (!gChromeCache) return;
+    if (!gChromeCache || gChromeCache->GetLastStatus() != Ok) {
+        delete gChromeCache;
+        gChromeCache = nullptr;
+        return;
+    }
     gChromeCacheW = width;
     gChromeCacheH = height;
     gChromeCacheStatusH = chrome.statusH;
@@ -3988,18 +4021,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         DestroyCompositeCache();
         DestroyChromeCache();
         gLayers.Destroy();
-        if (hwndShapeFlyout) {
+        if (hwndShapeFlyout && IsWindow(hwndShapeFlyout)) {
             DestroyWindow(hwndShapeFlyout);
-            hwndShapeFlyout = nullptr;
         }
-        if (hwndPalette) {
+        hwndShapeFlyout = nullptr;
+        if (hwndPalette && IsWindow(hwndPalette)) {
             AtelierPalette_Save(hwndPalette);
-            hwndPalette = nullptr;
         }
-        if (hwndPaletteFloat) {
+        hwndPalette = nullptr;
+        if (hwndPaletteFloat && IsWindow(hwndPaletteFloat)) {
             DestroyWindow(hwndPaletteFloat);
-            hwndPaletteFloat = nullptr;
         }
+        hwndPaletteFloat = nullptr;
         gAppMenu = nullptr;
         hwndBrand = nullptr;
         hwndCaptionMin = nullptr;
