@@ -33,9 +33,6 @@
     <ClInclude Include="FileManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CanvasHistory.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="DrawingTools.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -81,9 +78,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="FileManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="CanvasHistory.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DrawingTools.cpp">
