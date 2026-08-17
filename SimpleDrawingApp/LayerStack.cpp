@@ -76,12 +76,118 @@ void LayerStack::Reset(int width, int height, COLORREF background) {
     Destroy();
     if (width < 1) width = 1;
     if (height < 1) height = 1;
+
+    Layer bg = CreateLayer(width, height, "Background", true, background);
+    if (!bg.bitmap || !bg.graphics) {
+        FreeLayer(bg);
+        return; // leave empty so EnsureCanvas can retry
+    }
+    Layer content = CreateLayer(width, height, "Layer 1", false, RGB(0, 0, 0));
+    if (!content.bitmap || !content.graphics) {
+        FreeLayer(content);
+        FreeLayer(bg);
+        return;
+    }
+
     width_ = width;
     height_ = height;
-    layers_.push_back(CreateLayer(width_, height_, "Background", true, background));
-    // Start drawing on a transparent content layer above Background.
-    layers_.push_back(CreateLayer(width_, height_, "Layer 1", false, RGB(0, 0, 0)));
+    layers_.push_back(bg);
+    layers_.push_back(content);
     active_ = 1;
+}
+
+bool LayerStack::Resize(int width, int height, COLORREF backgroundPad) {
+    if (width < 1) width = 1;
+    if (height < 1) height = 1;
+    if (layers_.empty()) {
+        width_ = width;
+        height_ = height;
+        return true;
+    }
+
+    struct NextLayer {
+        Bitmap* bmp = nullptr;
+        Graphics* g = nullptr;
+    };
+    std::vector<NextLayer> next;
+    next.reserve(layers_.size());
+
+    auto freeNext = [&]() {
+        for (NextLayer& n : next) {
+            delete n.g;
+            delete n.bmp;
+            n.g = nullptr;
+            n.bmp = nullptr;
+        }
+        next.clear();
+    };
+
+    for (Layer& layer : layers_) {
+        NextLayer n;
+        n.bmp = new Bitmap(width, height, PixelFormat32bppARGB);
+        if (!n.bmp || n.bmp->GetLastStatus() != Ok) {
+            delete n.bmp;
+            freeNext();
+            return false;
+        }
+        n.g = Graphics::FromImage(n.bmp);
+        if (!n.g || n.g->GetLastStatus() != Ok) {
+            delete n.g;
+            delete n.bmp;
+            freeNext();
+            return false;
+        }
+        Configure(n.g);
+        if (layer.isBackground) {
+            n.g->Clear(GdiplusFromColor(backgroundPad));
+        }
+        else {
+            n.g->Clear(Color(0, 0, 0, 0));
+        }
+        if (layer.bitmap) {
+            n.g->DrawImage(layer.bitmap, 0, 0);
+        }
+        next.push_back(n);
+    }
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        FreeLayer(layers_[i]);
+        layers_[i].bitmap = next[i].bmp;
+        layers_[i].graphics = next[i].g;
+    }
+    width_ = width;
+    height_ = height;
+    return true;
+}
+
+bool LayerStack::ReplaceWithImage(Bitmap* image) {
+    if (!image) return false;
+    const int w = static_cast<int>(image->GetWidth());
+    const int h = static_cast<int>(image->GetHeight());
+    if (w < 1 || h < 1) return false;
+
+    // Build the replacement stack first so failure keeps the live document.
+    Layer bg = CreateLayer(w, h, "Background", true, RGB(255, 255, 255));
+    if (!bg.bitmap || !bg.graphics) {
+        FreeLayer(bg);
+        return false;
+    }
+    bg.graphics->DrawImage(image, 0, 0);
+
+    Layer content = CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0));
+    if (!content.bitmap || !content.graphics) {
+        FreeLayer(content);
+        FreeLayer(bg);
+        return false;
+    }
+
+    Destroy();
+    width_ = w;
+    height_ = h;
+    layers_.push_back(bg);
+    layers_.push_back(content);
+    active_ = 1;
+    return true;
 }
 
 void LayerStack::SetActiveIndex(int index) {
@@ -184,41 +290,6 @@ void LayerStack::SetActiveOpacity(int opacity) {
     }
 }
 
-void LayerStack::Resize(int width, int height, COLORREF backgroundPad) {
-    if (width < 1) width = 1;
-    if (height < 1) height = 1;
-
-    for (Layer& layer : layers_) {
-        Bitmap* nextBmp = new Bitmap(width, height, PixelFormat32bppARGB);
-        if (!nextBmp || nextBmp->GetLastStatus() != Ok) {
-            delete nextBmp;
-            continue; // keep previous bitmap for this layer
-        }
-        Graphics* nextG = Graphics::FromImage(nextBmp);
-        if (!nextG || nextG->GetLastStatus() != Ok) {
-            delete nextG;
-            delete nextBmp;
-            continue;
-        }
-        Configure(nextG);
-        if (layer.isBackground) {
-            nextG->Clear(GdiplusFromColor(backgroundPad));
-        }
-        else {
-            nextG->Clear(Color(0, 0, 0, 0));
-        }
-        if (layer.bitmap) {
-            nextG->DrawImage(layer.bitmap, 0, 0);
-        }
-        FreeLayer(layer);
-        layer.bitmap = nextBmp;
-        layer.graphics = nextG;
-    }
-
-    width_ = width;
-    height_ = height;
-}
-
 void LayerStack::ClearAllContent(COLORREF background) {
     for (Layer& layer : layers_) {
         if (!layer.graphics) continue;
@@ -229,36 +300,6 @@ void LayerStack::ClearAllContent(COLORREF background) {
             layer.graphics->Clear(Color(0, 0, 0, 0));
         }
     }
-}
-
-bool LayerStack::ReplaceWithImage(Bitmap* image) {
-    if (!image) return false;
-    const int w = static_cast<int>(image->GetWidth());
-    const int h = static_cast<int>(image->GetHeight());
-    if (w < 1 || h < 1) return false;
-
-    Destroy();
-    width_ = w;
-    height_ = h;
-    Layer layer = CreateLayer(w, h, "Background", true, RGB(255, 255, 255));
-    if (!layer.bitmap || !layer.graphics) {
-        FreeLayer(layer);
-        width_ = 0;
-        height_ = 0;
-        return false;
-    }
-    layer.graphics->DrawImage(image, 0, 0);
-    layers_.push_back(layer);
-    Layer content = CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0));
-    if (!content.bitmap || !content.graphics) {
-        FreeLayer(content);
-        // Keep Background only so the document stays usable.
-        active_ = 0;
-        return true;
-    }
-    layers_.push_back(content);
-    active_ = 1;
-    return true;
 }
 
 void LayerStack::CompositeTo(Graphics* dest) const {
