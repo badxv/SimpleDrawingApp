@@ -1,20 +1,26 @@
 # Simple Drawing App
 
-A lightweight drawing app for Windows, built with native **Win32** and **GDI+**.
+**Atelier** — a lightweight native drawing app for Windows (**Win32** + **GDI+**).
 
-Sketch with pen, eraser, fill, shapes, and layers — no heavy frameworks.
+Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no heavy frameworks.
 
 <p align="center">
-  <img src="docs/media/hero.jpg" alt="Simple Drawing App" width="860" />
+  <img src="docs/media/hero.jpg" alt="Atelier — Simple Drawing App" width="860" />
 </p>
 
 <p align="center">
-  <img src="docs/media/app-window.png" alt="App window with layers panel" width="860" />
+  <img src="docs/media/app-window.png" alt="App window with tool rail, HSV palette, and layers" width="860" />
+</p>
+
+### Color well & shapes
+
+<p align="center">
+  <img src="docs/media/palette.png" alt="HSV disc, value strip, Recent and Favorites" height="320" />
+  &nbsp;
+  <img src="docs/media/shapes-flyout.png" alt="Shapes flyout on the tool rail" width="560" />
 </p>
 
 ### Sample artwork
-
-Made with the same building blocks the app exposes — gradients, ellipses, polygons, lines, and layered silhouettes:
 
 <p align="center">
   <img src="docs/media/demo-canvas.jpg" alt="Sample landscape drawing" width="860" />
@@ -24,28 +30,24 @@ Made with the same building blocks the app exposes — gradients, ellipses, poly
 
 <video src="docs/media/demo.mp4" controls width="860"></video>
 
-> If the video does not play inline on GitHub mobile, download [`docs/media/demo.mp4`](docs/media/demo.mp4).
+> If the video does not play inline on GitHub, open [`docs/media/demo.mp4`](docs/media/demo.mp4).
 
 ## Features
 
-- **Tools:** Pen, Eraser, Flood Fill, Line, Rectangle, Ellipse, Select
-- **Color:** preset swatches + system color picker
-- **Opacity:** 1–100% for pen, eraser, fill, and shapes (`Shift` + mouse wheel)
-- **Pen width:** slider / edit box / mouse wheel / `[` `]` keys (1–50)
-- **Shapes:** click-drag preview; hold `Shift` for square / circle / axis-aligned or 45° lines
-- **Selection:** rectangular marquee, move, Delete; **Cut / Copy / Paste** (`Ctrl+X/C/V`)
-- **Zoom:** `Ctrl` + mouse wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
-- **Layers:** stack panel with add/delete/reorder, visibility, per-layer opacity; content layers are PNG-like (alpha); Background stays pinned at the bottom (opaque canvas)
-- **Undo / Redo** (layer-stack snapshots)
-- **New / Clear** with unsaved-change prompts
-- **Save / Open** PNG, JPG, BMP
-- **Fixed document canvas** (default 1280×720) with scrollable viewport — resizing the window no longer crops artwork
-- **Canvas Size…** (`Image` menu or `Ctrl+E`) to change document dimensions; open sets size to the loaded image
-- Mouse capture, status bar with live size + zoom
-- Modern light chrome + dark title bar (Windows 10/11)
-- Renaissance atelier chrome: left tool rail, top actions, bottom size/opacity, icon buttons
-- Bundled OFL fonts (Cinzel display + DM Sans UI) and bronze HUD plates
-- Keyboard shortcuts: `Ctrl+N/O/S/E/A/X/C/V`, `Ctrl+Z/Y`, `Del`, `Esc`
+- **Tools:** Pen, Eraser, Flood Fill, Select, Line, Shapes flyout (rect, ellipse, triangle, star, diamond, round-rect)
+- **Shape paint modes:** stroke / fill / both — FG stroke, BG fill; hold `Alt` = fill-only, `Ctrl` = stroke+fill while drawing
+- **Color:** HSV disc + value strip, Recent + Favorites (persisted), FG/BG chips, swap (`X`), system picker from disc center
+- **Floating palette:** `Tab` collapses the tools rail and undocks the color well as a draggable panel
+- **Chrome:** Firefox-style top bar (File / Edit / Image / View / Tools / Help), custom caption buttons on Windows, collapsible rail / layers / bottom bar (`Tab`, `F9`, `F8`)
+- **Opacity & width:** sliders, edit boxes, mouse wheel / `Shift`+wheel, `[` `]`
+- **Selection:** marquee, move, Delete; Cut / Copy / Paste (`Ctrl+X/C/V`)
+- **Zoom:** `Ctrl`+wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
+- **Layers:** add / delete / reorder, visibility, per-layer opacity; Background pinned at bottom; drawing starts on Layer 1
+- **Undo / Redo** (full layer-stack snapshots)
+- **New / Clear** with unsaved-change prompts; **Save / Open** PNG, JPG, BMP
+- **Fixed document canvas** (default 1280×720) + scrollable viewport; **Canvas Size…** (`Ctrl+E`)
+- **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
+- **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
 
 ## Requirements
 
@@ -66,25 +68,31 @@ cd SimpleDrawingApp
 2. Select **Debug | x64** (or **Release | x64**)  
 3. Build (**Ctrl+Shift+B**) or run (**F5**)
 
+Linux (MinGW cross-compile + Wine smoke):
+
+```bash
+./scripts/build-linux.sh
+```
+
 ## Usage
 
 | Action | How |
 |--------|-----|
-| Draw | Select **Pen**, drag on the canvas |
-| Erase | Select **Eraser**, drag |
-| Fill | Select **Fill**, click a region |
-| Line / Rect / Ellipse | Select the tool, click-drag (`Shift` constrains) |
-| Select / move | **Select**, drag a marquee; drag inside to move |
-| Cut / Copy / Paste | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` (or Edit menu) |
-| Zoom | `Ctrl` + mouse wheel, or **View** menu |
+| Draw | **Pen** (`B`), drag on the canvas |
+| Erase | **Eraser** (`E`) |
+| Fill | **Fill** (`G`), click a region |
+| Line / shapes | **Line** (`L`) or **Shapes** (`U`) → flyout; click-drag (`Shift` constrains) |
+| Select / move | **Select** (`M`), marquee; drag inside to move |
+| Color | HSV disc (LMB = FG, RMB = BG), Recent / Favorites, or FG/BG chips |
+| Swap FG/BG | `X` or swap button |
+| Width / opacity | Sliders, boxes, wheel / `Shift`+wheel, `[` `]` |
+| Panels | `Tab` tools · `F9` layers · `F8` size/opacity bar |
+| Zoom | `Ctrl`+wheel or **View** menu |
 | Layers | Right panel: `+` / `-` / Up / Dn, Visible, opacity |
-| Color | Click a swatch or **Color...** |
-| Width | Slider, box, mouse wheel, or `[` / `]` |
-| Opacity | Slider, box, or `Shift` + mouse wheel |
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
 | Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` |
 | Canvas size | **Image → Canvas Size…** or `Ctrl+E` |
-| Scroll | Scrollbars when the document is larger than the viewport |
+| Shortcuts list | **Help → Keyboard Shortcuts** or `F1` |
 
 ## Project structure
 
@@ -93,14 +101,17 @@ SimpleDrawingApp/
 ├── SimpleDrawingApp.sln
 ├── README.md
 ├── docs/media/                # README screenshots + demo video
+├── scripts/build-linux.sh     # MinGW cross-build
 └── SimpleDrawingApp/
-    ├── SimpleDrawingApp.cpp   # Window, toolbar, input
-    ├── CanvasHistory.*        # Legacy single-bitmap undo (unused by UI)
-    ├── LayerStack.*           # Layer list + composite
-    ├── LayerHistory.*         # Undo / redo for the full layer stack
-    ├── DrawingTools.*         # Tool enum + flood fill
-    ├── UiChrome.*             # Icon drawing + owner-draw chrome buttons
-    ├── AtelierFonts.*         # Private OFL font loader (Cinzel / DM Sans)
+    ├── SimpleDrawingApp.cpp   # Window, chrome, caption, input
+    ├── AtelierPalette.*       # HSV disc, Recent / Favorites
+    ├── AtelierControls.*      # Sliders, scrollbars
+    ├── AtelierFonts.*         # Private OFL fonts (Cinzel / DM Sans)
+    ├── AtelierArtwork.*       # Fresco / motif assets
+    ├── UiChrome.*             # Icon drawing + owner-draw buttons
+    ├── LayerStack.*           # Layers + composite
+    ├── LayerHistory.*         # Undo / redo
+    ├── DrawingTools.*         # Tools + flood fill + shapes
     ├── FileManager.*          # Image save / load
     ├── ColorPicker.*          # ChooseColor dialog
     └── Resource.h / .rc       # Menu, accelerators, About
@@ -109,18 +120,15 @@ SimpleDrawingApp/
 ## Roadmap
 
 - [x] Modern toolbar + status bar
-- [x] Undo / redo
-- [x] Eraser + flood fill
-- [x] Keyboard shortcuts + dirty prompt
-- [x] Fixed document canvas + scroll viewport + Canvas Size
-- [x] Shape tools (line, rectangle, ellipse)
+- [x] Undo / redo, eraser, flood fill
+- [x] Fixed canvas + scroll viewport + Canvas Size
+- [x] Shapes flyout + stroke / fill / both modes
 - [x] Selection, zoom, clipboard
-- [x] Layers and transparency
-- [x] Icon tool rail + atelier chrome layout
-- [x] Fresco washes + chrome motion (compass, tool pulse)
-- [x] Idle chrome motion without draw/resize flicker (cached fresco + overlay)
-- [x] Brand mark as dedicated child window (single BitBlt; no parent overdraw)
-- [x] Bronze & Parchment visual language + bundled Cinzel/DM Sans
+- [x] Layers + transparency (Background pinned)
+- [x] HSV palette + Recent / Favorites + floating well
+- [x] Collapsible panels + Firefox-style top menus
+- [x] Custom in-client titlebar (Windows)
+- [x] Atelier chrome, fonts, fresco motion
 
 ## Contributing
 
