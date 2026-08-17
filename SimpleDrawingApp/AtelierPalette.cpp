@@ -275,11 +275,13 @@ void PaintPalette(HWND hwnd, HDC hdc) {
 
     if (st->wheelBmp) {
         HDC mem = CreateCompatibleDC(hdc);
-        HGDIOBJ old = SelectObject(mem, st->wheelBmp);
-        BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-        AlphaBlend(hdc, wheel.left, wheel.top, size, size, mem, 0, 0, size, size, bf);
-        SelectObject(mem, old);
-        DeleteDC(mem);
+        if (mem) {
+            HGDIOBJ old = SelectObject(mem, st->wheelBmp);
+            BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+            AlphaBlend(hdc, wheel.left, wheel.top, size, size, mem, 0, 0, size, size, bf);
+            SelectObject(mem, old);
+            DeleteDC(mem);
+        }
     }
 
     // FG marker on wheel rim (tiny gilt ring).
@@ -510,7 +512,14 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         const int w = rc.right > 0 ? rc.right : 1;
         const int h = rc.bottom > 0 ? rc.bottom : 1;
         HDC mem = CreateCompatibleDC(hdc);
-        HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
+        HBITMAP bmp = mem ? CreateCompatibleBitmap(hdc, w, h) : nullptr;
+        if (!mem || !bmp) {
+            if (bmp) DeleteObject(bmp);
+            if (mem) DeleteDC(mem);
+            PaintPalette(hwnd, hdc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         HGDIOBJ old = SelectObject(mem, bmp);
         PaintPalette(hwnd, mem);
         BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
