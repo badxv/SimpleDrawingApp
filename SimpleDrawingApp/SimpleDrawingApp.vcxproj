@@ -135,6 +135,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AppDocument.h" />
+    <ClInclude Include="AppMetrics.h" />
+    <ClInclude Include="AppSelection.h" />
+    <ClInclude Include="AppState.h" />
+    <ClInclude Include="CaptionBar.h" />
     <ClInclude Include="ColorPicker.h" />
     <ClInclude Include="DrawingTools.h" />
     <ClInclude Include="FileManager.h" />
@@ -151,10 +156,14 @@
     <ClInclude Include="UiChrome.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AppDocument.cpp" />
+    <ClCompile Include="AppSelection.cpp" />
+    <ClCompile Include="AppState.cpp" />
     <ClCompile Include="AtelierFonts.cpp" />
     <ClCompile Include="AtelierControls.cpp" />
     <ClCompile Include="AtelierArtwork.cpp" />
     <ClCompile Include="AtelierPalette.cpp" />
+    <ClCompile Include="CaptionBar.cpp" />
     <ClCompile Include="ColorPicker.cpp" />
     <ClCompile Include="DrawingTools.cpp" />
     <ClCompile Include="FileManager.cpp" />

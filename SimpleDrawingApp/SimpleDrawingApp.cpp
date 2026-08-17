@@ -2,6 +2,11 @@
 #include <windowsx.h>
 #include "framework.h"
 #include "SimpleDrawingApp.h"
+#include "AppMetrics.h"
+#include "AppState.h"
+#include "CaptionBar.h"
+#include "AppSelection.h"
+#include "AppDocument.h"
 #include "FileManager.h"
 #include "ColorPicker.h"
 #include "LayerHistory.h"
@@ -33,187 +38,11 @@ using namespace Gdiplus;
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
 const char VIEWPORT_CLASS_NAME[] = "SimpleDrawingAppViewport";
-constexpr int TOPBAR_HEIGHT = 38;       // doubles as custom titlebar height
-constexpr int TOOL_RAIL_WIDTH = 100;
-constexpr int PANEL_EDGE_WIDTH = 22;    // collapsed rail / layers strip
-constexpr int BOTTOMBAR_HEIGHT = 34;
-constexpr int STATUS_HEIGHT = 22;
-constexpr int LAYER_PANEL_WIDTH = 168;
-constexpr int ICON_BTN = 30;
-constexpr int WELL_FRAME = 6;           // maximize canvas (was 14)
-constexpr int BRAND_STRIP_W = 118;
-constexpr int MENU_BTN_W = 44;
-constexpr int FLOAT_DRAG_H = 22;
-constexpr int FLOAT_CHIP_H = 36;
-constexpr int CAPTION_BTN_W = 46;
-constexpr int CAPTION_BTN_H = 30; // top-aligned; shorter than TOPBAR to avoid droop
-
-#ifndef SM_CXPADDEDBORDER
-#define SM_CXPADDEDBORDER 92
-#endif
-#ifndef SM_CYPADDEDBORDER
-#define SM_CYPADDEDBORDER 92
-#endif
-
-static bool IsRunningUnderWine() {
-    static int cached = -1;
-    if (cached < 0) {
-        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-        cached = (ntdll && GetProcAddress(ntdll, "wine_get_version")) ? 1 : 0;
-    }
-    return cached == 1;
-}
-constexpr UINT_PTR IDT_UI_ANIM = 42;      // legacy tool-flash (unused; idle handles it)
-constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
-constexpr UINT_PTR IDT_UI_IDLE = 44;      // low-rate compass + tool pulse
-constexpr int DEFAULT_DOC_WIDTH = 1280;
-constexpr int DEFAULT_DOC_HEIGHT = 720;
-constexpr int MIN_DOC_SIZE = 1;
-constexpr int MAX_DOC_SIZE = 10000;
-// Fallback; runtime uses gTheme.workspace.
-constexpr COLORREF WORKSPACE_COLOR = RGB(168, 158, 146);
-constexpr float ZOOM_MIN = 0.25f;
-constexpr float ZOOM_MAX = 8.0f;
-constexpr float ZOOM_STEP = 1.25f;
-
-struct CanvasPreset {
-    const char* label;
-    int width;
-    int height;
-};
-
-const CanvasPreset kPresets[] = {
-    { "800 x 600", 800, 600 },
-    { "1024 x 768", 1024, 768 },
-    { "1280 x 720", 1280, 720 },
-    { "1920 x 1080", 1920, 1080 },
-    { "Custom", 0, 0 }
-};
-
-AppTheme gTheme;
-LayerStack gLayers;
-LayerHistory gHistory;
-HFONT gUiFont = nullptr;
-HFONT gBrandFont = nullptr;
-HBRUSH gChromeBrush = nullptr;
-HBRUSH gChromeDeepBrush = nullptr;
-HBRUSH gChromeElevatedBrush = nullptr;
-HACCEL gAccel = nullptr;
-HWND hwndTooltip = nullptr;
-HWND hwndBrand = nullptr; // dedicated child: flicker-free compass (Catch22 / clip-children pattern)
-float gUiPulse = 0.0f;            // 0..1 selected-tool breath (idle)
-float gUiCompassAngle = -18.0f;   // animated overlay angle
-float gToolFlash = 0.0f;          // 1 → 0 after tool switch
-float gIdlePhase = 0.0f;
-float gSelAntOffset = 0.0f; // marching-ants dash phase (Photoshop-style)
-bool gUiSizing = false;
-Bitmap* gChromeCache = nullptr;
-int gChromeCacheW = 0;
-int gChromeCacheH = 0;
-int gChromeCacheStatusH = -1;
-int gChromeCacheRailW = -1;
-int gChromeCacheLayerW = -1;
-Bitmap* gBrandStrip = nullptr; // offscreen compose target
-HBITMAP gBrandStripHbmp = nullptr; // GDI handle for single BitBlt to screen
-int gBrandStripH = 0;
-
-HWND hwndViewport = nullptr;
-HWND hwndScrollH = nullptr;
-HWND hwndScrollV = nullptr;
-HWND hwndScrollCorner = nullptr;
-HWND hwndSlider = nullptr;
-HWND hwndPenWidthBox = nullptr;
-HWND hwndOpacitySlider = nullptr;
-HWND hwndOpacityBox = nullptr;
-HWND hwndSizeLabel = nullptr;
-HWND hwndOpacityLabel = nullptr;
-HWND hwndStatus = nullptr;
-HWND hwndLayerList = nullptr;
-HWND hwndLayerAdd = nullptr;
-HWND hwndLayerDel = nullptr;
-HWND hwndLayerUp = nullptr;
-HWND hwndLayerDown = nullptr;
-HWND hwndLayerVisible = nullptr;
-HWND hwndLayerOpacity = nullptr;
-HWND hwndToolButtons[kToolButtonCount] = {};
-HWND hwndPalette = nullptr;
-HWND hwndActionButtons[7] = {}; // 0 Color(FG), 1 New, 2 Undo, 3 Redo, 4 Clear, 5 Save, 6 Open
-HWND hwndBgButton = nullptr;
-HWND hwndSwapColors = nullptr;
-HWND hwndShapeFlyout = nullptr;
-HWND hwndShapeButtons[6] = {};
-HWND hwndShapeModeButtons[3] = {};
-HWND hwndToggleRail = nullptr;
-HWND hwndToggleLayers = nullptr;
-HWND hwndPaletteFloat = nullptr;
-HWND hwndMenuButtons[6] = {}; // File Edit Image View Tools Help
-HWND hwndCaptionMin = nullptr;
-HWND hwndCaptionMax = nullptr;
-HWND hwndCaptionClose = nullptr;
-HWND gCaptionHot = nullptr; // which caption child is hovered
-HMENU gAppMenu = nullptr;
-
-bool gRailOpen = true;
-bool gLayersOpen = true;
-bool gBottomOpen = true;
-bool gPaletteFloating = false;
-POINT gPaletteFloatPos = { 80, 120 };
-bool gFloatDragging = false;
-POINT gFloatDragHot = {};
-
-POINT lastPoint = {};
-POINT shapeStart = {};
-bool isDrawing = false;
-bool suppressEditNotify = false;
-bool suppressLayerNotify = false;
-
-int docWidth = DEFAULT_DOC_WIDTH;
-int docHeight = DEFAULT_DOC_HEIGHT;
-int scrollX = 0;
-int scrollY = 0;
-float zoomFactor = 1.0f;
-
-struct SelectionState {
-    bool hasMarquee = false;
-    bool isFloating = false;
-    bool creating = false;
-    bool moving = false;
-    int x = 0;
-    int y = 0;
-    int w = 0;
-    int h = 0;
-    int anchorX = 0;
-    int anchorY = 0;
-    int grabDX = 0;
-    int grabDY = 0;
-    Bitmap* floatBmp = nullptr;
-};
-
-SelectionState gSel;
-Bitmap* gClipboardBmp = nullptr;
-Bitmap* compositeCache = nullptr;
-bool compositeDirty = true;
-Bitmap* strokeLayer = nullptr;
-Graphics* strokeGraphics = nullptr;
-
 ULONG_PTR gdiplusToken = 0;
 }
 
-COLORREF penColor = RGB(0, 0, 0);       // foreground (stroke / brush / fill-bucket)
-COLORREF backColor = RGB(255, 255, 255); // background (shape fill)
-int penWidth = 5;
-int penOpacity = 100; // percent 1-100
-DrawTool currentTool = DrawTool::Pen;
-ShapeKind currentShape = ShapeKind::Rectangle;
-ShapePaintMode shapePaintMode = ShapePaintMode::Stroke;
-bool documentDirty = false;
 
-static BYTE OpacityToAlpha() {
-    int pct = penOpacity;
-    if (pct < 1) pct = 1;
-    if (pct > 100) pct = 100;
-    return static_cast<BYTE>((pct * 255 + 50) / 100);
-}
+
 
 void UpdatePenWidthDisplay() {
     if (!hwndPenWidthBox) return;
@@ -306,13 +135,13 @@ void UpdateStatusBar(HWND hwnd) {
     (void)hwnd;
 }
 
-static void MarkDirty(HWND hwnd) {
+void MarkDirty(HWND hwnd) {
     documentDirty = true;
     UpdateWindowTitle(hwnd);
     UpdateStatusBar(hwnd);
 }
 
-static void MarkClean(HWND hwnd) {
+void MarkClean(HWND hwnd) {
     documentDirty = false;
     UpdateWindowTitle(hwnd);
     UpdateStatusBar(hwnd);
@@ -324,11 +153,11 @@ static void ApplyUiFont(HWND control) {
     }
 }
 
-static void CloseShapeFlyout();
+void CloseShapeFlyout();
 static void OpenShapeFlyout(HWND parent);
 static void SyncShapeFlyoutChecks();
 
-static void SetActiveTool(DrawTool tool) {
+void SetActiveTool(DrawTool tool) {
     const bool changed = (currentTool != tool);
     currentTool = tool;
     if (changed) {
@@ -358,15 +187,6 @@ static void SyncPaletteFromApp() {
     if (hwndPalette) {
         AtelierPalette_SetColors(hwndPalette, penColor, backColor);
     }
-}
-
-static ShapePaintMode EffectiveShapePaintMode() {
-    // Hold Alt → fill only; hold Ctrl (or Alt+Ctrl) → stroke + fill.
-    const bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-    const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    if (ctrl) return ShapePaintMode::Both;
-    if (alt) return ShapePaintMode::Fill;
-    return shapePaintMode;
 }
 
 static void NoteDrawnColors() {
@@ -553,15 +373,7 @@ static bool RegisterBrandClass(HINSTANCE hInstance) {
     return RegisterClassA(&wc) != 0;
 }
 
-struct ChromeLayout {
-    int topH = TOPBAR_HEIGHT;
-    int railW = TOOL_RAIL_WIDTH;
-    int bottomH = BOTTOMBAR_HEIGHT;
-    int statusH = STATUS_HEIGHT;
-    int layerW = LAYER_PANEL_WIDTH;
-};
-
-static ChromeLayout GetChromeLayout(HWND hwnd) {
+ChromeLayout GetChromeLayout(HWND hwnd) {
     ChromeLayout layout;
     layout.railW = gRailOpen ? TOOL_RAIL_WIDTH : PANEL_EDGE_WIDTH;
     layout.layerW = gLayersOpen ? LAYER_PANEL_WIDTH : PANEL_EDGE_WIDTH;
@@ -588,60 +400,52 @@ static void ConfigureCanvasGraphics(Graphics* g) {
     g->SetCompositingMode(CompositingModeSourceOver);
 }
 
-static void DestroyStrokeLayer();
-static void CommitStrokeLayer();
-static void BeginStrokeLayer();
-static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1);
-static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY);
-static void RedrawShapePreview(int endX, int endY, bool shiftConstrained);
-static void UpdateScrollBars();
-static void SyncDocSizeFromBitmap();
-static void InvalidateCanvas();
-static void InvalidateComposite();
-static void DestroyCompositeCache();
-static Bitmap* GetCompositeBitmap();
+void DestroyStrokeLayer();
+void CommitStrokeLayer();
+void BeginStrokeLayer();
+void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1);
+void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY);
+void RedrawShapePreview(int endX, int endY, bool shiftConstrained);
+void UpdateScrollBars();
+void SyncDocSizeFromBitmap();
+void InvalidateCanvas();
+void InvalidateComposite();
+void DestroyCompositeCache();
+Bitmap* GetCompositeBitmap();
 static void LayoutViewport(HWND hwnd);
 static void LayoutLayerPanel(HWND hwnd);
 static void LayoutChromeControls(HWND hwnd);
-static void LayoutCaptionButtons(HWND hwnd);
 static void ApplyPanelVisibility();
 static void SetRailOpen(HWND hwnd, bool open);
 static void SetLayersOpen(HWND hwnd, bool open);
 static void UpdateButtonTooltip(HWND parent, HWND btn, const char* text);
-static void RefreshLayerList();
-static void ClearSelection(bool stampFloating);
-static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink);
-static INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
+void RefreshLayerList();
 static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-static int gCanvasDlgWidth = 0;
-static int gCanvasDlgHeight = 0;
 
-static int MaxInt(int a, int b) { return (a > b) ? a : b; }
-static float MaxFloat(float a, float b) { return (a > b) ? a : b; }
 
-static void SyncDocSizeFromBitmap() {
+void SyncDocSizeFromBitmap() {
     docWidth = MaxInt(1, gLayers.Width());
     docHeight = MaxInt(1, gLayers.Height());
 }
 
-static void EnsureCanvas(HWND hwnd) {
+void EnsureCanvas(HWND hwnd) {
     if (gLayers.Count() > 0) return;
     gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
     InvalidateComposite();
     (void)hwnd;
 }
 
-static void DestroyCompositeCache() {
+void DestroyCompositeCache() {
     delete compositeCache;
     compositeCache = nullptr;
     compositeDirty = true;
 }
 
-static void InvalidateComposite() {
+void InvalidateComposite() {
     compositeDirty = true;
 }
 
-static Bitmap* GetCompositeBitmap() {
+Bitmap* GetCompositeBitmap() {
     if (!compositeDirty && compositeCache) {
         return compositeCache;
     }
@@ -657,7 +461,7 @@ static Bitmap* GetCompositeBitmap() {
     return compositeCache;
 }
 
-static void UpdateScrollBars() {
+void UpdateScrollBars() {
     if (!hwndViewport) return;
 
     RECT rc = {};
@@ -1154,7 +958,7 @@ static void LayoutChromeControls(HWND hwnd) {
     (void)hwnd;
 }
 
-static void RefreshLayerList() {
+void RefreshLayerList() {
     if (!hwndLayerList) return;
     suppressLayerNotify = true;
     SendMessageA(hwndLayerList, LB_RESETCONTENT, 0, 0);
@@ -1195,71 +999,6 @@ static void RefreshLayerList() {
     suppressLayerNotify = false;
 }
 
-static bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink) {
-    if (newWidth < MIN_DOC_SIZE) newWidth = MIN_DOC_SIZE;
-    if (newHeight < MIN_DOC_SIZE) newHeight = MIN_DOC_SIZE;
-    if (newWidth > MAX_DOC_SIZE) newWidth = MAX_DOC_SIZE;
-    if (newHeight > MAX_DOC_SIZE) newHeight = MAX_DOC_SIZE;
-
-    EnsureCanvas(hwnd);
-
-    if (newWidth == docWidth && newHeight == docHeight) {
-        return true;
-    }
-
-    if (warnOnShrink && (newWidth < docWidth || newHeight < docHeight)) {
-        const int result = MessageBoxA(
-            hwnd,
-            "Shrinking the canvas will crop content outside the new size. Continue?",
-            "Canvas Size",
-            MB_OKCANCEL | MB_ICONWARNING);
-        if (result != IDOK) {
-            return false;
-        }
-    }
-
-    if (isDrawing) {
-        isDrawing = false;
-        CommitStrokeLayer();
-    }
-    DestroyStrokeLayer();
-    ClearSelection(false);
-
-    if (pushHistory) {
-        gHistory.Push(gLayers);
-    }
-
-    if (!gLayers.Resize(newWidth, newHeight, gTheme.canvasBg)) {
-        MessageBoxA(hwnd, "Could not resize the canvas (out of memory).", "Canvas Size", MB_OK | MB_ICONERROR);
-        return false;
-    }
-    docWidth = newWidth;
-    docHeight = newHeight;
-    scrollX = 0;
-    scrollY = 0;
-    InvalidateComposite();
-    UpdateScrollBars();
-    MarkDirty(hwnd);
-    InvalidateCanvas();
-    UpdateStatusBar(hwnd);
-    RefreshLayerList();
-    return true;
-}
-
-static void ClearCanvas(HWND hwnd, bool pushHistory) {
-    EnsureCanvas(hwnd);
-    DestroyStrokeLayer();
-    isDrawing = false;
-    ClearSelection(false);
-    if (pushHistory) {
-        gHistory.Push(gLayers);
-    }
-    gLayers.ClearAllContent(gTheme.canvasBg);
-    InvalidateComposite();
-    MarkDirty(hwnd);
-    InvalidateCanvas();
-}
-
 static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
     if (zoomFactor <= 0.0f) return false;
     docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
@@ -1280,151 +1019,18 @@ static void ViewportToDocumentUnclamped(int localX, int localY, int& docX, int& 
     docY = static_cast<int>(std::floor((localY + scrollY) / zoomFactor));
 }
 
-static void InvalidateCanvas() {
+void InvalidateCanvas() {
     if (hwndViewport) {
         InvalidateRect(hwndViewport, NULL, FALSE);
     }
 }
 
-static int ScaledContentWidth() {
+int ScaledContentWidth() {
     return MaxInt(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
 }
 
-static int ScaledContentHeight() {
+int ScaledContentHeight() {
     return MaxInt(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
-}
-
-static void DestroySelFloat() {
-    delete gSel.floatBmp;
-    gSel.floatBmp = nullptr;
-    gSel.isFloating = false;
-}
-
-static void ClearSelection(bool stampFloating) {
-    Graphics* ag = gLayers.ActiveGraphics();
-    if (stampFloating && gSel.isFloating && gSel.floatBmp && ag) {
-        ag->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
-        InvalidateComposite();
-    }
-    DestroySelFloat();
-    gSel.hasMarquee = false;
-    gSel.creating = false;
-    gSel.moving = false;
-    gSel.x = gSel.y = gSel.w = gSel.h = 0;
-}
-
-static void NormalizeSelRect(int x0, int y0, int x1, int y1, int& x, int& y, int& w, int& h) {
-    int left = (x0 < x1) ? x0 : x1;
-    int top = (y0 < y1) ? y0 : y1;
-    int right = (x0 > x1) ? x0 : x1;
-    int bottom = (y0 > y1) ? y0 : y1;
-    if (left < 0) left = 0;
-    if (top < 0) top = 0;
-    if (right > docWidth) right = docWidth;
-    if (bottom > docHeight) bottom = docHeight;
-    x = left;
-    y = top;
-    w = right - left;
-    h = bottom - top;
-}
-
-static bool SelectionHitTest(int docX, int docY) {
-    if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return false;
-    return docX >= gSel.x && docY >= gSel.y
-        && docX < gSel.x + gSel.w && docY < gSel.y + gSel.h;
-}
-
-static Bitmap* CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
-    if (!src || w < 1 || h < 1) return nullptr;
-    Bitmap* out = new Bitmap(w, h, PixelFormat32bppARGB);
-    if (!out || out->GetLastStatus() != Ok) {
-        delete out;
-        return nullptr;
-    }
-    Graphics g(out);
-    g.Clear(Color(0, 0, 0, 0));
-    g.DrawImage(src, Rect(0, 0, w, h), x, y, w, h, UnitPixel);
-    return out;
-}
-
-static void LiftSelection() {
-    Bitmap* ab = gLayers.ActiveBitmap();
-    Graphics* ag = gLayers.ActiveGraphics();
-    if (!gSel.hasMarquee || gSel.isFloating || !ab || !ag) return;
-    if (gSel.w < 1 || gSel.h < 1) return;
-
-    DestroySelFloat();
-    gSel.floatBmp = CloneBitmapRect(ab, gSel.x, gSel.y, gSel.w, gSel.h);
-    if (!gSel.floatBmp) return;
-
-    const Layer* layer = gLayers.ActiveLayer();
-    if (layer && layer->isBackground) {
-        SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
-        ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
-    } else {
-        ag->SetCompositingMode(CompositingModeSourceCopy);
-        SolidBrush brush(Color(0, 0, 0, 0));
-        ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
-        ag->SetCompositingMode(CompositingModeSourceOver);
-    }
-    gSel.isFloating = true;
-    InvalidateComposite();
-}
-
-static void StampFloatingSelection() {
-    Graphics* ag = gLayers.ActiveGraphics();
-    if (!gSel.isFloating || !gSel.floatBmp || !ag) return;
-    ag->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
-    DestroySelFloat();
-    InvalidateComposite();
-}
-
-static Bitmap* CaptureSelectionPixels() {
-    if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return nullptr;
-    if (gSel.isFloating && gSel.floatBmp) {
-        return CloneBitmapRect(gSel.floatBmp, 0, 0, gSel.w, gSel.h);
-    }
-    return CloneBitmapRect(gLayers.ActiveBitmap(), gSel.x, gSel.y, gSel.w, gSel.h);
-}
-
-static void SetInternalClipboard(Bitmap* bmp) {
-    delete gClipboardBmp;
-    gClipboardBmp = bmp;
-}
-
-static bool CopyBitmapToWinClipboard(Bitmap* bmp) {
-    if (!bmp) return false;
-    HBITMAP hbm = nullptr;
-    if (bmp->GetHBITMAP(Color(255, 255, 255, 255), &hbm) != Ok || !hbm) {
-        return false;
-    }
-    if (!OpenClipboard(nullptr)) {
-        DeleteObject(hbm);
-        return false;
-    }
-    EmptyClipboard();
-    if (!SetClipboardData(CF_BITMAP, hbm)) {
-        DeleteObject(hbm);
-        CloseClipboard();
-        return false;
-    }
-    CloseClipboard();
-    return true;
-}
-
-static Bitmap* BitmapFromWinClipboard() {
-    if (!OpenClipboard(nullptr)) return nullptr;
-    HANDLE handle = GetClipboardData(CF_BITMAP);
-    Bitmap* out = nullptr;
-    if (handle) {
-        out = new Bitmap(static_cast<HBITMAP>(handle), nullptr);
-        if (out && out->GetLastStatus() != Ok) {
-            delete out;
-            out = nullptr;
-        }
-    }
-    CloseClipboard();
-    return out;
 }
 
 static void SetZoomAtViewportPoint(HWND hwnd, float newZoom, int localX, int localY) {
@@ -1489,344 +1095,6 @@ static void ZoomToFit(HWND hwnd) {
     UpdateScrollBars();
     InvalidateCanvas();
     UpdateStatusBar(hwnd);
-}
-
-static void DrawSelectionOverlay(Graphics* g) {
-    if (!g) return;
-    if (!gSel.hasMarquee && !gSel.creating) return;
-    if (gSel.w < 1 || gSel.h < 1) return;
-
-    if (gSel.isFloating && gSel.floatBmp) {
-        g->DrawImage(
-            gSel.floatBmp,
-            RectF(
-                gSel.x * zoomFactor,
-                gSel.y * zoomFactor,
-                gSel.w * zoomFactor,
-                gSel.h * zoomFactor));
-    }
-
-    const float x = gSel.x * zoomFactor;
-    const float y = gSel.y * zoomFactor;
-    const float selW = MaxFloat(1.0f, gSel.w * zoomFactor);
-    const float selH = MaxFloat(1.0f, gSel.h * zoomFactor);
-    const RectF box(x, y, selW, selH);
-
-    // Soft exterior veil (PS-like focus) — warm atelier ink, not cold gray.
-    {
-        const float docW = static_cast<float>(ScaledContentWidth());
-        const float docH = static_cast<float>(ScaledContentHeight());
-        SolidBrush veil(Color(58, 36, 28, 20));
-        if (y > 0.0f) {
-            g->FillRectangle(&veil, RectF(0.0f, 0.0f, docW, y));
-        }
-        if (y + selH < docH) {
-            g->FillRectangle(&veil, RectF(0.0f, y + selH, docW, docH - (y + selH)));
-        }
-        if (x > 0.0f) {
-            g->FillRectangle(&veil, RectF(0.0f, y, x, selH));
-        }
-        if (x + selW < docW) {
-            g->FillRectangle(&veil, RectF(x + selW, y, docW - (x + selW), selH));
-        }
-    }
-
-    // Crisp under-rule so ants read on any canvas tone.
-    Pen under(Color(200, GetRValue(gTheme.ink), GetGValue(gTheme.ink), GetBValue(gTheme.ink)), 1.35f);
-    g->DrawRectangle(&under, box);
-
-    // Marching ants: ink + parchment (high contrast), gilt hairline for atelier.
-    REAL dashPattern[2] = { 5.0f, 4.0f };
-    Pen antDark(Color(255, GetRValue(gTheme.ink), GetGValue(gTheme.ink), GetBValue(gTheme.ink)), 1.15f);
-    antDark.SetDashStyle(DashStyleCustom);
-    antDark.SetDashPattern(dashPattern, 2);
-    antDark.SetDashOffset(gSelAntOffset);
-
-    Pen antLight(Color(255, 250, 244, 230), 1.15f);
-    antLight.SetDashStyle(DashStyleCustom);
-    antLight.SetDashPattern(dashPattern, 2);
-    antLight.SetDashOffset(gSelAntOffset + dashPattern[0]);
-
-    g->DrawRectangle(&antDark, box);
-    g->DrawRectangle(&antLight, box);
-
-    Pen gilt(Color(170, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent)), 1.0f);
-    g->DrawRectangle(&gilt, RectF(box.X - 0.5f, box.Y - 0.5f, box.Width + 1.0f, box.Height + 1.0f));
-
-    // Corner handles — small gilt plates (transform affordance, atelier-scaled).
-    const float hs = 3.6f;
-    const PointF corners[4] = {
-        { box.X, box.Y },
-        { box.X + box.Width, box.Y },
-        { box.X, box.Y + box.Height },
-        { box.X + box.Width, box.Y + box.Height }
-    };
-    SolidBrush handleFill(Color(235, GetRValue(gTheme.chromeElevated), GetGValue(gTheme.chromeElevated), GetBValue(gTheme.chromeElevated)));
-    Pen handleRim(Color(230, GetRValue(gTheme.accentDeep), GetGValue(gTheme.accentDeep), GetBValue(gTheme.accentDeep)), 1.1f);
-    for (const PointF& c : corners) {
-        RectF h(c.X - hs, c.Y - hs, hs * 2.0f, hs * 2.0f);
-        g->FillRectangle(&handleFill, h);
-        g->DrawRectangle(&handleRim, h);
-    }
-}
-
-static void DoCopy(HWND hwnd) {
-    Bitmap* shot = CaptureSelectionPixels();
-    if (!shot) return;
-    CopyBitmapToWinClipboard(shot);
-    SetInternalClipboard(shot); // takes ownership
-    (void)hwnd;
-}
-
-static void DoDeleteSelection(HWND hwnd) {
-    if (!gSel.hasMarquee) return;
-    EnsureCanvas(hwnd);
-    gHistory.Push(gLayers);
-    if (gSel.isFloating) {
-        DestroySelFloat();
-        gSel.hasMarquee = false;
-        gSel.w = gSel.h = 0;
-    }
-    else {
-        Graphics* ag = gLayers.ActiveGraphics();
-        if (ag) {
-            const Layer* layer = gLayers.ActiveLayer();
-            if (layer && layer->isBackground) {
-                SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
-                ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
-            } else {
-                ag->SetCompositingMode(CompositingModeSourceCopy);
-                SolidBrush brush(Color(0, 0, 0, 0));
-                ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
-                ag->SetCompositingMode(CompositingModeSourceOver);
-            }
-        }
-        gSel.hasMarquee = false;
-        gSel.w = gSel.h = 0;
-        InvalidateComposite();
-    }
-    MarkDirty(hwnd);
-    InvalidateCanvas();
-    UpdateStatusBar(hwnd);
-}
-
-static void DoCut(HWND hwnd) {
-    if (!gSel.hasMarquee) return;
-    DoCopy(hwnd);
-    DoDeleteSelection(hwnd);
-}
-
-static void DoPaste(HWND hwnd) {
-    EnsureCanvas(hwnd);
-    Bitmap* src = nullptr;
-    if (gClipboardBmp) {
-        src = CloneBitmapRect(
-            gClipboardBmp, 0, 0,
-            static_cast<int>(gClipboardBmp->GetWidth()),
-            static_cast<int>(gClipboardBmp->GetHeight()));
-    }
-    if (!src) {
-        src = BitmapFromWinClipboard();
-    }
-    if (!src) return;
-
-    ClearSelection(true);
-    SetActiveTool(DrawTool::Select);
-
-    const int w = static_cast<int>(src->GetWidth());
-    const int h = static_cast<int>(src->GetHeight());
-    int pasteX = static_cast<int>(std::floor(scrollX / zoomFactor));
-    int pasteY = static_cast<int>(std::floor(scrollY / zoomFactor));
-    if (pasteX < 0) pasteX = 0;
-    if (pasteY < 0) pasteY = 0;
-
-    gHistory.Push(gLayers);
-    gSel.hasMarquee = true;
-    gSel.isFloating = true;
-    gSel.floatBmp = src;
-    gSel.x = pasteX;
-    gSel.y = pasteY;
-    gSel.w = w;
-    gSel.h = h;
-    MarkDirty(hwnd);
-    InvalidateCanvas();
-    UpdateStatusBar(hwnd);
-}
-
-static void DoSelectAll(HWND hwnd) {
-    EnsureCanvas(hwnd);
-    ClearSelection(true);
-    SetActiveTool(DrawTool::Select);
-    gSel.hasMarquee = true;
-    gSel.x = 0;
-    gSel.y = 0;
-    gSel.w = docWidth;
-    gSel.h = docHeight;
-    InvalidateCanvas();
-    UpdateStatusBar(hwnd);
-}
-
-static void EnableDarkTitleBar(HWND hwnd) {
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
-    BOOL useDark = TRUE;
-    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
-}
-
-static int FrameBorderX() {
-    return GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-}
-
-static int FrameBorderY() {
-    return GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYPADDEDBORDER);
-}
-
-static void EnableCustomTitleBar(HWND hwnd) {
-    EnableDarkTitleBar(hwnd);
-    // Wine still draws a WM caption; expanding the client under it hides our chrome.
-    if (IsRunningUnderWine()) return;
-    // Keep DWM borders; caption is drawn in-client (see WM_NCCALCSIZE).
-    MARGINS margins = { 0, 0, 0, 0 };
-    DwmExtendFrameIntoClientArea(hwnd, &margins);
-    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-}
-
-static void LayoutCaptionButtons(HWND hwnd) {
-    RECT rc = {};
-    GetClientRect(hwnd, &rc);
-    const int w = CAPTION_BTN_W;
-    const int h = CAPTION_BTN_H;
-    const int y = 0; // flush to top of client chrome
-    if (hwndCaptionClose) {
-        MoveWindow(hwndCaptionClose, rc.right - w, y, w, h, TRUE);
-    }
-    if (hwndCaptionMax) {
-        MoveWindow(hwndCaptionMax, rc.right - w * 2, y, w, h, TRUE);
-    }
-    if (hwndCaptionMin) {
-        MoveWindow(hwndCaptionMin, rc.right - w * 3, y, w, h, TRUE);
-    }
-}
-
-static void SetCaptionHot(HWND btn) {
-    if (gCaptionHot == btn) return;
-    HWND prev = gCaptionHot;
-    gCaptionHot = btn;
-    if (prev) InvalidateRect(prev, nullptr, FALSE);
-    if (btn) InvalidateRect(btn, nullptr, FALSE);
-}
-
-static void PaintOneCaptionButton(HDC hdc, HWND btn, int id) {
-    RECT r = {};
-    GetClientRect(btn, &r);
-    const bool hot = (gCaptionHot == btn);
-    const bool maximized = IsZoomed(GetParent(btn)) != FALSE;
-
-    COLORREF bg = gTheme.chromeBg;
-    if (hot) {
-        bg = (id == IDC_CAPTION_CLOSE) ? RGB(196, 43, 28) : gTheme.chromeElevated;
-    }
-    HBRUSH br = CreateSolidBrush(bg);
-    FillRect(hdc, &r, br);
-    DeleteObject(br);
-
-    HPEN pen = CreatePen(PS_SOLID, 1,
-        (hot && id == IDC_CAPTION_CLOSE) ? RGB(255, 255, 255) : gTheme.ink);
-    HGDIOBJ oldPen = SelectObject(hdc, pen);
-    HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-
-    const int cx = (r.left + r.right) / 2;
-    const int cy = (r.top + r.bottom) / 2;
-    if (id == IDC_CAPTION_MIN) {
-        MoveToEx(hdc, cx - 5, cy, nullptr);
-        LineTo(hdc, cx + 6, cy);
-    } else if (id == IDC_CAPTION_MAX) {
-        if (maximized) {
-            Rectangle(hdc, cx - 3, cy - 5, cx + 5, cy + 3);
-            Rectangle(hdc, cx - 5, cy - 3, cx + 3, cy + 5);
-        } else {
-            Rectangle(hdc, cx - 5, cy - 5, cx + 6, cy + 6);
-        }
-    } else if (id == IDC_CAPTION_CLOSE) {
-        MoveToEx(hdc, cx - 5, cy - 5, nullptr);
-        LineTo(hdc, cx + 6, cy + 6);
-        MoveToEx(hdc, cx + 5, cy - 5, nullptr);
-        LineTo(hdc, cx - 6, cy + 6);
-    }
-
-    SelectObject(hdc, oldBr);
-    SelectObject(hdc, oldPen);
-    DeleteObject(pen);
-}
-
-static LRESULT CALLBACK CaptionBtnProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    switch (msg) {
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_PAINT: {
-        PAINTSTRUCT ps = {};
-        HDC hdc = BeginPaint(hwnd, &ps);
-        PaintOneCaptionButton(hdc, hwnd, GetDlgCtrlID(hwnd));
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_MOUSEMOVE: {
-        SetCaptionHot(hwnd);
-        TRACKMOUSEEVENT tme = {};
-        tme.cbSize = sizeof(tme);
-        tme.dwFlags = TME_LEAVE;
-        tme.hwndTrack = hwnd;
-        TrackMouseEvent(&tme);
-        return 0;
-    }
-    case WM_MOUSELEAVE:
-        if (gCaptionHot == hwnd) SetCaptionHot(nullptr);
-        return 0;
-    case WM_LBUTTONUP: {
-        HWND parent = GetParent(hwnd);
-        if (parent) {
-            SendMessageA(parent, WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(hwnd), BN_CLICKED), (LPARAM)hwnd);
-        }
-        return 0;
-    }
-    default:
-        break;
-    }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
-}
-
-static bool RegisterCaptionBtnClass(HINSTANCE hInstance) {
-    WNDCLASSA wc = {};
-    wc.lpfnWndProc = CaptionBtnProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = "SimpleDrawingAppCaptionBtn";
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = nullptr;
-    return RegisterClassA(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
-}
-
-static void CreateCaptionButtons(HWND hwnd) {
-    if (IsRunningUnderWine()) return;
-    HINSTANCE inst = GetModuleHandle(nullptr);
-    auto make = [&](int id) -> HWND {
-        return CreateWindowExA(0, "SimpleDrawingAppCaptionBtn", "",
-            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-            0, 0, CAPTION_BTN_W, CAPTION_BTN_H,
-            hwnd, (HMENU)(INT_PTR)id, inst, nullptr);
-    };
-    hwndCaptionMin = make(IDC_CAPTION_MIN);
-    hwndCaptionMax = make(IDC_CAPTION_MAX);
-    hwndCaptionClose = make(IDC_CAPTION_CLOSE);
-    LayoutCaptionButtons(hwnd);
-}
-
-static bool PointOverTopBarControl(HWND hwnd, POINT ptClient) {
-    HWND hit = ChildWindowFromPointEx(hwnd, ptClient, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
-    if (!hit || hit == hwnd) return false;
-    if (hit == hwndBrand) return false; // decorative — allow window drag
-    return true;
 }
 
 static INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM) {
@@ -1894,242 +1162,14 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
     return FALSE;
 }
 
-static void SyncPresetSelection(HWND hDlg) {
-    HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
-    if (!list) return;
-
-    char widthBuf[32] = {};
-    char heightBuf[32] = {};
-    GetDlgItemTextA(hDlg, IDC_CANVAS_WIDTH, widthBuf, sizeof(widthBuf));
-    GetDlgItemTextA(hDlg, IDC_CANVAS_HEIGHT, heightBuf, sizeof(heightBuf));
-    const int w = atoi(widthBuf);
-    const int h = atoi(heightBuf);
-
-    int select = static_cast<int>(sizeof(kPresets) / sizeof(kPresets[0])) - 1; // Custom
-    for (int i = 0; i < select; ++i) {
-        if (kPresets[i].width == w && kPresets[i].height == h) {
-            select = i;
-            break;
-        }
-    }
-    SendMessageA(list, LB_SETCURSEL, select, 0);
-}
-
-static INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM) {
-    switch (message) {
-    case WM_INITDIALOG: {
-        char buf[32];
-        sprintf_s(buf, "%d", docWidth);
-        SetDlgItemTextA(hDlg, IDC_CANVAS_WIDTH, buf);
-        sprintf_s(buf, "%d", docHeight);
-        SetDlgItemTextA(hDlg, IDC_CANVAS_HEIGHT, buf);
-
-        HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
-        for (const CanvasPreset& preset : kPresets) {
-            SendMessageA(list, LB_ADDSTRING, 0, (LPARAM)preset.label);
-        }
-        SyncPresetSelection(hDlg);
-        return TRUE;
-    }
-    case WM_COMMAND: {
-        const int id = LOWORD(wParam);
-        const int code = HIWORD(wParam);
-
-        if (id == IDC_CANVAS_PRESET && code == LBN_SELCHANGE) {
-            HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
-            const int sel = static_cast<int>(SendMessageA(list, LB_GETCURSEL, 0, 0));
-            if (sel >= 0 && sel < static_cast<int>(sizeof(kPresets) / sizeof(kPresets[0])) &&
-                kPresets[sel].width > 0) {
-                char buf[32];
-                sprintf_s(buf, "%d", kPresets[sel].width);
-                SetDlgItemTextA(hDlg, IDC_CANVAS_WIDTH, buf);
-                sprintf_s(buf, "%d", kPresets[sel].height);
-                SetDlgItemTextA(hDlg, IDC_CANVAS_HEIGHT, buf);
-            }
-            return TRUE;
-        }
-
-        if ((id == IDC_CANVAS_WIDTH || id == IDC_CANVAS_HEIGHT) && code == EN_CHANGE) {
-            SyncPresetSelection(hDlg);
-            return TRUE;
-        }
-
-        if (id == IDOK) {
-            char widthBuf[32] = {};
-            char heightBuf[32] = {};
-            GetDlgItemTextA(hDlg, IDC_CANVAS_WIDTH, widthBuf, sizeof(widthBuf));
-            GetDlgItemTextA(hDlg, IDC_CANVAS_HEIGHT, heightBuf, sizeof(heightBuf));
-            int w = atoi(widthBuf);
-            int h = atoi(heightBuf);
-            if (w < MIN_DOC_SIZE || h < MIN_DOC_SIZE || w > MAX_DOC_SIZE || h > MAX_DOC_SIZE) {
-                MessageBoxA(
-                    hDlg,
-                    "Enter width and height between 1 and 10000.",
-                    "Canvas Size",
-                    MB_OK | MB_ICONWARNING);
-                return TRUE;
-            }
-            gCanvasDlgWidth = w;
-            gCanvasDlgHeight = h;
-            EndDialog(hDlg, IDOK);
-            return TRUE;
-        }
-        if (id == IDCANCEL) {
-            EndDialog(hDlg, IDCANCEL);
-            return TRUE;
-        }
-        break;
-    }
-    }
-    return FALSE;
-}
-
-static void DoCanvasSize(HWND hwnd) {
-    gCanvasDlgWidth = docWidth;
-    gCanvasDlgHeight = docHeight;
-    if (DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_CANVAS_SIZE), hwnd, CanvasSizeDlgProc) == IDOK) {
-        ResizeDocument(hwnd, gCanvasDlgWidth, gCanvasDlgHeight, true, true);
-    }
-}
-
-static bool PromptSaveIfDirty(HWND hwnd) {
-    if (!documentDirty) return true;
-    const int result = MessageBoxA(
-        hwnd,
-        "You have unsaved changes. Save before continuing?",
-        "Simple Drawing App",
-        MB_YESNOCANCEL | MB_ICONWARNING);
-    if (result == IDCANCEL) return false;
-    if (result == IDNO) return true;
-
-    SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_SAVE, 0), 0);
-    return !documentDirty;
-}
-
-static void DoSave(HWND hwnd) {
-    EnsureCanvas(hwnd);
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = "PNG Files\0*.png\0JPG Files\0*.jpg\0BMP Files\0*.bmp\0";
-    ofn.lpstrFile = filePath;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = "png";
-
-    if (GetSaveFileNameA(&ofn)) {
-        ClearSelection(true);
-        Bitmap* flat = GetCompositeBitmap();
-        if (flat && SaveCanvasToFile(flat, filePath)) {
-            MarkClean(hwnd);
-        }
-        else {
-            MessageBoxA(hwnd, "Failed to save image.", "Error", MB_OK | MB_ICONERROR);
-        }
-    }
-}
-
-static void DoOpen(HWND hwnd) {
-    if (!PromptSaveIfDirty(hwnd)) return;
-
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp\0";
-    ofn.lpstrFile = filePath;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-
-    if (GetOpenFileNameA(&ofn)) {
-        DestroyStrokeLayer();
-        isDrawing = false;
-        ClearSelection(false);
-
-        Bitmap* loaded = nullptr;
-        Graphics* loadedG = nullptr;
-        if (LoadImageFromFile(filePath, loaded, loadedG)) {
-            delete loadedG;
-            if (!gLayers.ReplaceWithImage(loaded)) {
-                delete loaded;
-                MessageBoxA(hwnd, "Failed to create document from image.", "Error", MB_OK | MB_ICONERROR);
-                return;
-            }
-            delete loaded;
-            SyncDocSizeFromBitmap();
-            scrollX = 0;
-            scrollY = 0;
-            InvalidateComposite();
-            UpdateScrollBars();
-            gHistory.Clear();
-            MarkClean(hwnd);
-            RefreshLayerList();
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
-        }
-        else {
-            MessageBoxA(hwnd, "Failed to load image.", "Error", MB_OK | MB_ICONERROR);
-        }
-    }
-}
-
-static void DoNew(HWND hwnd) {
-    if (!PromptSaveIfDirty(hwnd)) return;
-    EnsureCanvas(hwnd);
-    DestroyStrokeLayer();
-    isDrawing = false;
-    ClearSelection(false);
-    // Keep current document size; reset to Background + Layer 1 (active).
-    gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
-    gHistory.Clear();
-    InvalidateComposite();
-    MarkClean(hwnd);
-    RefreshLayerList();
-    InvalidateCanvas();
-    UpdateStatusBar(hwnd);
-}
-
-static void DoUndo(HWND hwnd) {
-    EnsureCanvas(hwnd);
-    DestroyStrokeLayer();
-    isDrawing = false;
-    ClearSelection(false);
-    if (gHistory.Undo(gLayers)) {
-        SyncDocSizeFromBitmap();
-        InvalidateComposite();
-        UpdateScrollBars();
-        MarkDirty(hwnd);
-        RefreshLayerList();
-        InvalidateCanvas();
-        UpdateStatusBar(hwnd);
-    }
-}
-
-static void DoRedo(HWND hwnd) {
-    EnsureCanvas(hwnd);
-    DestroyStrokeLayer();
-    isDrawing = false;
-    ClearSelection(false);
-    if (gHistory.Redo(gLayers)) {
-        SyncDocSizeFromBitmap();
-        InvalidateComposite();
-        UpdateScrollBars();
-        MarkDirty(hwnd);
-        RefreshLayerList();
-        InvalidateCanvas();
-        UpdateStatusBar(hwnd);
-    }
-}
-
-static void DestroyStrokeLayer() {
+void DestroyStrokeLayer() {
     delete strokeGraphics;
     delete strokeLayer;
     strokeGraphics = nullptr;
     strokeLayer = nullptr;
 }
 
-static void BeginStrokeLayer() {
+void BeginStrokeLayer() {
     DestroyStrokeLayer();
     if (!gLayers.ActiveBitmap()) return;
 
@@ -2150,7 +1190,7 @@ static void BeginStrokeLayer() {
     strokeGraphics->SetCompositingMode(CompositingModeSourceOver);
 }
 
-static void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
+void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (!target) return;
 
     // Draw fully opaque ink onto the stroke layer; opacity is applied once when compositing.
@@ -2301,7 +1341,7 @@ static void DrawShapeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     }
 }
 
-static void RedrawShapePreview(int endX, int endY, bool shiftConstrained) {
+void RedrawShapePreview(int endX, int endY, bool shiftConstrained) {
     if (!strokeGraphics) return;
     int x1 = endX;
     int y1 = endY;
@@ -2321,7 +1361,7 @@ static void RefreshShapePreviewIfDrawing() {
     InvalidateCanvas();
 }
 
-static void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
+void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
     if (!strokeLayer || !dest) return;
 
     const REAL alpha = static_cast<REAL>(OpacityToAlpha()) / 255.0f;
@@ -2453,7 +1493,7 @@ static Bitmap* CreateErasePreviewComposite(Bitmap* eraseMask) {
     return out;
 }
 
-static void CommitStrokeLayer() {
+void CommitStrokeLayer() {
     Graphics* ag = gLayers.ActiveGraphics();
     if (!strokeLayer || !ag) {
         DestroyStrokeLayer();
@@ -2882,7 +1922,7 @@ static void SyncShapeFlyoutChecks() {
     }
 }
 
-static void CloseShapeFlyout() {
+void CloseShapeFlyout() {
     if (hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
         ShowWindow(hwndShapeFlyout, SW_HIDE);
     }
@@ -4040,9 +3080,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             ReleaseCapture();
         }
         DestroyStrokeLayer();
-        ClearSelection(false);
-        delete gClipboardBmp;
-        gClipboardBmp = nullptr;
+        Selection_Shutdown();
         gHistory.Clear();
         DestroyCompositeCache();
         DestroyChromeCache();
