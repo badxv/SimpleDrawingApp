@@ -488,9 +488,11 @@ static void EnsureBrandStrip(int topH) {
         DeleteObject(gBrandStripHbmp);
         gBrandStripHbmp = nullptr;
     }
-    gBrandStrip->GetHBITMAP(
-        Color(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)),
-        &gBrandStripHbmp);
+    if (gBrandStrip->GetHBITMAP(
+            Color(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)),
+            &gBrandStripHbmp) != Ok) {
+        gBrandStripHbmp = nullptr;
+    }
 }
 
 static void PaintBrandChild(HDC hdc, int width, int height) {
@@ -760,8 +762,9 @@ static LRESULT CALLBACK PaletteFloatProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
         DeleteObject(bar);
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, gTheme.accentDeep);
-        if (gUiFont) SelectObject(hdc, gUiFont);
+        HGDIOBJ oldFont = gUiFont ? SelectObject(hdc, gUiFont) : nullptr;
         TextOutA(hdc, 8, 4, "Color", 5);
+        if (oldFont) SelectObject(hdc, oldFont);
         // Grip dots
         for (int i = 0; i < 3; ++i) {
             RECT d = { rc.right - 18, 6 + i * 4, rc.right - 10, 8 + i * 4 };
@@ -823,6 +826,12 @@ static LRESULT CALLBACK PaletteFloatProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
         }
         return hit;
     }
+    case WM_DESTROY:
+        if (hwndPaletteFloat == hwnd) {
+            hwndPaletteFloat = nullptr;
+            gFloatDragging = false;
+        }
+        return 0;
     default:
         break;
     }
@@ -2039,7 +2048,11 @@ static void DoOpen(HWND hwnd) {
         Graphics* loadedG = nullptr;
         if (LoadImageFromFile(filePath, loaded, loadedG)) {
             delete loadedG;
-            gLayers.ReplaceWithImage(loaded);
+            if (!gLayers.ReplaceWithImage(loaded)) {
+                delete loaded;
+                MessageBoxA(hwnd, "Failed to create document from image.", "Error", MB_OK | MB_ICONERROR);
+                return;
+            }
             delete loaded;
             SyncDocSizeFromBitmap();
             scrollX = 0;
@@ -2605,8 +2618,11 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             break;
         }
 
-        gHistory.Push(gLayers);
         BeginStrokeLayer();
+        if (!strokeGraphics) {
+            break;
+        }
+        gHistory.Push(gLayers);
         isDrawing = true;
         lastPoint.x = docX;
         lastPoint.y = docY;
@@ -2933,6 +2949,13 @@ static LRESULT CALLBACK ShapeFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         EndPaint(hwnd, &ps);
         return 0;
     }
+    case WM_DESTROY:
+        if (hwndShapeFlyout == hwnd) {
+            hwndShapeFlyout = nullptr;
+            for (HWND& btn : hwndShapeButtons) btn = nullptr;
+            for (HWND& btn : hwndShapeModeButtons) btn = nullptr;
+        }
+        return 0;
     default:
         break;
     }
@@ -2951,7 +2974,7 @@ static bool RegisterShapeFlyoutClass(HINSTANCE hInstance) {
 }
 
 static void EnsureShapeFlyout(HWND owner) {
-    if (hwndShapeFlyout) return;
+    if (hwndShapeFlyout && IsWindow(hwndShapeFlyout)) return;
     hwndShapeFlyout = CreateWindowExA(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         "SimpleDrawingAppShapeFlyout",

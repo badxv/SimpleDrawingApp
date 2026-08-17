@@ -121,7 +121,12 @@ bool LayerStack::AddLayer() {
     if (Count() >= kMaxLayers || width_ < 1 || height_ < 1) return false;
     char name[32];
     sprintf_s(name, "Layer %d", Count());
-    layers_.push_back(CreateLayer(width_, height_, name, false, RGB(0, 0, 0)));
+    Layer layer = CreateLayer(width_, height_, name, false, RGB(0, 0, 0));
+    if (!layer.bitmap || !layer.graphics) {
+        FreeLayer(layer);
+        return false;
+    }
+    layers_.push_back(layer);
     active_ = Count() - 1;
     return true;
 }
@@ -244,7 +249,14 @@ bool LayerStack::ReplaceWithImage(Bitmap* image) {
     }
     layer.graphics->DrawImage(image, 0, 0);
     layers_.push_back(layer);
-    layers_.push_back(CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0)));
+    Layer content = CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0));
+    if (!content.bitmap || !content.graphics) {
+        FreeLayer(content);
+        // Keep Background only so the document stays usable.
+        active_ = 0;
+        return true;
+    }
+    layers_.push_back(content);
     active_ = 1;
     return true;
 }
