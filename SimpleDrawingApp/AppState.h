@@ -162,6 +162,5 @@ void CommitStrokeLayer();
 void RefreshLayerList();
 void SetActiveTool(DrawTool tool);
 void CloseShapeFlyout();
-ChromeLayout GetChromeLayout(HWND hwnd);
 int ScaledContentWidth();
 int ScaledContentHeight();

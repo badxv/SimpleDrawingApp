@@ -7,6 +7,9 @@
 #include "CaptionBar.h"
 #include "AppSelection.h"
 #include "AppDocument.h"
+#include "AppApi.h"
+#include "UiChromeLayout.h"
+#include "UiChromeRender.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "AtelierRaii.h"
@@ -252,151 +255,6 @@ static bool ShouldRunIdleMotion(HWND hwnd) {
     return true;
 }
 
-static void DestroyBrandStrip() {
-    gBrandStrip.reset();
-    gBrandStripHbmp.reset();
-    gBrandStripH = 0;
-}
-
-static void DestroyChromeCache() {
-    gChromeCache.reset();
-    gChromeCacheW = 0;
-    gChromeCacheH = 0;
-    gChromeCacheStatusH = -1;
-    gChromeCacheRailW = -1;
-    gChromeCacheLayerW = -1;
-    DestroyBrandStrip();
-}
-
-static void EnsureBrandStrip(int topH) {
-    if (topH < 1) return;
-    if (!gBrandStrip || gBrandStripH != topH) {
-        DestroyBrandStrip();
-        gBrandStrip = MakeBitmap(BRAND_STRIP_W, topH, PixelFormat32bppPARGB);
-        if (!gBrandStrip) {
-            gBrandStripH = 0;
-            return;
-        }
-        gBrandStripH = topH;
-    }
-    if (!gBrandStrip) return;
-
-    Graphics g(gBrandStrip.get());
-    g.SetCompositingMode(CompositingModeSourceCopy);
-    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
-
-    if (gChromeCache && gChromeCacheW >= BRAND_STRIP_W && gChromeCacheH >= topH) {
-        g.DrawImage(
-            gChromeCache.get(),
-            Rect(0, 0, BRAND_STRIP_W, topH),
-            0, 0, BRAND_STRIP_W, topH,
-            UnitPixel);
-    }
-    else {
-        SolidBrush fill(Color(255,
-            GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)));
-        g.FillRectangle(&fill, 0, 0, BRAND_STRIP_W, topH);
-        HDC hdc = g.GetHDC();
-        if (hdc) {
-            HFONT brand = gBrandFont ? gBrandFont : gUiFont;
-            HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, gTheme.ink);
-            TextOutA(hdc, 48, (topH - 20) / 2, "ATELIER", 7);
-            if (oldFont) SelectObject(hdc, oldFont);
-            g.ReleaseHDC(hdc);
-        }
-    }
-
-    g.SetCompositingMode(CompositingModeSourceOver);
-    g.SetSmoothingMode(SmoothingModeAntiAlias);
-    const Color gold(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
-    DrawBrandCompass(g, 25.0f, static_cast<REAL>(topH) * 0.5f, 11.0f, gold, gUiCompassAngle);
-
-    // Refresh GDI bitmap for a single BitBlt to the brand child (no multi-step screen draws).
-    HBITMAP hb = nullptr;
-    if (gBrandStrip->GetHBITMAP(
-            Color(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)),
-            &hb) == Ok && hb) {
-        gBrandStripHbmp.reset(hb);
-    } else {
-        gBrandStripHbmp.reset();
-    }
-}
-
-static void PaintBrandChild(HDC hdc, int width, int height) {
-    if (width < 1 || height < 1) return;
-    EnsureBrandStrip(height);
-    if (gBrandStripHbmp) {
-        HDC mem = CreateCompatibleDC(hdc);
-        if (mem) {
-            HGDIOBJ old = SelectObject(mem, gBrandStripHbmp.get());
-            BitBlt(hdc, 0, 0, width, height, mem, 0, 0, SRCCOPY);
-            SelectObject(mem, old);
-            DeleteDC(mem);
-            return;
-        }
-    }
-    // Fallback if HBITMAP unavailable.
-    if (gBrandStrip) {
-        Graphics g(hdc);
-        g.SetCompositingMode(CompositingModeSourceCopy);
-        g.DrawImage(gBrandStrip.get(), 0, 0, width, height);
-    }
-}
-
-static void InvalidateBrandMark() {
-    if (hwndBrand) {
-        InvalidateRect(hwndBrand, NULL, FALSE);
-    }
-}
-
-static LRESULT CALLBACK BrandProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-    case WM_ERASEBKGND:
-        return 1; // never clear-then-draw (Catch22 flicker rule)
-    case WM_PAINT: {
-        PAINTSTRUCT ps = {};
-        HDC hdc = BeginPaint(hwnd, &ps);
-        RECT rc = {};
-        GetClientRect(hwnd, &rc);
-        PaintBrandChild(hdc, rc.right - rc.left, rc.bottom - rc.top);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_NCHITTEST:
-        // Let clicks pass through to parent (brand is decorative).
-        return HTTRANSPARENT;
-    }
-    return DefWindowProcA(hwnd, uMsg, wParam, lParam);
-}
-
-static bool RegisterBrandClass(HINSTANCE hInstance) {
-    WNDCLASSA wc = {};
-    wc.lpfnWndProc = BrandProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = "SimpleDrawingAppBrand";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = NULL;
-    wc.style = 0; // no CS_HREDRAW/VREDRAW
-    return RegisterClassA(&wc) != 0;
-}
-
-ChromeLayout GetChromeLayout(HWND hwnd) {
-    ChromeLayout layout;
-    layout.railW = gRailOpen ? TOOL_RAIL_WIDTH : PANEL_EDGE_WIDTH;
-    layout.layerW = gLayersOpen ? LAYER_PANEL_WIDTH : PANEL_EDGE_WIDTH;
-    layout.bottomH = gBottomOpen ? BOTTOMBAR_HEIGHT : 0;
-    if (hwndStatus) {
-        RECT sb = {};
-        GetWindowRect(hwndStatus, &sb);
-        layout.statusH = sb.bottom - sb.top;
-        if (layout.statusH < 1) layout.statusH = STATUS_HEIGHT;
-    }
-    (void)hwnd;
-    return layout;
-}
-
 static void GetChromeMetrics(HWND hwnd, int& toolbarH, int& statusH) {
     const ChromeLayout layout = GetChromeLayout(hwnd);
     toolbarH = layout.topH;
@@ -421,13 +279,6 @@ void InvalidateCanvas();
 void InvalidateComposite();
 void DestroyCompositeCache();
 Bitmap* GetCompositeBitmap();
-static void LayoutViewport(HWND hwnd);
-static void LayoutLayerPanel(HWND hwnd);
-static void LayoutChromeControls(HWND hwnd);
-static void ApplyPanelVisibility();
-static void SetRailOpen(HWND hwnd, bool open);
-static void SetLayersOpen(HWND hwnd, bool open);
-static void UpdateButtonTooltip(HWND parent, HWND btn, const char* text);
 void RefreshLayerList();
 static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
@@ -672,7 +523,7 @@ static void EnsurePaletteFloatHost(HWND owner) {
         owner, NULL, GetModuleHandle(NULL), NULL);
 }
 
-static void DockPaletteInstruments(HWND mainHwnd) {
+void DockPaletteInstruments(HWND mainHwnd) {
     if (!gPaletteFloating) return;
     gPaletteFloating = false;
     if (hwndPalette) SetParent(hwndPalette, mainHwnd);
@@ -682,7 +533,7 @@ static void DockPaletteInstruments(HWND mainHwnd) {
     if (hwndPaletteFloat) ShowWindow(hwndPaletteFloat, SW_HIDE);
 }
 
-static void UndockPaletteInstruments(HWND mainHwnd) {
+void UndockPaletteInstruments(HWND mainHwnd) {
     EnsurePaletteFloatHost(mainHwnd);
     if (!hwndPaletteFloat) return;
     gPaletteFloating = true;
@@ -715,253 +566,6 @@ static void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
     if (anchorBtn) GetWindowRect(anchorBtn, &br);
     else GetWindowRect(hwnd, &br);
     TrackPopupMenu(sub, TPM_LEFTALIGN | TPM_TOPALIGN, br.left, br.bottom, 0, hwnd, NULL);
-}
-
-static void ApplyPanelVisibility() {
-    const int railShow = gRailOpen ? SW_SHOW : SW_HIDE;
-    for (HWND btn : hwndToolButtons) {
-        if (btn) ShowWindow(btn, railShow);
-    }
-
-    if (!gPaletteFloating) {
-        if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], railShow);
-        if (hwndBgButton) ShowWindow(hwndBgButton, railShow);
-        if (hwndSwapColors) ShowWindow(hwndSwapColors, railShow);
-        if (hwndPalette) ShowWindow(hwndPalette, railShow);
-    }
-
-    const int layerShow = gLayersOpen ? SW_SHOW : SW_HIDE;
-    if (hwndLayerList) ShowWindow(hwndLayerList, layerShow);
-    if (hwndLayerAdd) ShowWindow(hwndLayerAdd, layerShow);
-    if (hwndLayerDel) ShowWindow(hwndLayerDel, layerShow);
-    if (hwndLayerUp) ShowWindow(hwndLayerUp, layerShow);
-    if (hwndLayerDown) ShowWindow(hwndLayerDown, layerShow);
-    if (hwndLayerVisible) ShowWindow(hwndLayerVisible, layerShow);
-    if (hwndLayerOpacity) ShowWindow(hwndLayerOpacity, layerShow);
-
-    const int bottomShow = gBottomOpen ? SW_SHOW : SW_HIDE;
-    if (hwndSizeLabel) ShowWindow(hwndSizeLabel, bottomShow);
-    if (hwndSlider) ShowWindow(hwndSlider, bottomShow);
-    if (hwndPenWidthBox) ShowWindow(hwndPenWidthBox, bottomShow);
-    if (hwndOpacityLabel) ShowWindow(hwndOpacityLabel, bottomShow);
-    if (hwndOpacitySlider) ShowWindow(hwndOpacitySlider, bottomShow);
-    if (hwndOpacityBox) ShowWindow(hwndOpacityBox, bottomShow);
-
-    if (hwndToggleRail) ShowWindow(hwndToggleRail, SW_SHOW);
-    if (hwndToggleLayers) ShowWindow(hwndToggleLayers, SW_SHOW);
-}
-
-static void SetRailOpen(HWND hwnd, bool open) {
-    if (gRailOpen == open) return;
-    gRailOpen = open;
-    if (!gRailOpen && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
-        CloseShapeFlyout();
-    }
-    if (gRailOpen) {
-        DockPaletteInstruments(hwnd);
-        if (hwndActionButtons[0]) ShowWindow(hwndActionButtons[0], SW_SHOW);
-        if (hwndBgButton) ShowWindow(hwndBgButton, SW_SHOW);
-        if (hwndSwapColors) ShowWindow(hwndSwapColors, SW_SHOW);
-        if (hwndPalette) ShowWindow(hwndPalette, SW_SHOW);
-    } else {
-        for (HWND btn : hwndToolButtons) {
-            if (btn) ShowWindow(btn, SW_HIDE);
-        }
-        UndockPaletteInstruments(hwnd);
-    }
-    ApplyPanelVisibility();
-    UpdateButtonTooltip(hwnd, hwndToggleRail, gRailOpen ? "Hide tools (Tab)" : "Show tools (Tab)");
-    DestroyChromeCache();
-    LayoutViewport(hwnd);
-    if (hwndToggleRail) InvalidateRect(hwndToggleRail, NULL, FALSE);
-    InvalidateRect(hwnd, NULL, FALSE);
-    RequestChromeRebuild(hwnd, 1);
-}
-
-static void SetLayersOpen(HWND hwnd, bool open) {
-    if (gLayersOpen == open) return;
-    gLayersOpen = open;
-    ApplyPanelVisibility();
-    UpdateButtonTooltip(hwnd, hwndToggleLayers, gLayersOpen ? "Hide layers (F9)" : "Show layers (F9)");
-    DestroyChromeCache();
-    LayoutViewport(hwnd);
-    if (hwndToggleLayers) InvalidateRect(hwndToggleLayers, NULL, FALSE);
-    InvalidateRect(hwnd, NULL, FALSE);
-    RequestChromeRebuild(hwnd, 1);
-}
-
-static void SetBottomOpen(HWND hwnd, bool open) {
-    if (gBottomOpen == open) return;
-    gBottomOpen = open;
-    ApplyPanelVisibility();
-    DestroyChromeCache();
-    LayoutViewport(hwnd);
-    InvalidateRect(hwnd, NULL, FALSE);
-    RequestChromeRebuild(hwnd, 1);
-}
-
-static void LayoutViewport(HWND hwnd) {
-    if (!hwndViewport) return;
-
-    const ChromeLayout chrome = GetChromeLayout(hwnd);
-    RECT client = {};
-    GetClientRect(hwnd, &client);
-
-    const int x = chrome.railW + WELL_FRAME;
-    const int y = chrome.topH + WELL_FRAME;
-    const int w = MaxInt(1, client.right - client.left - chrome.railW - chrome.layerW - WELL_FRAME * 2);
-    int h = client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH - WELL_FRAME * 2;
-    if (h < 1) h = 1;
-
-    MoveWindow(hwndViewport, x, y, w, h, TRUE);
-    LayoutLayerPanel(hwnd);
-    LayoutChromeControls(hwnd);
-    UpdateScrollBars();
-}
-
-static void LayoutLayerPanel(HWND hwnd) {
-    if (!hwndLayerList && !hwndToggleLayers) return;
-
-    const ChromeLayout chrome = GetChromeLayout(hwnd);
-    RECT client = {};
-    GetClientRect(hwnd, &client);
-    const int panelX = client.right - chrome.layerW;
-    const int panelY = chrome.topH;
-    const int panelH = MaxInt(1, client.bottom - client.top - chrome.topH - chrome.bottomH - chrome.statusH);
-
-    if (hwndToggleLayers) {
-        const int tb = 22;
-        if (gLayersOpen) {
-            MoveWindow(hwndToggleLayers, panelX + chrome.layerW - tb - 6, panelY + 4, tb, tb, TRUE);
-        } else {
-            MoveWindow(hwndToggleLayers, panelX + (chrome.layerW - tb) / 2, panelY + 8, tb, tb, TRUE);
-        }
-    }
-
-    if (!gLayersOpen) return;
-
-    const int btn = 28;
-    const int pad = 10;
-    int y = panelY + 22; // room for LAYERS caption
-
-    if (hwndLayerAdd) MoveWindow(hwndLayerAdd, panelX + pad, y, btn, btn, TRUE);
-    if (hwndLayerDel) MoveWindow(hwndLayerDel, panelX + pad + btn + 4, y, btn, btn, TRUE);
-    if (hwndLayerUp) MoveWindow(hwndLayerUp, panelX + pad + (btn + 4) * 2, y, btn, btn, TRUE);
-    if (hwndLayerDown) MoveWindow(hwndLayerDown, panelX + pad + (btn + 4) * 3, y, btn, btn, TRUE);
-    y += btn + 8;
-
-    if (hwndLayerVisible) {
-        MoveWindow(hwndLayerVisible, panelX + pad, y, chrome.layerW - pad * 2, 22, TRUE);
-    }
-    y += 28;
-
-    // Reserve a quiet motif band above the opacity slider so fresco artwork reads.
-    const int opacityH = 28;
-    const int motifBand = 68;
-    const int listH = MaxInt(60, panelH - (y - panelY) - opacityH - motifBand - 14);
-    if (hwndLayerList) {
-        MoveWindow(hwndLayerList, panelX + pad, y, chrome.layerW - pad * 2, listH, TRUE);
-    }
-
-    if (hwndLayerOpacity) {
-        const int opacityY = panelY + panelH - opacityH - 8;
-        MoveWindow(hwndLayerOpacity, panelX + pad, opacityY, chrome.layerW - pad * 2, opacityH, TRUE);
-    }
-}
-
-static void LayoutChromeControls(HWND hwnd) {
-    const ChromeLayout chrome = GetChromeLayout(hwnd);
-    RECT client = {};
-    GetClientRect(hwnd, &client);
-    const int right = client.right - client.left;
-
-    // Top bar: brand | File…Help menus | undo cluster | doc actions
-    const int topY = (chrome.topH - ICON_BTN) / 2;
-    const int menuY = (chrome.topH - 22) / 2;
-    int x = BRAND_STRIP_W + 4;
-    for (int i = 0; i < 6; ++i) {
-        if (hwndMenuButtons[i]) {
-            MoveWindow(hwndMenuButtons[i], x, menuY, MENU_BTN_W, 22, TRUE);
-            x += MENU_BTN_W + 2;
-        }
-    }
-    x += 10;
-    if (hwndActionButtons[2]) MoveWindow(hwndActionButtons[2], x, topY, ICON_BTN, ICON_BTN, TRUE); // Undo
-    x += ICON_BTN + 4;
-    if (hwndActionButtons[3]) MoveWindow(hwndActionButtons[3], x, topY, ICON_BTN, ICON_BTN, TRUE); // Redo
-    x += ICON_BTN + 8;
-    if (hwndActionButtons[4]) MoveWindow(hwndActionButtons[4], x, topY, ICON_BTN, ICON_BTN, TRUE); // Clear
-
-    x = right - (IsRunningUnderWine() ? 0 : CAPTION_BTN_W * 3) - (ICON_BTN + 4) * 3 - 12;
-    if (hwndActionButtons[1]) MoveWindow(hwndActionButtons[1], x, topY, ICON_BTN, ICON_BTN, TRUE); // New
-    x += ICON_BTN + 4;
-    if (hwndActionButtons[6]) MoveWindow(hwndActionButtons[6], x, topY, ICON_BTN, ICON_BTN, TRUE); // Open
-    x += ICON_BTN + 4;
-    if (hwndActionButtons[5]) MoveWindow(hwndActionButtons[5], x, topY, ICON_BTN, ICON_BTN, TRUE); // Save
-
-    LayoutCaptionButtons(hwnd);
-
-    if (hwndBrand) {
-        MoveWindow(hwndBrand, 0, 0, BRAND_STRIP_W, chrome.topH, TRUE);
-    }
-
-    // Panel collapse controls on panel edges.
-    const int tb = 20;
-    if (hwndToggleRail) {
-        if (gRailOpen) {
-            MoveWindow(hwndToggleRail, chrome.railW - tb - 4, chrome.topH + 4, tb, tb, TRUE);
-        } else {
-            MoveWindow(hwndToggleRail, (chrome.railW - tb) / 2, chrome.topH + 6, tb, tb, TRUE);
-        }
-    }
-
-    // Bottom inspectors (hidden when gBottomOpen is false via ShowWindow).
-    if (gBottomOpen) {
-        const int bottomY = client.bottom - chrome.statusH - chrome.bottomH;
-        const int bottomX = chrome.railW + 10;
-        if (hwndSizeLabel) MoveWindow(hwndSizeLabel, bottomX, bottomY + 8, 34, 18, TRUE);
-        if (hwndSlider) MoveWindow(hwndSlider, bottomX + 36, bottomY + 2, 140, 28, TRUE);
-        if (hwndPenWidthBox) MoveWindow(hwndPenWidthBox, bottomX + 184, bottomY + 6, 40, 22, TRUE);
-        if (hwndOpacityLabel) MoveWindow(hwndOpacityLabel, bottomX + 236, bottomY + 8, 54, 18, TRUE);
-        if (hwndOpacitySlider) MoveWindow(hwndOpacitySlider, bottomX + 290, bottomY + 2, 140, 28, TRUE);
-        if (hwndOpacityBox) MoveWindow(hwndOpacityBox, bottomX + 438, bottomY + 6, 40, 22, TRUE);
-    }
-
-    if (!gRailOpen) {
-        (void)hwnd;
-        return;
-    }
-
-    // Docked tool rail + palette (skipped while floating).
-    const int railX = 8;
-    int y = chrome.topH + 26;
-    const int order[kToolButtonCount] = { 0, 1, 2, 3, 4, 5 };
-    for (int i = 0; i < kToolButtonCount; ++i) {
-        const int idx = order[i];
-        if (hwndToolButtons[idx]) {
-            MoveWindow(hwndToolButtons[idx], railX, y, ICON_BTN, ICON_BTN, TRUE);
-        }
-        y += ICON_BTN + 5;
-        if (i == 2 || i == 3) y += 4;
-    }
-
-    if (!gPaletteFloating) {
-        y += 6;
-        if (hwndBgButton) MoveWindow(hwndBgButton, railX + 14, y + 10, 20, 20, TRUE);
-        if (hwndActionButtons[0]) MoveWindow(hwndActionButtons[0], railX, y, 22, 22, TRUE);
-        if (hwndSwapColors) MoveWindow(hwndSwapColors, railX + 28, y - 2, 18, 18, TRUE);
-        y += 36;
-
-        if (hwndPalette) {
-            const int palW = chrome.railW - 10;
-            const int palH = AtelierPalette_IdealHeight(palW);
-            const int maxH = (client.bottom - chrome.statusH - chrome.bottomH) - y - 6;
-            const int h = (palH < maxH) ? palH : (maxH > 72 ? maxH : 72);
-            MoveWindow(hwndPalette, 5, y, palW, h, TRUE);
-        }
-    }
-
-    (void)hwnd;
 }
 
 void RefreshLayerList() {
@@ -1898,17 +1502,6 @@ static HWND CreateIconButton(HWND parent, int id, const char* tooltip, bool push
     return btn;
 }
 
-static void UpdateButtonTooltip(HWND parent, HWND btn, const char* text) {
-    if (!hwndTooltip || !btn || !text) return;
-    TOOLINFOA ti = {};
-    ti.cbSize = sizeof(ti);
-    ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-    ti.hwnd = parent;
-    ti.uId = (UINT_PTR)btn;
-    ti.lpszText = const_cast<char*>(text);
-    SendMessageA(hwndTooltip, TTM_UPDATETIPTEXTA, 0, (LPARAM)&ti);
-}
-
 static void SyncShapeFlyoutChecks() {
     const int shapeIds[6] = {
         IDC_SHAPE_RECT, IDC_SHAPE_ELLIPSE, IDC_SHAPE_TRIANGLE,
@@ -2158,181 +1751,6 @@ static void CreateToolbar(HWND hwnd) {
     UpdateOpacityDisplay();
 }
 
-static void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayout& chrome) {
-    g.SetSmoothingMode(SmoothingModeNone); // cache build: crisp fills, cheaper
-    g.SetCompositingMode(CompositingModeSourceCopy);
-
-    const Color stoneA(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg));
-    const Color stoneB(255, 226, 216, 200);
-    const Color deepA(255, GetRValue(gTheme.chromeDeep), GetGValue(gTheme.chromeDeep), GetBValue(gTheme.chromeDeep));
-    const Color deepB(255, 208, 196, 178);
-    const Color grain(26, 120, 92, 58);
-
-    // Clear full client so holes behind children stay theme-colored if clipped oddly.
-    SolidBrush clear(stoneA);
-    g.FillRectangle(&clear, 0, 0, width, height);
-    g.SetCompositingMode(CompositingModeSourceOver);
-
-    RectF topR(0.0f, 0.0f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH));
-    DrawFrescoPanel(g, topR, stoneA, stoneB, true);
-    DrawFrescoGrain(g, topR, grain);
-
-    RectF railR(0.0f, static_cast<REAL>(chrome.topH), static_cast<REAL>(chrome.railW),
-        static_cast<REAL>((height - chrome.statusH) - chrome.topH));
-    DrawFrescoPanel(g, railR, deepA, deepB, false);
-    DrawFrescoGrain(g, railR, grain);
-    DrawFrescoArtwork(g, railR, true); // Renaissance×futurism sketch watermark
-
-    RectF bottomR(static_cast<REAL>(chrome.railW),
-        static_cast<REAL>(height - chrome.statusH - chrome.bottomH),
-        static_cast<REAL>((width - chrome.layerW) - chrome.railW),
-        static_cast<REAL>(chrome.bottomH));
-    DrawFrescoPanel(g, bottomR, stoneB, stoneA, true);
-    DrawFrescoGrain(g, bottomR, grain);
-
-    RectF panelR(static_cast<REAL>(width - chrome.layerW), static_cast<REAL>(chrome.topH),
-        static_cast<REAL>(chrome.layerW),
-        static_cast<REAL>((height - chrome.statusH) - chrome.topH));
-    DrawFrescoPanel(g, panelR, stoneA, Color(255, 230, 220, 204), true);
-    DrawFrescoGrain(g, panelR, grain);
-    DrawFrescoArtwork(g, panelR, false); // armillary manuscript watermark
-
-    {
-        LinearGradientBrush wash(
-            PointF(0.0f, 0.0f), PointF(160.0f, 0.0f),
-            Color(40, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent)),
-            Color(0, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent)));
-        g.FillRectangle(&wash, RectF(0.0f, 0.0f, 160.0f, static_cast<REAL>(chrome.topH)));
-    }
-
-    Pen rule(Color(255, GetRValue(gTheme.chromeLine), GetGValue(gTheme.chromeLine), GetBValue(gTheme.chromeLine)), 1.15f);
-    g.DrawLine(&rule, 0.0f, static_cast<REAL>(chrome.topH) - 0.5f, static_cast<REAL>(width), static_cast<REAL>(chrome.topH) - 0.5f);
-    g.DrawLine(&rule, static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(chrome.topH),
-        static_cast<REAL>(chrome.railW) - 0.5f, static_cast<REAL>(height - chrome.statusH));
-    g.DrawLine(&rule, panelR.X, static_cast<REAL>(chrome.topH), panelR.X, static_cast<REAL>(height - chrome.statusH));
-    g.DrawLine(&rule, static_cast<REAL>(chrome.railW), bottomR.Y, panelR.X, bottomR.Y);
-
-    const Color bronze(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
-    const Color rim(255, GetRValue(gTheme.wellRim), GetGValue(gTheme.wellRim), GetBValue(gTheme.wellRim));
-    const Color gilt(255, GetRValue(gTheme.accent), GetGValue(gTheme.accent), GetBValue(gTheme.accent));
-
-    // Canvas mount: thin hairline + Renaissance corner/edge line-work.
-    RectF well(
-        static_cast<REAL>(chrome.railW),
-        static_cast<REAL>(chrome.topH),
-        static_cast<REAL>(width - chrome.railW - chrome.layerW),
-        static_cast<REAL>(height - chrome.topH - chrome.bottomH - chrome.statusH));
-    if (well.Width > 8 && well.Height > 8) {
-        DrawCanvasWell(g, well, rim, gilt);
-    }
-
-    // Thin HUD plates on instrument zones.
-    DrawHudCornerTicks(g, topR, bronze, 10.0f);
-    DrawHudCornerTicks(g, railR, bronze, 8.0f);
-    DrawHudCornerTicks(g, panelR, bronze, 8.0f);
-    DrawHudCornerTicks(g, bottomR, bronze, 8.0f);
-
-    // Section captions baked into fresco (manuscript × HUD).
-    HDC hdcCaps = g.GetHDC();
-    if (hdcCaps) {
-        HFONT caption = gUiFont;
-        HGDIOBJ old = caption ? SelectObject(hdcCaps, caption) : nullptr;
-        SetBkMode(hdcCaps, TRANSPARENT);
-        SetTextColor(hdcCaps, gTheme.accentDeep);
-        if (chrome.layerW > 64) {
-            TextOutA(hdcCaps, width - chrome.layerW + 10, chrome.topH + 4, "LAYERS", 6);
-        }
-        if (chrome.railW > 40) {
-            TextOutA(hdcCaps, chrome.railW + 14, height - chrome.statusH - chrome.bottomH + 6, "INSTRUMENT", 10);
-        }
-        if (old) SelectObject(hdcCaps, old);
-        g.ReleaseHDC(hdcCaps);
-    }
-}
-
-static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome) {
-    if (width < 1 || height < 1) return;
-    if (gChromeCache
-        && gChromeCacheW == width
-        && gChromeCacheH == height
-        && gChromeCacheStatusH == chrome.statusH
-        && gChromeCacheRailW == chrome.railW
-        && gChromeCacheLayerW == chrome.layerW) {
-        return;
-    }
-
-    DestroyChromeCache();
-    gChromeCache = MakeBitmap(width, height, PixelFormat32bppPARGB);
-    if (!gChromeCache) {
-        return;
-    }
-    gChromeCacheW = width;
-    gChromeCacheH = height;
-    gChromeCacheStatusH = chrome.statusH;
-    gChromeCacheRailW = chrome.railW;
-    gChromeCacheLayerW = chrome.layerW;
-
-    Graphics g(gChromeCache.get());
-    PaintChromeInto(g, width, height, chrome);
-
-    // Bake wordmark into the same bitmap (stable; no per-frame TextOut flicker).
-    HDC hdc = g.GetHDC();
-    if (hdc) {
-        HFONT brand = gBrandFont ? gBrandFont : gUiFont;
-        HGDIOBJ oldFont = brand ? SelectObject(hdc, brand) : nullptr;
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, gTheme.ink);
-        TextOutA(hdc, 48, (chrome.topH - 20) / 2, "ATELIER", 7);
-        if (oldFont) SelectObject(hdc, oldFont);
-        g.ReleaseHDC(hdc);
-    }
-}
-
-static void DrawToolbarBackgroundCheap(HDC hdc, const RECT& client, const ChromeLayout& chrome) {
-    // Solid fills only — used while resizing before the fresco cache is rebuilt.
-    RECT top = client; top.bottom = chrome.topH;
-    FillRect(hdc, &top, gChromeBrush);
-    RECT rail = client;
-    rail.top = chrome.topH;
-    rail.right = chrome.railW;
-    rail.bottom = client.bottom - chrome.statusH;
-    FillRect(hdc, &rail, gChromeDeepBrush ? gChromeDeepBrush : gChromeBrush);
-    RECT bottom = client;
-    bottom.top = client.bottom - chrome.statusH - chrome.bottomH;
-    bottom.bottom = client.bottom - chrome.statusH;
-    bottom.left = chrome.railW;
-    bottom.right = client.right - chrome.layerW;
-    FillRect(hdc, &bottom, gChromeBrush);
-    RECT panel = client;
-    panel.left = client.right - chrome.layerW;
-    panel.top = chrome.topH;
-    panel.bottom = client.bottom - chrome.statusH;
-    FillRect(hdc, &panel, gChromeBrush);
-    // Brand mark is owned by hwndBrand (WS_CLIPCHILDREN excludes it from parent paint).
-}
-
-static void DrawToolbarBackground(HDC hdc, HWND hwnd, const RECT& client) {
-    const ChromeLayout chrome = GetChromeLayout(hwnd);
-    const int width = client.right - client.left;
-    const int height = client.bottom - client.top;
-    if (width < 1 || height < 1) return;
-
-    const bool cacheReady = gChromeCache
-        && gChromeCacheW == width
-        && gChromeCacheH == height
-        && gChromeCacheStatusH == chrome.statusH
-        && gChromeCacheRailW == chrome.railW
-        && gChromeCacheLayerW == chrome.layerW;
-    if (!cacheReady) {
-        DrawToolbarBackgroundCheap(hdc, client, chrome);
-    } else {
-        Graphics g(hdc);
-        g.SetCompositingMode(CompositingModeSourceCopy);
-        g.SetInterpolationMode(InterpolationModeNearestNeighbor);
-        g.DrawImage(gChromeCache.get(), 0, 0, width, height);
-    }
-}
-
 static void CreateLayerPanel(HWND hwnd) {
     hwndLayerAdd = CreateIconButton(hwnd, IDC_LAYER_ADD, "Add layer", false);
     hwndLayerDel = CreateIconButton(hwnd, IDC_LAYER_DEL, "Delete layer", false);
@@ -2422,7 +1840,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         UpdateWindowTitle(hwnd);
         EnableCustomTitleBar(hwnd);
         CreateCaptionButtons(hwnd);
-        LayoutChromeControls(hwnd);
         // Fresco cache once; low-rate idle motion (pauses while drawing/resizing).
         RequestChromeRebuild(hwnd, 1);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
@@ -2889,19 +2306,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case IDM_CUT:
-            DoCut(hwnd);
+            CutSelection(hwnd);
             break;
         case IDM_COPY:
-            DoCopy(hwnd);
+            CopySelection(hwnd);
             break;
         case IDM_PASTE:
-            DoPaste(hwnd);
+            PasteSelection(hwnd);
             break;
         case IDM_DELETE_SEL:
-            DoDeleteSelection(hwnd);
+            DeleteSelection(hwnd);
             break;
         case IDM_SELECT_ALL:
-            DoSelectAll(hwnd);
+            SelectAll(hwnd);
             break;
         case IDM_ZOOM_IN:
             ZoomByFactor(hwnd, ZOOM_STEP);
@@ -2923,7 +2340,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         case IDC_NEW_BUTTON:
         case IDM_NEW:
-            DoNew(hwnd);
+            NewDocument(hwnd);
             break;
         case IDC_CAPTION_MIN:
             SendMessageA(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
@@ -2941,22 +2358,22 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         case IDC_UNDO_BUTTON:
         case IDM_UNDO:
-            DoUndo(hwnd);
+            UndoDocument(hwnd);
             break;
         case IDC_REDO_BUTTON:
         case IDM_REDO:
-            DoRedo(hwnd);
+            RedoDocument(hwnd);
             break;
         case IDC_SAVE_BUTTON:
         case IDM_SAVE:
-            DoSave(hwnd);
+            SaveDocument(hwnd);
             break;
         case IDC_LOAD_BUTTON:
         case IDM_OPEN:
-            DoOpen(hwnd);
+            OpenDocument(hwnd);
             break;
         case IDM_CANVAS_SIZE:
-            DoCanvasSize(hwnd);
+            ResizeCanvas(hwnd);
             break;
         case IDM_ABOUT:
             DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_ABOUTBOX), hwnd, AboutDlgProc);

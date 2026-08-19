@@ -231,7 +231,7 @@ void DrawSelectionOverlay(Graphics* g) {
     }
 }
 
-void DoCopy(HWND hwnd) {
+void CopySelection(HWND hwnd) {
     Bitmap* shot = CaptureSelectionPixels();
     if (!shot) return;
     CopyBitmapToWinClipboard(shot);
@@ -239,7 +239,7 @@ void DoCopy(HWND hwnd) {
     (void)hwnd;
 }
 
-void DoDeleteSelection(HWND hwnd) {
+void DeleteSelection(HWND hwnd) {
     if (!gSel.hasMarquee) return;
     EnsureCanvas(hwnd);
     gHistory.Push(gLayers);
@@ -272,13 +272,13 @@ void DoDeleteSelection(HWND hwnd) {
     PublishSelectionChanged(hwnd);
 }
 
-void DoCut(HWND hwnd) {
+void CutSelection(HWND hwnd) {
     if (!gSel.hasMarquee) return;
-    DoCopy(hwnd);
-    DoDeleteSelection(hwnd);
+    CopySelection(hwnd);
+    DeleteSelection(hwnd);
 }
 
-void DoPaste(HWND hwnd) {
+void PasteSelection(HWND hwnd) {
     EnsureCanvas(hwnd);
     Bitmap* src = nullptr;
     if (gClipboardBmp) {
@@ -316,7 +316,7 @@ void DoPaste(HWND hwnd) {
     PublishSelectionChanged(hwnd);
 }
 
-void DoSelectAll(HWND hwnd) {
+void SelectAll(HWND hwnd) {
     EnsureCanvas(hwnd);
     ClearSelection(true);
     SetActiveTool(DrawTool::Select);

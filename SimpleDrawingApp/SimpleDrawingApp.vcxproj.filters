@@ -72,6 +72,12 @@
     <ClInclude Include="UiFramework.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UiChromeLayout.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UiChromeRender.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="AppMetrics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -90,6 +96,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SimpleDrawingApp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UiFramework.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UiChromeLayout.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UiChromeRender.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="EventBus.cpp">

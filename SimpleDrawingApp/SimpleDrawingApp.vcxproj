@@ -140,6 +140,8 @@
     <ClInclude Include="AppApi.h" />
     <ClInclude Include="EventBus.h" />
     <ClInclude Include="UiFramework.h" />
+    <ClInclude Include="UiChromeLayout.h" />
+    <ClInclude Include="UiChromeRender.h" />
     <ClInclude Include="AppDocument.h" />
     <ClInclude Include="AppMetrics.h" />
     <ClInclude Include="AppSelection.h" />
@@ -161,6 +163,9 @@
     <ClInclude Include="UiChrome.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="UiFramework.cpp" />
+    <ClCompile Include="UiChromeLayout.cpp" />
+    <ClCompile Include="UiChromeRender.cpp" />
     <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />

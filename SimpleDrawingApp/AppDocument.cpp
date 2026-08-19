@@ -180,7 +180,7 @@ INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
     return FALSE;
 }
 
-void DoCanvasSize(HWND hwnd) {
+void ResizeCanvas(HWND hwnd) {
     gCanvasDlgWidth = docWidth;
     gCanvasDlgHeight = docHeight;
     if (DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_CANVAS_SIZE), hwnd, CanvasSizeDlgProc) == IDOK) {
@@ -202,7 +202,7 @@ bool PromptSaveIfDirty(HWND hwnd) {
     return !documentDirty;
 }
 
-void DoSave(HWND hwnd) {
+void SaveDocument(HWND hwnd) {
     EnsureCanvas(hwnd);
     char filePath[MAX_PATH] = "";
     OPENFILENAMEA ofn = {};
@@ -226,7 +226,7 @@ void DoSave(HWND hwnd) {
     }
 }
 
-void DoOpen(HWND hwnd) {
+void OpenDocument(HWND hwnd) {
     if (!PromptSaveIfDirty(hwnd)) return;
 
     char filePath[MAX_PATH] = "";
@@ -270,7 +270,7 @@ void DoOpen(HWND hwnd) {
     }
 }
 
-void DoNew(HWND hwnd) {
+void NewDocument(HWND hwnd) {
     if (!PromptSaveIfDirty(hwnd)) return;
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
@@ -286,7 +286,7 @@ void DoNew(HWND hwnd) {
     UpdateStatusBar(hwnd);
 }
 
-void DoUndo(HWND hwnd) {
+void UndoDocument(HWND hwnd) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
@@ -302,7 +302,7 @@ void DoUndo(HWND hwnd) {
     }
 }
 
-void DoRedo(HWND hwnd) {
+void RedoDocument(HWND hwnd) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
