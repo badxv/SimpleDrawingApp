@@ -11,6 +11,4 @@ void UpdatePenWidthDisplay();
 void UpdateOpacityDisplay();
 void UpdateStatusBar(HWND hwnd);
 void UpdateWindowTitle(HWND hwnd);
-void DockPaletteInstruments(HWND mainHwnd);
-void UndockPaletteInstruments(HWND mainHwnd);
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

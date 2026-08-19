@@ -5,7 +5,8 @@
 #include "EventBus.h"
 #include "CaptionBar.h"
 #include "AtelierPalette.h"
-#include "SimpleDrawingApp.h"
+#include "UiPaletteFloat.h"
+#include "UiShapeFlyout.h"
 #include <commctrl.h>
 
 namespace {

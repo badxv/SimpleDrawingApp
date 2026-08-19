@@ -161,6 +161,5 @@ void BeginStrokeLayer();
 void CommitStrokeLayer();
 void RefreshLayerList();
 void SetActiveTool(DrawTool tool);
-void CloseShapeFlyout();
 int ScaledContentWidth();
 int ScaledContentHeight();
