@@ -135,6 +135,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AtelierEvents.h" />
+    <ClInclude Include="AtelierRaii.h" />
+    <ClInclude Include="AppApi.h" />
+    <ClInclude Include="EventBus.h" />
+    <ClInclude Include="UiFramework.h" />
     <ClInclude Include="AppDocument.h" />
     <ClInclude Include="AppMetrics.h" />
     <ClInclude Include="AppSelection.h" />
@@ -156,6 +161,7 @@
     <ClInclude Include="UiChrome.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />
     <ClCompile Include="AppState.cpp" />

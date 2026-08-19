@@ -7,6 +7,8 @@
 #include "CaptionBar.h"
 #include "AppSelection.h"
 #include "AppDocument.h"
+#include "EventBus.h"
+#include "AtelierEvents.h"
 #include "FileManager.h"
 #include "ColorPicker.h"
 #include "LayerHistory.h"
@@ -137,14 +139,20 @@ void UpdateStatusBar(HWND hwnd) {
 
 void MarkDirty(HWND hwnd) {
     documentDirty = true;
-    UpdateWindowTitle(hwnd);
-    UpdateStatusBar(hwnd);
+    EventPayload payload{};
+    payload.type = AtelierEvent::DocumentDirtyChanged;
+    payload.hwnd = hwnd;
+    payload.documentDirty = true;
+    AppEventBus().Publish(payload);
 }
 
 void MarkClean(HWND hwnd) {
     documentDirty = false;
-    UpdateWindowTitle(hwnd);
-    UpdateStatusBar(hwnd);
+    EventPayload payload{};
+    payload.type = AtelierEvent::DocumentDirtyChanged;
+    payload.hwnd = hwnd;
+    payload.documentDirty = false;
+    AppEventBus().Publish(payload);
 }
 
 static void ApplyUiFont(HWND control) {
@@ -174,6 +182,12 @@ void SetActiveTool(DrawTool tool) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
     SyncShapeFlyoutChecks();
+    if (changed) {
+        EventPayload payload{};
+        payload.type = AtelierEvent::ActiveToolChanged;
+        payload.tool = tool;
+        AppEventBus().Publish(payload);
+    }
 }
 
 static void InvalidateActiveToolButton() {
@@ -3081,6 +3095,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         DestroyStrokeLayer();
         Selection_Shutdown();
+        ShutdownAppEventHandlers();
         gHistory.Clear();
         DestroyCompositeCache();
         DestroyChromeCache();
@@ -3228,6 +3243,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     DrawMenuBar(hwnd);
 
     gAccel = LoadAcceleratorsA(hInstance, MAKEINTRESOURCEA(IDC_SIMPLEDRAWINGAPP));
+
+    InitAppEventHandlers();
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);

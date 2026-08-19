@@ -2,10 +2,26 @@
 #include "AppState.h"
 #include "SimpleDrawingApp.h"
 #include "Resource.h"
+#include "AtelierRaii.h"
+#include "EventBus.h"
+#include "AtelierEvents.h"
 #include <windowsx.h>
 #include <cmath>
 
 using namespace Gdiplus;
+using Atelier::MakeBitmap;
+
+namespace {
+
+void PublishSelectionChanged(HWND hwnd) {
+    EventPayload payload{};
+    payload.type = AtelierEvent::SelectionChanged;
+    payload.hwnd = hwnd;
+    payload.hasSelection = gSel.hasMarquee && gSel.w >= 1 && gSel.h >= 1;
+    AppEventBus().Publish(payload);
+}
+
+}  // namespace
 
 void DestroySelFloat() {
     delete gSel.floatBmp;
@@ -24,6 +40,7 @@ void ClearSelection(bool stampFloating) {
     gSel.creating = false;
     gSel.moving = false;
     gSel.x = gSel.y = gSel.w = gSel.h = 0;
+    PublishSelectionChanged(nullptr);
 }
 
 void NormalizeSelRect(int x0, int y0, int x1, int y1, int& x, int& y, int& w, int& h) {
@@ -49,15 +66,12 @@ bool SelectionHitTest(int docX, int docY) {
 
 Bitmap* CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
     if (!src || w < 1 || h < 1) return nullptr;
-    Bitmap* out = new Bitmap(w, h, PixelFormat32bppARGB);
-    if (!out || out->GetLastStatus() != Ok) {
-        delete out;
-        return nullptr;
-    }
-    Graphics g(out);
+    Atelier::GdiplusBitmapPtr owned = MakeBitmap(w, h, PixelFormat32bppARGB);
+    if (!owned) return nullptr;
+    Graphics g(owned.get());
     g.Clear(Color(0, 0, 0, 0));
     g.DrawImage(src, Rect(0, 0, w, h), x, y, w, h, UnitPixel);
-    return out;
+    return owned.release();
 }
 
 void LiftSelection() {
@@ -257,6 +271,7 @@ void DoDeleteSelection(HWND hwnd) {
     MarkDirty(hwnd);
     InvalidateCanvas();
     UpdateStatusBar(hwnd);
+    PublishSelectionChanged(hwnd);
 }
 
 void DoCut(HWND hwnd) {
@@ -300,6 +315,7 @@ void DoPaste(HWND hwnd) {
     MarkDirty(hwnd);
     InvalidateCanvas();
     UpdateStatusBar(hwnd);
+    PublishSelectionChanged(hwnd);
 }
 
 void DoSelectAll(HWND hwnd) {
@@ -313,6 +329,7 @@ void DoSelectAll(HWND hwnd) {
     gSel.h = docHeight;
     InvalidateCanvas();
     UpdateStatusBar(hwnd);
+    PublishSelectionChanged(hwnd);
 }
 
 
