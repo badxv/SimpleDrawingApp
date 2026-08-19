@@ -24,15 +24,14 @@ void PublishSelectionChanged(HWND hwnd) {
 }  // namespace
 
 void DestroySelFloat() {
-    delete gSel.floatBmp;
-    gSel.floatBmp = nullptr;
+    gSel.floatBmp.reset();
     gSel.isFloating = false;
 }
 
 void ClearSelection(bool stampFloating) {
     Graphics* ag = gLayers.ActiveGraphics();
     if (stampFloating && gSel.isFloating && gSel.floatBmp && ag) {
-        ag->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+        ag->DrawImage(gSel.floatBmp.get(), gSel.x, gSel.y);
         InvalidateComposite();
     }
     DestroySelFloat();
@@ -81,7 +80,7 @@ void LiftSelection() {
     if (gSel.w < 1 || gSel.h < 1) return;
 
     DestroySelFloat();
-    gSel.floatBmp = CloneBitmapRect(ab, gSel.x, gSel.y, gSel.w, gSel.h);
+    gSel.floatBmp.reset(CloneBitmapRect(ab, gSel.x, gSel.y, gSel.w, gSel.h));
     if (!gSel.floatBmp) return;
 
     const Layer* layer = gLayers.ActiveLayer();
@@ -101,7 +100,7 @@ void LiftSelection() {
 void StampFloatingSelection() {
     Graphics* ag = gLayers.ActiveGraphics();
     if (!gSel.isFloating || !gSel.floatBmp || !ag) return;
-    ag->DrawImage(gSel.floatBmp, gSel.x, gSel.y);
+    ag->DrawImage(gSel.floatBmp.get(), gSel.x, gSel.y);
     DestroySelFloat();
     InvalidateComposite();
 }
@@ -109,14 +108,13 @@ void StampFloatingSelection() {
 Bitmap* CaptureSelectionPixels() {
     if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return nullptr;
     if (gSel.isFloating && gSel.floatBmp) {
-        return CloneBitmapRect(gSel.floatBmp, 0, 0, gSel.w, gSel.h);
+        return CloneBitmapRect(gSel.floatBmp.get(), 0, 0, gSel.w, gSel.h);
     }
     return CloneBitmapRect(gLayers.ActiveBitmap(), gSel.x, gSel.y, gSel.w, gSel.h);
 }
 
 void SetInternalClipboard(Bitmap* bmp) {
-    delete gClipboardBmp;
-    gClipboardBmp = bmp;
+    gClipboardBmp.reset(bmp);
 }
 
 bool CopyBitmapToWinClipboard(Bitmap* bmp) {
@@ -161,7 +159,7 @@ void DrawSelectionOverlay(Graphics* g) {
 
     if (gSel.isFloating && gSel.floatBmp) {
         g->DrawImage(
-            gSel.floatBmp,
+            gSel.floatBmp.get(),
             RectF(
                 gSel.x * zoomFactor,
                 gSel.y * zoomFactor,
@@ -285,7 +283,7 @@ void DoPaste(HWND hwnd) {
     Bitmap* src = nullptr;
     if (gClipboardBmp) {
         src = CloneBitmapRect(
-            gClipboardBmp, 0, 0,
+            gClipboardBmp.get(), 0, 0,
             static_cast<int>(gClipboardBmp->GetWidth()),
             static_cast<int>(gClipboardBmp->GetHeight()));
     }
@@ -307,7 +305,7 @@ void DoPaste(HWND hwnd) {
     gHistory.Push(gLayers);
     gSel.hasMarquee = true;
     gSel.isFloating = true;
-    gSel.floatBmp = src;
+    gSel.floatBmp.reset(src);
     gSel.x = pasteX;
     gSel.y = pasteY;
     gSel.w = w;
@@ -335,6 +333,5 @@ void DoSelectAll(HWND hwnd) {
 
 void Selection_Shutdown() {
     ClearSelection(false);
-    delete gClipboardBmp;
-    gClipboardBmp = nullptr;
+    gClipboardBmp.reset();
 }

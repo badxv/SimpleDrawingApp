@@ -1,4 +1,6 @@
 #include "EventBus.h"
+#include "AppState.h"
+#include "AppMetrics.h"
 #include "SimpleDrawingApp.h"
 
 namespace {
@@ -30,6 +32,25 @@ void EventBus::Clear() {
     }
 }
 
+void RequestChromeRebuild(HWND hwnd, unsigned int delayMs) {
+    if (hwnd) {
+        SetTimer(hwnd, IDT_CHROME_REBUILD, delayMs, NULL);
+    }
+    EventPayload payload{};
+    payload.type = AtelierEvent::ChromeRebuildRequested;
+    payload.hwnd = hwnd;
+    AppEventBus().Publish(payload);
+}
+
+void PublishLayerListChanged(HWND hwnd) {
+    EventPayload payload{};
+    payload.type = AtelierEvent::LayerListChanged;
+    payload.hwnd = hwnd;
+    payload.activeLayerIndex = gLayers.ActiveIndex();
+    payload.layerCount = gLayers.Count();
+    AppEventBus().Publish(payload);
+}
+
 void InitAppEventHandlers() {
     if (gHandlersInstalled) return;
     gHandlersInstalled = true;
@@ -38,6 +59,15 @@ void InitAppEventHandlers() {
         if (!e.hwnd) return;
         UpdateWindowTitle(e.hwnd);
         UpdateStatusBar(e.hwnd);
+    });
+
+    AppEventBus().Subscribe(AtelierEvent::ChromeRebuildRequested, [](const EventPayload& e) {
+        if (hwndBrand) {
+            InvalidateRect(hwndBrand, NULL, FALSE);
+        }
+        if (e.hwnd) {
+            InvalidateRect(e.hwnd, NULL, FALSE);
+        }
     });
 }
 

@@ -4,6 +4,7 @@
 #include <objidl.h>
 #include <gdiplus.h>
 #include "AppMetrics.h"
+#include "AtelierRaii.h"
 #include "DrawingTools.h"
 #include "LayerHistory.h"
 #include "LayerStack.h"
@@ -22,7 +23,7 @@ struct SelectionState {
     int anchorY = 0;
     int grabDX = 0;
     int grabDY = 0;
-    Gdiplus::Bitmap* floatBmp = nullptr;
+    Atelier::GdiplusBitmapPtr floatBmp;
 };
 
 extern AppTheme gTheme;
@@ -81,14 +82,14 @@ extern float gIdlePhase;
 extern float gSelAntOffset;
 extern bool gUiSizing;
 
-extern Gdiplus::Bitmap* gChromeCache;
+extern Atelier::GdiplusBitmapPtr gChromeCache;
 extern int gChromeCacheW;
 extern int gChromeCacheH;
 extern int gChromeCacheStatusH;
 extern int gChromeCacheRailW;
 extern int gChromeCacheLayerW;
-extern Gdiplus::Bitmap* gBrandStrip;
-extern HBITMAP gBrandStripHbmp;
+extern Atelier::GdiplusBitmapPtr gBrandStrip;
+extern Atelier::WinBitmapHandle gBrandStripHbmp;
 extern int gBrandStripH;
 
 extern bool gRailOpen;
@@ -112,11 +113,11 @@ extern int scrollY;
 extern float zoomFactor;
 
 extern SelectionState gSel;
-extern Gdiplus::Bitmap* gClipboardBmp;
-extern Gdiplus::Bitmap* compositeCache;
+extern Atelier::GdiplusBitmapPtr gClipboardBmp;
+extern Atelier::GdiplusBitmapPtr compositeCache;
 extern bool compositeDirty;
-extern Gdiplus::Bitmap* strokeLayer;
-extern Gdiplus::Graphics* strokeGraphics;
+extern Atelier::GdiplusBitmapPtr strokeLayer;
+extern Atelier::GdiplusGraphicsPtr strokeGraphics;
 
 extern COLORREF penColor;
 extern COLORREF backColor;

@@ -19,3 +19,5 @@ private:
 EventBus& AppEventBus();
 void InitAppEventHandlers();
 void ShutdownAppEventHandlers();
+void RequestChromeRebuild(HWND hwnd, unsigned int delayMs = 1);
+void PublishLayerListChanged(HWND hwnd);

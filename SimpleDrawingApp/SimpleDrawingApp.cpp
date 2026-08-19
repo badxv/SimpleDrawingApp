@@ -9,6 +9,7 @@
 #include "AppDocument.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
+#include "AtelierRaii.h"
 #include "FileManager.h"
 #include "ColorPicker.h"
 #include "LayerHistory.h"
@@ -36,6 +37,8 @@
 #pragma comment(lib, "Dwmapi.lib")
 
 using namespace Gdiplus;
+using Atelier::MakeBitmap;
+using Atelier::MakeGraphics;
 
 namespace {
 const char CLASS_NAME[] = "SimpleDrawingAppWindowClass";
@@ -250,18 +253,13 @@ static bool ShouldRunIdleMotion(HWND hwnd) {
 }
 
 static void DestroyBrandStrip() {
-    delete gBrandStrip;
-    gBrandStrip = nullptr;
-    if (gBrandStripHbmp) {
-        DeleteObject(gBrandStripHbmp);
-        gBrandStripHbmp = nullptr;
-    }
+    gBrandStrip.reset();
+    gBrandStripHbmp.reset();
     gBrandStripH = 0;
 }
 
 static void DestroyChromeCache() {
-    delete gChromeCache;
-    gChromeCache = nullptr;
+    gChromeCache.reset();
     gChromeCacheW = 0;
     gChromeCacheH = 0;
     gChromeCacheStatusH = -1;
@@ -274,10 +272,8 @@ static void EnsureBrandStrip(int topH) {
     if (topH < 1) return;
     if (!gBrandStrip || gBrandStripH != topH) {
         DestroyBrandStrip();
-        gBrandStrip = new Bitmap(BRAND_STRIP_W, topH, PixelFormat32bppPARGB);
-        if (!gBrandStrip || gBrandStrip->GetLastStatus() != Ok) {
-            delete gBrandStrip;
-            gBrandStrip = nullptr;
+        gBrandStrip = MakeBitmap(BRAND_STRIP_W, topH, PixelFormat32bppPARGB);
+        if (!gBrandStrip) {
             gBrandStripH = 0;
             return;
         }
@@ -285,13 +281,13 @@ static void EnsureBrandStrip(int topH) {
     }
     if (!gBrandStrip) return;
 
-    Graphics g(gBrandStrip);
+    Graphics g(gBrandStrip.get());
     g.SetCompositingMode(CompositingModeSourceCopy);
     g.SetInterpolationMode(InterpolationModeNearestNeighbor);
 
     if (gChromeCache && gChromeCacheW >= BRAND_STRIP_W && gChromeCacheH >= topH) {
         g.DrawImage(
-            gChromeCache,
+            gChromeCache.get(),
             Rect(0, 0, BRAND_STRIP_W, topH),
             0, 0, BRAND_STRIP_W, topH,
             UnitPixel);
@@ -318,14 +314,13 @@ static void EnsureBrandStrip(int topH) {
     DrawBrandCompass(g, 25.0f, static_cast<REAL>(topH) * 0.5f, 11.0f, gold, gUiCompassAngle);
 
     // Refresh GDI bitmap for a single BitBlt to the brand child (no multi-step screen draws).
-    if (gBrandStripHbmp) {
-        DeleteObject(gBrandStripHbmp);
-        gBrandStripHbmp = nullptr;
-    }
+    HBITMAP hb = nullptr;
     if (gBrandStrip->GetHBITMAP(
             Color(255, GetRValue(gTheme.chromeBg), GetGValue(gTheme.chromeBg), GetBValue(gTheme.chromeBg)),
-            &gBrandStripHbmp) != Ok) {
-        gBrandStripHbmp = nullptr;
+            &hb) == Ok && hb) {
+        gBrandStripHbmp.reset(hb);
+    } else {
+        gBrandStripHbmp.reset();
     }
 }
 
@@ -335,7 +330,7 @@ static void PaintBrandChild(HDC hdc, int width, int height) {
     if (gBrandStripHbmp) {
         HDC mem = CreateCompatibleDC(hdc);
         if (mem) {
-            HGDIOBJ old = SelectObject(mem, gBrandStripHbmp);
+            HGDIOBJ old = SelectObject(mem, gBrandStripHbmp.get());
             BitBlt(hdc, 0, 0, width, height, mem, 0, 0, SRCCOPY);
             SelectObject(mem, old);
             DeleteDC(mem);
@@ -346,7 +341,7 @@ static void PaintBrandChild(HDC hdc, int width, int height) {
     if (gBrandStrip) {
         Graphics g(hdc);
         g.SetCompositingMode(CompositingModeSourceCopy);
-        g.DrawImage(gBrandStrip, 0, 0, width, height);
+        g.DrawImage(gBrandStrip.get(), 0, 0, width, height);
     }
 }
 
@@ -450,8 +445,7 @@ void EnsureCanvas(HWND hwnd) {
 }
 
 void DestroyCompositeCache() {
-    delete compositeCache;
-    compositeCache = nullptr;
+    compositeCache.reset();
     compositeDirty = true;
 }
 
@@ -461,18 +455,16 @@ void InvalidateComposite() {
 
 Bitmap* GetCompositeBitmap() {
     if (!compositeDirty && compositeCache) {
-        return compositeCache;
+        return compositeCache.get();
     }
     Bitmap* next = gLayers.CreateComposite();
     if (!next) {
-        // Keep previous cache if any; stay dirty so we retry.
         compositeDirty = true;
-        return compositeCache;
+        return compositeCache.get();
     }
-    delete compositeCache;
-    compositeCache = next;
+    compositeCache.reset(next);
     compositeDirty = false;
-    return compositeCache;
+    return compositeCache.get();
 }
 
 void UpdateScrollBars() {
@@ -783,7 +775,7 @@ static void SetRailOpen(HWND hwnd, bool open) {
     LayoutViewport(hwnd);
     if (hwndToggleRail) InvalidateRect(hwndToggleRail, NULL, FALSE);
     InvalidateRect(hwnd, NULL, FALSE);
-    SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+    RequestChromeRebuild(hwnd, 1);
 }
 
 static void SetLayersOpen(HWND hwnd, bool open) {
@@ -795,7 +787,7 @@ static void SetLayersOpen(HWND hwnd, bool open) {
     LayoutViewport(hwnd);
     if (hwndToggleLayers) InvalidateRect(hwndToggleLayers, NULL, FALSE);
     InvalidateRect(hwnd, NULL, FALSE);
-    SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+    RequestChromeRebuild(hwnd, 1);
 }
 
 static void SetBottomOpen(HWND hwnd, bool open) {
@@ -805,7 +797,7 @@ static void SetBottomOpen(HWND hwnd, bool open) {
     DestroyChromeCache();
     LayoutViewport(hwnd);
     InvalidateRect(hwnd, NULL, FALSE);
-    SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+    RequestChromeRebuild(hwnd, 1);
 }
 
 static void LayoutViewport(HWND hwnd) {
@@ -1011,6 +1003,9 @@ void RefreshLayerList() {
         SendMessage(hwndLayerOpacity, TBM_SETPOS, TRUE, opacity);
     }
     suppressLayerNotify = false;
+
+    HWND mainWnd = hwndLayerList ? GetAncestor(hwndLayerList, GA_ROOT) : nullptr;
+    PublishLayerListChanged(mainWnd);
 }
 
 static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
@@ -1177,10 +1172,8 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
 }
 
 void DestroyStrokeLayer() {
-    delete strokeGraphics;
-    delete strokeLayer;
-    strokeGraphics = nullptr;
-    strokeLayer = nullptr;
+    strokeGraphics.reset();
+    strokeLayer.reset();
 }
 
 void BeginStrokeLayer() {
@@ -1189,13 +1182,12 @@ void BeginStrokeLayer() {
 
     const int width = gLayers.Width();
     const int height = gLayers.Height();
-    strokeLayer = new Bitmap(width, height, PixelFormat32bppARGB);
-    if (!strokeLayer || strokeLayer->GetLastStatus() != Ok) {
-        DestroyStrokeLayer();
+    strokeLayer = MakeBitmap(width, height, PixelFormat32bppARGB);
+    if (!strokeLayer) {
         return;
     }
-    strokeGraphics = Graphics::FromImage(strokeLayer);
-    if (!strokeGraphics || strokeGraphics->GetLastStatus() != Ok) {
+    strokeGraphics = MakeGraphics(strokeLayer.get());
+    if (!strokeGraphics) {
         DestroyStrokeLayer();
         return;
     }
@@ -1363,7 +1355,7 @@ void RedrawShapePreview(int endX, int endY, bool shiftConstrained) {
         ConstrainShapeEnd(shapeStart.x, shapeStart.y, x1, y1);
     }
     strokeGraphics->Clear(Color(0, 0, 0, 0));
-    DrawShapeOnto(strokeGraphics, shapeStart.x, shapeStart.y, x1, y1);
+    DrawShapeOnto(strokeGraphics.get(), shapeStart.x, shapeStart.y, x1, y1);
     lastPoint.x = x1;
     lastPoint.y = y1;
 }
@@ -1393,7 +1385,7 @@ void DrawStrokeLayerWithOpacity(Graphics* dest, int destX, int destY) {
     const int width = static_cast<int>(strokeLayer->GetWidth());
     const int height = static_cast<int>(strokeLayer->GetHeight());
     dest->DrawImage(
-        strokeLayer,
+        strokeLayer.get(),
         Rect(destX, destY, width, height),
         0, 0, width, height,
         UnitPixel,
@@ -1517,7 +1509,7 @@ void CommitStrokeLayer() {
     const Layer* layer = gLayers.ActiveLayer();
     const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
     if (eraseTransparent) {
-        ApplyTransparentEraseMask(gLayers.ActiveBitmap(), strokeLayer);
+        ApplyTransparentEraseMask(gLayers.ActiveBitmap(), strokeLayer.get());
     }
     else {
         DrawStrokeLayerWithOpacity(ag, 0, 0);
@@ -1687,7 +1679,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         shapeStart.y = docY;
 
         if (IsFreehandTool(currentTool)) {
-            DrawStrokeOnto(strokeGraphics, docX, docY, docX, docY);
+            DrawStrokeOnto(strokeGraphics.get(), docX, docY, docX, docY);
         }
         else if (IsShapeTool(currentTool)) {
             RedrawShapePreview(docX, docY, (wParam & MK_SHIFT) != 0);
@@ -1720,7 +1712,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         if (!ViewportToDocument(localX, localY, docX, docY)) break;
 
         if (IsFreehandTool(currentTool)) {
-            DrawStrokeOnto(strokeGraphics, lastPoint.x, lastPoint.y, docX, docY);
+            DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, docX, docY);
             lastPoint.x = docX;
             lastPoint.y = docY;
             InvalidateCanvas();
@@ -1825,7 +1817,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                     && layer && !layer->isBackground;
 
                 if (erasePreview) {
-                    Bitmap* preview = CreateErasePreviewComposite(strokeLayer);
+                    Bitmap* preview = CreateErasePreviewComposite(strokeLayer.get());
                     if (preview) {
                         g.DrawImage(preview, dest);
                         delete preview;
@@ -1848,7 +1840,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                         ImageAttributes attrs;
                         attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
                         g.DrawImage(
-                            strokeLayer,
+                            strokeLayer.get(),
                             dest,
                             0, 0,
                             static_cast<int>(strokeLayer->GetWidth()),
@@ -2270,10 +2262,8 @@ static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome)
     }
 
     DestroyChromeCache();
-    gChromeCache = new Bitmap(width, height, PixelFormat32bppPARGB);
-    if (!gChromeCache || gChromeCache->GetLastStatus() != Ok) {
-        delete gChromeCache;
-        gChromeCache = nullptr;
+    gChromeCache = MakeBitmap(width, height, PixelFormat32bppPARGB);
+    if (!gChromeCache) {
         return;
     }
     gChromeCacheW = width;
@@ -2282,7 +2272,7 @@ static void EnsureChromeCache(int width, int height, const ChromeLayout& chrome)
     gChromeCacheRailW = chrome.railW;
     gChromeCacheLayerW = chrome.layerW;
 
-    Graphics g(gChromeCache);
+    Graphics g(gChromeCache.get());
     PaintChromeInto(g, width, height, chrome);
 
     // Bake wordmark into the same bitmap (stable; no per-frame TextOut flicker).
@@ -2339,7 +2329,7 @@ static void DrawToolbarBackground(HDC hdc, HWND hwnd, const RECT& client) {
         Graphics g(hdc);
         g.SetCompositingMode(CompositingModeSourceCopy);
         g.SetInterpolationMode(InterpolationModeNearestNeighbor);
-        g.DrawImage(gChromeCache, 0, 0, width, height);
+        g.DrawImage(gChromeCache.get(), 0, 0, width, height);
     }
 }
 
@@ -2434,7 +2424,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         CreateCaptionButtons(hwnd);
         LayoutChromeControls(hwnd);
         // Fresco cache once; low-rate idle motion (pauses while drawing/resizing).
-        SetTimer(hwnd, IDT_CHROME_REBUILD, 1, NULL);
+        RequestChromeRebuild(hwnd, 1);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
         break;
     }
@@ -2554,7 +2544,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (gChromeCache && dis->hwndItem) {
                 POINT pt = { dis->rcItem.left, dis->rcItem.top };
                 MapWindowPoints(dis->hwndItem, hwnd, &pt, 1);
-                opts.frescoCache = gChromeCache;
+                opts.frescoCache = gChromeCache.get();
                 opts.frescoX = pt.x;
                 opts.frescoY = pt.y;
             }
@@ -2639,7 +2629,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             UpdateStatusBar(hwnd);
             // Drop stale fresco bitmap during live resize (avoids leak-like growth + hitch).
             DestroyChromeCache();
-            SetTimer(hwnd, IDT_CHROME_REBUILD, 60, NULL);
+            RequestChromeRebuild(hwnd, 60);
             InvalidateRect(hwnd, NULL, FALSE);
             if (hwndCaptionMax) InvalidateRect(hwndCaptionMax, nullptr, FALSE);
         }
