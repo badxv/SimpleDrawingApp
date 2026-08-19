@@ -90,6 +90,15 @@
     <ClInclude Include="UiToolbar.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AppCanvas.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AppStroke.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AppViewport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="AppMetrics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -129,6 +138,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="UiToolbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppCanvas.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppStroke.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppViewport.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="EventBus.cpp">

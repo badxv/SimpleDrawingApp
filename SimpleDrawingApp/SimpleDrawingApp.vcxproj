@@ -146,6 +146,9 @@
     <ClInclude Include="UiPaletteFloat.h" />
     <ClInclude Include="UiShapeFlyout.h" />
     <ClInclude Include="UiToolbar.h" />
+    <ClInclude Include="AppCanvas.h" />
+    <ClInclude Include="AppStroke.h" />
+    <ClInclude Include="AppViewport.h" />
     <ClInclude Include="AppDocument.h" />
     <ClInclude Include="AppMetrics.h" />
     <ClInclude Include="AppSelection.h" />
@@ -174,6 +177,9 @@
     <ClCompile Include="UiPaletteFloat.cpp" />
     <ClCompile Include="UiShapeFlyout.cpp" />
     <ClCompile Include="UiToolbar.cpp" />
+    <ClCompile Include="AppCanvas.cpp" />
+    <ClCompile Include="AppStroke.cpp" />
+    <ClCompile Include="AppViewport.cpp" />
     <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />

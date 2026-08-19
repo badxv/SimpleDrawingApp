@@ -149,17 +149,8 @@ inline ShapePaintMode EffectiveShapePaintMode() {
 
 void MarkDirty(HWND hwnd);
 void MarkClean(HWND hwnd);
-void InvalidateCanvas();
-void InvalidateComposite();
-void DestroyCompositeCache();
-Gdiplus::Bitmap* GetCompositeBitmap();
-void EnsureCanvas(HWND hwnd);
-void SyncDocSizeFromBitmap();
-void UpdateScrollBars();
-void DestroyStrokeLayer();
-void BeginStrokeLayer();
-void CommitStrokeLayer();
 void RefreshLayerList();
 void SetActiveTool(DrawTool tool);
-int ScaledContentWidth();
-int ScaledContentHeight();
+
+#include "AppCanvas.h"
+#include "AppStroke.h"
