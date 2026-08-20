@@ -147,10 +147,6 @@ inline ShapePaintMode EffectiveShapePaintMode() {
     return shapePaintMode;
 }
 
-void MarkDirty(HWND hwnd);
-void MarkClean(HWND hwnd);
-void RefreshLayerList();
-void SetActiveTool(DrawTool tool);
-
 #include "AppCanvas.h"
 #include "AppStroke.h"
+#include "AppShell.h"

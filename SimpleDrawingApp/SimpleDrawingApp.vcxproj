@@ -149,6 +149,9 @@
     <ClInclude Include="AppCanvas.h" />
     <ClInclude Include="AppStroke.h" />
     <ClInclude Include="AppViewport.h" />
+    <ClInclude Include="AppShell.h" />
+    <ClInclude Include="AppDialogs.h" />
+    <ClInclude Include="AppWindow.h" />
     <ClInclude Include="AppDocument.h" />
     <ClInclude Include="AppMetrics.h" />
     <ClInclude Include="AppSelection.h" />
@@ -180,6 +183,9 @@
     <ClCompile Include="AppCanvas.cpp" />
     <ClCompile Include="AppStroke.cpp" />
     <ClCompile Include="AppViewport.cpp" />
+    <ClCompile Include="AppShell.cpp" />
+    <ClCompile Include="AppDialogs.cpp" />
+    <ClCompile Include="AppWindow.cpp" />
     <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />
