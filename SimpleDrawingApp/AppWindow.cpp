@@ -1,6 +1,7 @@
 #include "AppWindow.h"
 #include "AppShell.h"
 #include "AppDialogs.h"
+#include "AppFeatureFlags.h"
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppCanvas.h"
@@ -107,6 +108,7 @@ static void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
     if (!gAppMenu || menuIndex < 0) return;
     HMENU sub = GetSubMenu(gAppMenu, menuIndex);
     if (!sub) return;
+    SyncFeatureFlagMenuItems();
     RECT br = {};
     if (anchorBtn) GetWindowRect(anchorBtn, &br);
     else GetWindowRect(hwnd, &br);
@@ -672,6 +674,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         case IDM_ZOOM_FIT:
             ZoomToFit(hwnd);
+            break;
+        case IDM_FEAT_PASTE_VIEW:
+            ToggleFeatureFlag(AppFeature::PasteAtViewOrigin);
+            break;
+        case IDM_FEAT_SEL_VEIL:
+            ToggleFeatureFlag(AppFeature::SelectionExteriorVeil);
+            InvalidateCanvas();
+            break;
+        case IDM_FEAT_WARN_SHRINK:
+            ToggleFeatureFlag(AppFeature::WarnCanvasShrink);
+            break;
+        case IDM_FEAT_EVENT_DIRTY:
+            ToggleFeatureFlag(AppFeature::EventBusDirtyUi);
             break;
         case IDC_COLOR_BUTTON: {
             COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
