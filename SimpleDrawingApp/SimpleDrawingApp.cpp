@@ -1,6 +1,7 @@
 ﻿#include <windows.h>
 #include "framework.h"
 #include "SimpleDrawingApp.h"
+#include "AppFeatureFlags.h"
 #include "AppViewport.h"
 #include "UiChromeRender.h"
 #include "CaptionBar.h"
@@ -29,6 +30,7 @@ ULONG_PTR gdiplusToken = 0;
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    LoadFeatureFlags();
     AtelierFonts_Init();
     AtelierArtwork_Init();
     AtelierControls_SetTheme(&gTheme);
@@ -110,6 +112,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     gAppMenu = GetMenu(hwnd);
     SetMenu(hwnd, NULL);
     DrawMenuBar(hwnd);
+    SyncFeatureFlagMenuItems();
 
     gAccel = LoadAcceleratorsA(hInstance, MAKEINTRESOURCEA(IDC_SIMPLEDRAWINGAPP));
 
@@ -141,6 +144,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     AtelierArtwork_Shutdown();
     AtelierFonts_Shutdown();
+    SaveFeatureFlags();
     GdiplusShutdown(gdiplusToken);
     return static_cast<int>(msg.wParam);
 }

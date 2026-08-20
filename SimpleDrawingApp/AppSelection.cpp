@@ -1,5 +1,6 @@
 #include "AppSelection.h"
 #include "AppState.h"
+#include "AppFeatureFlags.h"
 #include "SimpleDrawingApp.h"
 #include "Resource.h"
 #include "AtelierRaii.h"
@@ -174,7 +175,7 @@ void DrawSelectionOverlay(Graphics* g) {
     const RectF box(x, y, selW, selH);
 
     // Soft exterior veil (PS-like focus) — warm atelier ink, not cold gray.
-    {
+    if (IsFeatureEnabled(AppFeature::SelectionExteriorVeil)) {
         const float docW = static_cast<float>(ScaledContentWidth());
         const float docH = static_cast<float>(ScaledContentHeight());
         SolidBrush veil(Color(58, 36, 28, 20));
@@ -297,10 +298,14 @@ void PasteSelection(HWND hwnd) {
 
     const int w = static_cast<int>(src->GetWidth());
     const int h = static_cast<int>(src->GetHeight());
-    int pasteX = static_cast<int>(std::floor(scrollX / zoomFactor));
-    int pasteY = static_cast<int>(std::floor(scrollY / zoomFactor));
-    if (pasteX < 0) pasteX = 0;
-    if (pasteY < 0) pasteY = 0;
+    int pasteX = 0;
+    int pasteY = 0;
+    if (IsFeatureEnabled(AppFeature::PasteAtViewOrigin)) {
+        pasteX = static_cast<int>(std::floor(scrollX / zoomFactor));
+        pasteY = static_cast<int>(std::floor(scrollY / zoomFactor));
+        if (pasteX < 0) pasteX = 0;
+        if (pasteY < 0) pasteY = 0;
+    }
 
     gHistory.Push(gLayers);
     gSel.hasMarquee = true;
