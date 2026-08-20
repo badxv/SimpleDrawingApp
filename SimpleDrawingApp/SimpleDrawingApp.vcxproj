@@ -135,6 +135,23 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AtelierEvents.h" />
+    <ClInclude Include="AtelierRaii.h" />
+    <ClInclude Include="AppApi.h" />
+    <ClInclude Include="EventBus.h" />
+    <ClInclude Include="UiFramework.h" />
+    <ClInclude Include="UiChromeLayout.h" />
+    <ClInclude Include="UiChromeRender.h" />
+    <ClInclude Include="UiControls.h" />
+    <ClInclude Include="UiPaletteFloat.h" />
+    <ClInclude Include="UiShapeFlyout.h" />
+    <ClInclude Include="UiToolbar.h" />
+    <ClInclude Include="AppCanvas.h" />
+    <ClInclude Include="AppStroke.h" />
+    <ClInclude Include="AppViewport.h" />
+    <ClInclude Include="AppShell.h" />
+    <ClInclude Include="AppDialogs.h" />
+    <ClInclude Include="AppWindow.h" />
     <ClInclude Include="AppDocument.h" />
     <ClInclude Include="AppMetrics.h" />
     <ClInclude Include="AppSelection.h" />
@@ -156,6 +173,20 @@
     <ClInclude Include="UiChrome.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="UiFramework.cpp" />
+    <ClCompile Include="UiChromeLayout.cpp" />
+    <ClCompile Include="UiChromeRender.cpp" />
+    <ClCompile Include="UiControls.cpp" />
+    <ClCompile Include="UiPaletteFloat.cpp" />
+    <ClCompile Include="UiShapeFlyout.cpp" />
+    <ClCompile Include="UiToolbar.cpp" />
+    <ClCompile Include="AppCanvas.cpp" />
+    <ClCompile Include="AppStroke.cpp" />
+    <ClCompile Include="AppViewport.cpp" />
+    <ClCompile Include="AppShell.cpp" />
+    <ClCompile Include="AppDialogs.cpp" />
+    <ClCompile Include="AppWindow.cpp" />
+    <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />
     <ClCompile Include="AppState.cpp" />

@@ -2,8 +2,6 @@
 #include "SimpleDrawingApp.h"
 #include "AppMetrics.h"
 
-using namespace Gdiplus;
-
 AppTheme gTheme;
 LayerStack gLayers;
 LayerHistory gHistory;
@@ -21,14 +19,14 @@ float gToolFlash = 0.0f;
 float gIdlePhase = 0.0f;
 float gSelAntOffset = 0.0f;
 bool gUiSizing = false;
-Bitmap* gChromeCache = nullptr;
+Atelier::GdiplusBitmapPtr gChromeCache;
 int gChromeCacheW = 0;
 int gChromeCacheH = 0;
 int gChromeCacheStatusH = -1;
 int gChromeCacheRailW = -1;
 int gChromeCacheLayerW = -1;
-Bitmap* gBrandStrip = nullptr;
-HBITMAP gBrandStripHbmp = nullptr;
+Atelier::GdiplusBitmapPtr gBrandStrip;
+Atelier::WinBitmapHandle gBrandStripHbmp;
 int gBrandStripH = 0;
 
 HWND hwndViewport = nullptr;
@@ -88,11 +86,11 @@ int scrollY = 0;
 float zoomFactor = 1.0f;
 
 SelectionState gSel;
-Bitmap* gClipboardBmp = nullptr;
-Bitmap* compositeCache = nullptr;
+Atelier::GdiplusBitmapPtr gClipboardBmp;
+Atelier::GdiplusBitmapPtr compositeCache;
 bool compositeDirty = true;
-Bitmap* strokeLayer = nullptr;
-Graphics* strokeGraphics = nullptr;
+Atelier::GdiplusBitmapPtr strokeLayer;
+Atelier::GdiplusGraphicsPtr strokeGraphics;
 
 COLORREF penColor = RGB(0, 0, 0);
 COLORREF backColor = RGB(255, 255, 255);
