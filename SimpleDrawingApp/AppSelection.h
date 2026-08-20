@@ -11,9 +11,15 @@ bool SelectionHitTest(int docX, int docY);
 void LiftSelection();
 void StampFloatingSelection();
 void DrawSelectionOverlay(Gdiplus::Graphics* g);
-void DoCopy(HWND hwnd);
-void DoCut(HWND hwnd);
-void DoPaste(HWND hwnd);
-void DoDeleteSelection(HWND hwnd);
-void DoSelectAll(HWND hwnd);
+void CopySelection(HWND hwnd);
+void CutSelection(HWND hwnd);
+void PasteSelection(HWND hwnd);
+void DeleteSelection(HWND hwnd);
+void SelectAll(HWND hwnd);
 void Selection_Shutdown();
+
+inline void DoCopy(HWND hwnd) { CopySelection(hwnd); }
+inline void DoCut(HWND hwnd) { CutSelection(hwnd); }
+inline void DoPaste(HWND hwnd) { PasteSelection(hwnd); }
+inline void DoDeleteSelection(HWND hwnd) { DeleteSelection(hwnd); }
+inline void DoSelectAll(HWND hwnd) { SelectAll(hwnd); }
