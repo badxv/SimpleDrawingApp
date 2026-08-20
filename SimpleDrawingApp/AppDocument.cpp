@@ -1,6 +1,7 @@
 #include "AppDocument.h"
 #include "AppState.h"
 #include "AppSelection.h"
+#include "AppFeatureFlags.h"
 #include "SimpleDrawingApp.h"
 #include "FileManager.h"
 #include "Resource.h"
@@ -37,7 +38,8 @@ bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bo
         return true;
     }
 
-    if (warnOnShrink && (newWidth < docWidth || newHeight < docHeight)) {
+    if (warnOnShrink && IsFeatureEnabled(AppFeature::WarnCanvasShrink)
+        && (newWidth < docWidth || newHeight < docHeight)) {
         const int result = MessageBoxA(
             hwnd,
             "Shrinking the canvas will crop content outside the new size. Continue?",

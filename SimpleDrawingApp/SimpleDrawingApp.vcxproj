@@ -151,6 +151,7 @@
     <ClInclude Include="AppViewport.h" />
     <ClInclude Include="AppShell.h" />
     <ClInclude Include="AppDialogs.h" />
+    <ClInclude Include="AppFeatureFlags.h" />
     <ClInclude Include="AppWindow.h" />
     <ClInclude Include="AppDocument.h" />
     <ClInclude Include="AppMetrics.h" />
@@ -185,6 +186,7 @@
     <ClCompile Include="AppViewport.cpp" />
     <ClCompile Include="AppShell.cpp" />
     <ClCompile Include="AppDialogs.cpp" />
+    <ClCompile Include="AppFeatureFlags.cpp" />
     <ClCompile Include="AppWindow.cpp" />
     <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
