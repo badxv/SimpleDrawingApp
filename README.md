@@ -93,7 +93,7 @@ CI runs the same script on every push / PR to `main` (GitHub Actions → **Build
 | Zoom | `Ctrl`+wheel or **View** menu |
 | Layers | Right panel: `+` / `-` / Up / Dn, Visible, opacity |
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
-| Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` |
+| Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` (re-save skips the dialog when a path is known) |
 | Canvas size | **Image → Canvas Size…** or `Ctrl+E` |
 | Shortcuts list | **Help → Keyboard Shortcuts** or `F1` |
 

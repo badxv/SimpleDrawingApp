@@ -7,6 +7,7 @@
 #include "Resource.h"
 #include <commdlg.h>
 #include <cstdio>
+#include <cstring>
 
 using namespace Gdiplus;
 
@@ -24,6 +25,38 @@ const CanvasPreset kPresets[] = {
     { "1920 x 1080", 1920, 1080 },
     { "Custom", 0, 0 }
 };
+
+void RememberBrowseDirFromPath(const char* path) {
+    if (!path || !path[0]) return;
+    char dir[MAX_PATH];
+    sprintf_s(dir, "%s", path);
+    char* slash = strrchr(dir, '\\');
+    if (!slash) slash = strrchr(dir, '/');
+    if (!slash) return;
+    *slash = '\0';
+    sprintf_s(gLastBrowseDir, "%s", dir);
+}
+
+void SetDocumentPath(const char* path) {
+    if (path && path[0]) {
+        sprintf_s(gDocumentPath, "%s", path);
+        RememberBrowseDirFromPath(path);
+    } else {
+        gDocumentPath[0] = '\0';
+    }
+}
+
+bool WriteDocumentToPath(HWND hwnd, const char* path) {
+    ClearSelection(true);
+    Bitmap* flat = GetCompositeBitmap();
+    if (flat && SaveCanvasToFile(flat, path)) {
+        SetDocumentPath(path);
+        MarkClean(hwnd);
+        return true;
+    }
+    MessageBoxA(hwnd, "Failed to save image.", "Error", MB_OK | MB_ICONERROR);
+    return false;
+}
 }
 
 bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink) {
@@ -206,6 +239,12 @@ bool PromptSaveIfDirty(HWND hwnd) {
 
 void SaveDocument(HWND hwnd) {
     EnsureCanvas(hwnd);
+
+    if (gDocumentPath[0]) {
+        WriteDocumentToPath(hwnd, gDocumentPath);
+        return;
+    }
+
     char filePath[MAX_PATH] = "";
     OPENFILENAMEA ofn = {};
     ofn.lStructSize = sizeof(ofn);
@@ -215,16 +254,12 @@ void SaveDocument(HWND hwnd) {
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     ofn.lpstrDefExt = "png";
+    if (gLastBrowseDir[0]) {
+        ofn.lpstrInitialDir = gLastBrowseDir;
+    }
 
     if (GetSaveFileNameA(&ofn)) {
-        ClearSelection(true);
-        Bitmap* flat = GetCompositeBitmap();
-        if (flat && SaveCanvasToFile(flat, filePath)) {
-            MarkClean(hwnd);
-        }
-        else {
-            MessageBoxA(hwnd, "Failed to save image.", "Error", MB_OK | MB_ICONERROR);
-        }
+        WriteDocumentToPath(hwnd, filePath);
     }
 }
 
@@ -239,6 +274,9 @@ void OpenDocument(HWND hwnd) {
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (gLastBrowseDir[0]) {
+        ofn.lpstrInitialDir = gLastBrowseDir;
+    }
 
     if (GetOpenFileNameA(&ofn)) {
         DestroyStrokeLayer();
@@ -261,6 +299,7 @@ void OpenDocument(HWND hwnd) {
             InvalidateComposite();
             UpdateScrollBars();
             gHistory.Clear();
+            SetDocumentPath(filePath);
             MarkClean(hwnd);
             RefreshLayerList();
             InvalidateCanvas();
@@ -281,6 +320,7 @@ void NewDocument(HWND hwnd) {
     // Keep current document size; reset to Background + Layer 1 (active).
     gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
     gHistory.Clear();
+    SetDocumentPath(nullptr);
     InvalidateComposite();
     MarkClean(hwnd);
     RefreshLayerList();
