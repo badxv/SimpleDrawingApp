@@ -1,7 +1,6 @@
 #include "AppWindow.h"
 #include "AppShell.h"
 #include "AppCommands.h"
-#include "AppFeatureFlags.h"
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppCanvas.h"
