@@ -48,6 +48,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Fixed document canvas** (default 1280×720) + scrollable viewport; **Canvas Size…** (`Ctrl+E`)
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
 - **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
+- **View preferences:** paste at view origin, selection veil, canvas-shrink warning (`features.ini`)
 
 ## Requirements
 
@@ -74,6 +75,8 @@ Linux (MinGW cross-compile + Wine smoke):
 ./scripts/build-linux.sh
 ```
 
+CI runs the same script on every push / PR to `main` (GitHub Actions → **Build**).
+
 ## Usage
 
 | Action | How |
@@ -98,23 +101,31 @@ Linux (MinGW cross-compile + Wine smoke):
 
 ```text
 SimpleDrawingApp/
-├── SimpleDrawingApp.sln
+├── LICENSE
 ├── README.md
-├── docs/media/                # README screenshots + demo video
-├── scripts/build-linux.sh     # MinGW cross-build
+├── SimpleDrawingApp.sln
+├── .github/workflows/build.yml   # MinGW CI
+├── docs/media/                   # README screenshots + demo
+├── fonts/ / artwork/             # OFL fonts + panel art
+├── scripts/build-linux.sh        # MinGW cross-build
 └── SimpleDrawingApp/
-    ├── SimpleDrawingApp.cpp   # Window, chrome, caption, input
-    ├── AtelierPalette.*       # HSV disc, Recent / Favorites
-    ├── AtelierControls.*      # Sliders, scrollbars
-    ├── AtelierFonts.*         # Private OFL fonts (Cinzel / DM Sans)
-    ├── AtelierArtwork.*       # Fresco / motif assets
-    ├── UiChrome.*             # Icon drawing + owner-draw buttons
-    ├── LayerStack.*           # Layers + composite
-    ├── LayerHistory.*         # Undo / redo
-    ├── DrawingTools.*         # Tools + flood fill + shapes
-    ├── FileManager.*          # Image save / load
-    ├── ColorPicker.*          # ChooseColor dialog
-    └── Resource.h / .rc       # Menu, accelerators, About
+    ├── SimpleDrawingApp.cpp      # WinMain entry + message loop
+    ├── AppWindow.*               # Main WindowProc / chrome input
+    ├── AppCommands.*             # Menu / toolbar / layer commands
+    ├── AppShell.*                # Status, title, tools, layer list
+    ├── AppViewport.*             # Canvas child window
+    ├── AppCanvas.* / AppStroke.* # Zoom, scroll, stroke / shapes
+    ├── AppDocument.*             # New / open / save / undo
+    ├── AppSelection.*            # Marquee, clipboard
+    ├── AppFeatureFlags.*         # View preferences (INI)
+    ├── EventBus.* / AtelierRaii.*
+    ├── UiChrome* / UiToolbar.* / UiPaletteFloat.* / UiShapeFlyout.*
+    ├── AtelierPalette.*          # HSV disc, Recent / Favorites
+    ├── AtelierControls.*         # Sliders, scrollbars
+    ├── AtelierFonts.* / AtelierArtwork.*
+    ├── LayerStack.* / LayerHistory.*
+    ├── DrawingTools.* / FileManager.* / ColorPicker.*
+    └── Resource.h / .rc
 ```
 
 ## Roadmap
@@ -129,6 +140,8 @@ SimpleDrawingApp/
 - [x] Collapsible panels + Firefox-style top menus
 - [x] Custom in-client titlebar (Windows)
 - [x] Atelier chrome, fonts, fresco motion
+- [x] Modular C++ layout (App* / Ui* modules)
+- [x] View preferences + MinGW CI
 
 ## Contributing
 
@@ -136,4 +149,6 @@ Issues and pull requests are welcome. Prefer small, focused changes.
 
 ## License
 
-No license file is published yet. All rights reserved by the repository owner unless otherwise stated.
+[MIT](LICENSE) — see `LICENSE` for the full text.
+
+Bundled fonts (Cinzel, DM Sans) remain under the [SIL Open Font License](fonts/NOTICE.txt).
