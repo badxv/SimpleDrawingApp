@@ -7,6 +7,7 @@
 #include "LayerStack.h"
 #include <commctrl.h>
 #include <cstdio>
+#include <cstring>
 
 void UpdatePenWidthDisplay() {
     if (!hwndPenWidthBox) return;
@@ -26,8 +27,14 @@ void UpdateOpacityDisplay() {
     suppressEditNotify = false;
 }
 void UpdateWindowTitle(HWND hwnd) {
-    char title[128];
-    sprintf_s(title, "Simple Drawing App%s", documentDirty ? " *" : "");
+    char title[MAX_PATH + 64];
+    const char* name = "Untitled";
+    if (gDocumentPath[0]) {
+        const char* slash = strrchr(gDocumentPath, '\\');
+        if (!slash) slash = strrchr(gDocumentPath, '/');
+        name = slash ? (slash + 1) : gDocumentPath;
+    }
+    sprintf_s(title, "%s%s — Simple Drawing App", name, documentDirty ? " *" : "");
     SetWindowTextA(hwnd, title);
 }
 

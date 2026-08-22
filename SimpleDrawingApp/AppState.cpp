@@ -100,6 +100,8 @@ DrawTool currentTool = DrawTool::Pen;
 ShapeKind currentShape = ShapeKind::Rectangle;
 ShapePaintMode shapePaintMode = ShapePaintMode::Stroke;
 bool documentDirty = false;
+char gDocumentPath[MAX_PATH] = "";
+char gLastBrowseDir[MAX_PATH] = "";
 
 int gCanvasDlgWidth = 0;
 int gCanvasDlgHeight = 0;
