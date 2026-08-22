@@ -17,9 +17,3 @@ void PasteSelection(HWND hwnd);
 void DeleteSelection(HWND hwnd);
 void SelectAll(HWND hwnd);
 void Selection_Shutdown();
-
-inline void DoCopy(HWND hwnd) { CopySelection(hwnd); }
-inline void DoCut(HWND hwnd) { CutSelection(hwnd); }
-inline void DoPaste(HWND hwnd) { PasteSelection(hwnd); }
-inline void DoDeleteSelection(HWND hwnd) { DeleteSelection(hwnd); }
-inline void DoSelectAll(HWND hwnd) { SelectAll(hwnd); }
