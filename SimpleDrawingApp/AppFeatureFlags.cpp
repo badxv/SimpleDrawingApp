@@ -16,7 +16,6 @@ struct FeatureMeta {
 };
 
 const FeatureMeta kFeatures[] = {
-    { AppFeature::EventBusDirtyUi, "EventBusDirtyUi", true },
     { AppFeature::WarnCanvasShrink, "WarnCanvasShrink", true },
     { AppFeature::PasteAtViewOrigin, "PasteAtViewOrigin", true },
     { AppFeature::SelectionExteriorVeil, "SelectionExteriorVeil", true },
@@ -125,5 +124,4 @@ void SyncFeatureFlagMenuItems() {
     SetMenuCheck(viewMenu, IDM_FEAT_PASTE_VIEW, IsFeatureEnabled(AppFeature::PasteAtViewOrigin));
     SetMenuCheck(viewMenu, IDM_FEAT_SEL_VEIL, IsFeatureEnabled(AppFeature::SelectionExteriorVeil));
     SetMenuCheck(viewMenu, IDM_FEAT_WARN_SHRINK, IsFeatureEnabled(AppFeature::WarnCanvasShrink));
-    SetMenuCheck(viewMenu, IDM_FEAT_EVENT_DIRTY, IsFeatureEnabled(AppFeature::EventBusDirtyUi));
 }

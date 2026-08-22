@@ -297,13 +297,10 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         ToggleFeatureFlag(AppFeature::SelectionExteriorVeil);
         InvalidateCanvas();
         return true;
-    case IDM_FEAT_WARN_SHRINK:
-        ToggleFeatureFlag(AppFeature::WarnCanvasShrink);
-        return true;
-    case IDM_FEAT_EVENT_DIRTY:
-        ToggleFeatureFlag(AppFeature::EventBusDirtyUi);
-        return true;
-    case IDC_COLOR_BUTTON: {
+        case IDM_FEAT_WARN_SHRINK:
+            ToggleFeatureFlag(AppFeature::WarnCanvasShrink);
+            return true;
+        case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
         InvalidateColorChips();

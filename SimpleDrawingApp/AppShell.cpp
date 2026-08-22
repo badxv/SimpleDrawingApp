@@ -3,7 +3,6 @@
 #include "AppMetrics.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
-#include "AppFeatureFlags.h"
 #include "UiShapeFlyout.h"
 #include "LayerStack.h"
 #include <commctrl.h>
@@ -73,30 +72,20 @@ void UpdateStatusBar(HWND hwnd) {
 
 void MarkDirty(HWND hwnd) {
     documentDirty = true;
-    if (IsFeatureEnabled(AppFeature::EventBusDirtyUi)) {
-        EventPayload payload{};
-        payload.type = AtelierEvent::DocumentDirtyChanged;
-        payload.hwnd = hwnd;
-        payload.documentDirty = true;
-        AppEventBus().Publish(payload);
-    } else {
-        UpdateWindowTitle(hwnd);
-        UpdateStatusBar(hwnd);
-    }
+    EventPayload payload{};
+    payload.type = AtelierEvent::DocumentDirtyChanged;
+    payload.hwnd = hwnd;
+    payload.documentDirty = true;
+    AppEventBus().Publish(payload);
 }
 
 void MarkClean(HWND hwnd) {
     documentDirty = false;
-    if (IsFeatureEnabled(AppFeature::EventBusDirtyUi)) {
-        EventPayload payload{};
-        payload.type = AtelierEvent::DocumentDirtyChanged;
-        payload.hwnd = hwnd;
-        payload.documentDirty = false;
-        AppEventBus().Publish(payload);
-    } else {
-        UpdateWindowTitle(hwnd);
-        UpdateStatusBar(hwnd);
-    }
+    EventPayload payload{};
+    payload.type = AtelierEvent::DocumentDirtyChanged;
+    payload.hwnd = hwnd;
+    payload.documentDirty = false;
+    AppEventBus().Publish(payload);
 }
 
 void SetActiveTool(DrawTool tool) {
