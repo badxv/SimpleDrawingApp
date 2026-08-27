@@ -45,6 +45,7 @@ HWND hwndLayerAdd = nullptr;
 HWND hwndLayerDel = nullptr;
 HWND hwndLayerUp = nullptr;
 HWND hwndLayerDown = nullptr;
+HWND hwndLayerDup = nullptr;
 HWND hwndLayerVisible = nullptr;
 HWND hwndLayerOpacity = nullptr;
 HWND hwndToolButtons[kToolButtonCount] = {};

@@ -415,6 +415,34 @@ bool LayerStack::AddLayer() {
     return true;
 }
 
+bool LayerStack::DuplicateActiveLayer() {
+    if (Count() >= kMaxLayers || width_ < 1 || height_ < 1) return false;
+    const Layer* src = ActiveLayer();
+    if (!src || !src->bitmap) return false;
+
+    Bitmap* bmpCopy = CloneBitmap(src->bitmap);
+    if (!bmpCopy) return false;
+
+    Layer dup;
+    dup.name = src->name + " copy";
+    dup.visible = src->visible;
+    dup.opacity = src->opacity;
+    dup.isBackground = false;
+    dup.bitmap = bmpCopy;
+    dup.graphics = Graphics::FromImage(dup.bitmap);
+    if (!dup.graphics || dup.graphics->GetLastStatus() != Ok) {
+        delete dup.graphics;
+        delete dup.bitmap;
+        return false;
+    }
+    Configure(dup.graphics);
+
+    const size_t insertAt = static_cast<size_t>(active_) + 1;
+    layers_.insert(layers_.begin() + static_cast<ptrdiff_t>(insertAt), dup);
+    active_ = static_cast<int>(insertAt);
+    return true;
+}
+
 bool LayerStack::DeleteActiveLayer() {
     if (Count() <= 1) return false;
     // Keep the special Background layer; delete content layers only.

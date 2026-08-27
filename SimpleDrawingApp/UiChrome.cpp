@@ -34,6 +34,7 @@ UiIcon UiIconFromControlId(int controlId) {
     case IDC_LAYER_DEL: return UiIcon::LayerDel;
     case IDC_LAYER_UP: return UiIcon::LayerUp;
     case IDC_LAYER_DOWN: return UiIcon::LayerDown;
+    case IDC_LAYER_DUP: return UiIcon::LayerDup;
     case IDC_TOGGLE_RAIL:
         // Direction filled by paint opts via selected state — default left.
         return UiIcon::ChevronLeft;
@@ -73,6 +74,7 @@ bool IsIconControlId(int controlId) {
     case IDC_LAYER_DEL:
     case IDC_LAYER_UP:
     case IDC_LAYER_DOWN:
+    case IDC_LAYER_DUP:
     case IDC_TOGGLE_RAIL:
     case IDC_TOGGLE_LAYERS:
         return true;
@@ -591,6 +593,15 @@ void DrawUiIcon(Graphics& g, UiIcon icon, const RectF& b, Color color) {
             { right - 4, r.Y + 5 }
         };
         g.DrawPolygon(&pen, pts, 3);
+        break;
+    }
+    case UiIcon::LayerDup: {
+        const float inset = 3.0f;
+        const float offset = 3.0f;
+        RectF back(r.X + inset + offset, r.Y + inset, r.Width - inset * 2 - offset, r.Height - inset * 2 - offset);
+        RectF front(r.X + inset, r.Y + inset + offset, r.Width - inset * 2 - offset, r.Height - inset * 2 - offset);
+        g.DrawRectangle(&pen, back);
+        g.DrawRectangle(&pen, front);
         break;
     }
     case UiIcon::ChevronLeft: {

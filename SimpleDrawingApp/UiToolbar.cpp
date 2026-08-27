@@ -92,6 +92,7 @@ void CreateLayerPanel(HWND hwnd) {
     hwndLayerDel = CreateIconButton(hwnd, IDC_LAYER_DEL, "Delete layer", false);
     hwndLayerUp = CreateIconButton(hwnd, IDC_LAYER_UP, "Move layer up", false);
     hwndLayerDown = CreateIconButton(hwnd, IDC_LAYER_DOWN, "Move layer down", false);
+    hwndLayerDup = CreateIconButton(hwnd, IDC_LAYER_DUP, "Duplicate layer", false);
 
     hwndLayerVisible = CreateWindowA("BUTTON", "Visible",
         WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,

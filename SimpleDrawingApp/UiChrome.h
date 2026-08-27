@@ -32,6 +32,7 @@ enum class UiIcon {
     LayerDel,
     LayerUp,
     LayerDown,
+    LayerDup,
     ChevronLeft,
     ChevronRight
 };
