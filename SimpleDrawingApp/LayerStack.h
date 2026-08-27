@@ -57,6 +57,9 @@ public:
     void ClearAllContent(COLORREF background);
     // Merge all visible layers (with opacity) into Background + empty Layer 1.
     bool FlattenVisible();
+    bool FlipHorizontal();
+    bool FlipVertical();
+    bool Rotate90Clockwise();
     // Replaces the stack with a single background layer cloned from image.
     bool ReplaceWithImage(Gdiplus::Bitmap* image);
 

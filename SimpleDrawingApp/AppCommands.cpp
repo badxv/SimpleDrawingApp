@@ -435,6 +435,15 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     case IDM_FLATTEN_LAYERS:
         FlattenLayers(hwnd);
         return true;
+    case IDM_FLIP_H:
+        FlipDocumentHorizontal(hwnd);
+        return true;
+    case IDM_FLIP_V:
+        FlipDocumentVertical(hwnd);
+        return true;
+    case IDM_ROTATE_90:
+        RotateDocument90Cw(hwnd);
+        return true;
     case IDM_ABOUT:
         ShowAboutDialog(hwnd);
         return true;

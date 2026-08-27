@@ -200,6 +200,174 @@ bool LayerStack::FlattenVisible() {
     return ok;
 }
 
+namespace {
+
+enum class GeomTransform {
+    FlipH,
+    FlipV,
+    Rotate90Cw
+};
+
+bool TransformLayerBitmap(Bitmap* src, int outW, int outH, GeomTransform kind,
+    bool isBackground, Bitmap*& outBmp, Graphics*& outG) {
+    outBmp = nullptr;
+    outG = nullptr;
+    if (!src || outW < 1 || outH < 1) return false;
+
+    outBmp = new Bitmap(outW, outH, PixelFormat32bppARGB);
+    if (!outBmp || outBmp->GetLastStatus() != Ok) {
+        delete outBmp;
+        outBmp = nullptr;
+        return false;
+    }
+    outG = Graphics::FromImage(outBmp);
+    if (!outG || outG->GetLastStatus() != Ok) {
+        delete outG;
+        delete outBmp;
+        outG = nullptr;
+        outBmp = nullptr;
+        return false;
+    }
+    outG->SetSmoothingMode(SmoothingModeNone);
+    outG->SetInterpolationMode(InterpolationModeNearestNeighbor);
+    outG->SetPixelOffsetMode(PixelOffsetModeHalf);
+    outG->SetCompositingMode(CompositingModeSourceCopy);
+
+    if (isBackground) {
+        outG->Clear(Color(255, 255, 255, 255));
+    } else {
+        outG->Clear(Color(0, 0, 0, 0));
+    }
+
+    const int srcW = static_cast<int>(src->GetWidth());
+    const int srcH = static_cast<int>(src->GetHeight());
+
+    switch (kind) {
+    case GeomTransform::FlipH:
+        outG->TranslateTransform(static_cast<REAL>(outW), 0.0f);
+        outG->ScaleTransform(-1.0f, 1.0f);
+        break;
+    case GeomTransform::FlipV:
+        outG->TranslateTransform(0.0f, static_cast<REAL>(outH));
+        outG->ScaleTransform(1.0f, -1.0f);
+        break;
+    case GeomTransform::Rotate90Cw:
+        outG->TranslateTransform(static_cast<REAL>(outW), 0.0f);
+        outG->RotateTransform(90.0f);
+        break;
+    }
+    outG->DrawImage(src, 0, 0, srcW, srcH);
+    outG->ResetTransform();
+    outG->SetCompositingMode(CompositingModeSourceOver);
+    outG->SetSmoothingMode(SmoothingModeAntiAlias);
+    return true;
+}
+
+} // namespace
+
+bool LayerStack::FlipHorizontal() {
+    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
+
+    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
+    std::vector<NextLayer> next;
+    next.reserve(layers_.size());
+    auto freeNext = [&]() {
+        for (NextLayer& n : next) {
+            delete n.g;
+            delete n.bmp;
+        }
+        next.clear();
+    };
+
+    for (Layer& layer : layers_) {
+        NextLayer n;
+        if (!layer.bitmap
+            || !TransformLayerBitmap(layer.bitmap, width_, height_, GeomTransform::FlipH,
+                layer.isBackground, n.bmp, n.g)) {
+            freeNext();
+            return false;
+        }
+        next.push_back(n);
+    }
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        FreeLayer(layers_[i]);
+        layers_[i].bitmap = next[i].bmp;
+        layers_[i].graphics = next[i].g;
+    }
+    return true;
+}
+
+bool LayerStack::FlipVertical() {
+    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
+
+    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
+    std::vector<NextLayer> next;
+    next.reserve(layers_.size());
+    auto freeNext = [&]() {
+        for (NextLayer& n : next) {
+            delete n.g;
+            delete n.bmp;
+        }
+        next.clear();
+    };
+
+    for (Layer& layer : layers_) {
+        NextLayer n;
+        if (!layer.bitmap
+            || !TransformLayerBitmap(layer.bitmap, width_, height_, GeomTransform::FlipV,
+                layer.isBackground, n.bmp, n.g)) {
+            freeNext();
+            return false;
+        }
+        next.push_back(n);
+    }
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        FreeLayer(layers_[i]);
+        layers_[i].bitmap = next[i].bmp;
+        layers_[i].graphics = next[i].g;
+    }
+    return true;
+}
+
+bool LayerStack::Rotate90Clockwise() {
+    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
+    const int newW = height_;
+    const int newH = width_;
+
+    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
+    std::vector<NextLayer> next;
+    next.reserve(layers_.size());
+    auto freeNext = [&]() {
+        for (NextLayer& n : next) {
+            delete n.g;
+            delete n.bmp;
+        }
+        next.clear();
+    };
+
+    for (Layer& layer : layers_) {
+        NextLayer n;
+        if (!layer.bitmap
+            || !TransformLayerBitmap(layer.bitmap, newW, newH, GeomTransform::Rotate90Cw,
+                layer.isBackground, n.bmp, n.g)) {
+            freeNext();
+            return false;
+        }
+        next.push_back(n);
+    }
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        FreeLayer(layers_[i]);
+        layers_[i].bitmap = next[i].bmp;
+        layers_[i].graphics = next[i].g;
+    }
+    width_ = newW;
+    height_ = newH;
+    return true;
+}
+
 void LayerStack::SetActiveIndex(int index) {
     if (index < 0 || index >= Count()) return;
     active_ = index;
