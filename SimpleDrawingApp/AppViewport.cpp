@@ -17,8 +17,8 @@ using namespace Gdiplus;
 
 static void MaybeSnapDocumentPoint(int& docX, int& docY) {
     if (!IsFeatureEnabled(AppFeature::SnapToGrid)) return;
-    docX = SnapCoordToGrid(docX);
-    docY = SnapCoordToGrid(docY);
+    docX = SnapCoordToGrid(docX, gGridSpacing);
+    docY = SnapCoordToGrid(docY, gGridSpacing);
 }
 
 static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
@@ -50,7 +50,8 @@ static void ViewportToDocumentUnclamped(int localX, int localY, int& docX, int& 
 static void DrawCanvasGrid(Graphics* g) {
     if (!g || !IsFeatureEnabled(AppFeature::CanvasGrid)) return;
     if (docWidth < 1 || docHeight < 1 || zoomFactor <= 0.0f) return;
-    if (GRID_SPACING < 1) return;
+    const int spacing = (gGridSpacing > 0) ? gGridSpacing : kDefaultGridSpacing;
+    if (spacing < 1) return;
 
     const REAL z = zoomFactor;
     const REAL docW = static_cast<REAL>(docWidth) * z;
@@ -61,14 +62,14 @@ static void DrawCanvasGrid(Graphics* g) {
     minor.SetDashStyle(DashStyleSolid);
     major.SetDashStyle(DashStyleSolid);
 
-    for (int x = 0; x <= docWidth; x += GRID_SPACING) {
-        const bool isMajor = (x % (GRID_SPACING * GRID_MAJOR_EVERY) == 0) || x == docWidth;
+    for (int x = 0; x <= docWidth; x += spacing) {
+        const bool isMajor = (x % (spacing * GRID_MAJOR_EVERY) == 0) || x == docWidth;
         Pen& pen = isMajor ? major : minor;
         const REAL sx = static_cast<REAL>(x) * z;
         g->DrawLine(&pen, sx, 0.0f, sx, docH);
     }
-    for (int y = 0; y <= docHeight; y += GRID_SPACING) {
-        const bool isMajor = (y % (GRID_SPACING * GRID_MAJOR_EVERY) == 0) || y == docHeight;
+    for (int y = 0; y <= docHeight; y += spacing) {
+        const bool isMajor = (y % (spacing * GRID_MAJOR_EVERY) == 0) || y == docHeight;
         Pen& pen = isMajor ? major : minor;
         const REAL sy = static_cast<REAL>(y) * z;
         g->DrawLine(&pen, 0.0f, sy, docW, sy);

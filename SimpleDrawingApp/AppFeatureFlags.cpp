@@ -97,6 +97,7 @@ bool ToggleFeatureFlag(AppFeature feature) {
 
 void LoadFeatureFlags() {
     ApplyDefaults();
+    gGridSpacing = kDefaultGridSpacing;
 
     char iniPath[MAX_PATH] = {};
     GetFeatureFlagsIniPath(iniPath, MAX_PATH);
@@ -107,6 +108,8 @@ void LoadFeatureFlags() {
         const int val = GetPrivateProfileIntA("Features", f.iniKey, def, iniPath);
         gFlags[static_cast<int>(f.id)] = (val != 0);
     }
+    gGridSpacing = NormalizeGridSpacing(
+        GetPrivateProfileIntA("Features", "GridSpacing", kDefaultGridSpacing, iniPath));
 }
 
 void SaveFeatureFlags() {
@@ -118,6 +121,22 @@ void SaveFeatureFlags() {
         const char* val = IsFeatureEnabled(f.id) ? "1" : "0";
         WritePrivateProfileStringA("Features", f.iniKey, val, iniPath);
     }
+    char spacingBuf[16];
+    sprintf_s(spacingBuf, "%d", NormalizeGridSpacing(gGridSpacing));
+    WritePrivateProfileStringA("Features", "GridSpacing", spacingBuf, iniPath);
+}
+
+int NormalizeGridSpacing(int spacing) {
+    if (spacing <= 8) return 8;
+    if (spacing <= 16) return 16;
+    if (spacing <= 32) return 32;
+    return 64;
+}
+
+void SetGridSpacing(int spacing) {
+    gGridSpacing = NormalizeGridSpacing(spacing);
+    SaveFeatureFlags();
+    SyncFeatureFlagMenuItems();
 }
 
 void SyncFeatureFlagMenuItems() {
@@ -132,4 +151,10 @@ void SyncFeatureFlagMenuItems() {
     SetMenuCheck(viewMenu, IDM_FEAT_AUTOSAVE, IsFeatureEnabled(AppFeature::AutosaveRecovery));
     SetMenuCheck(viewMenu, IDM_FEAT_GRID, IsFeatureEnabled(AppFeature::CanvasGrid));
     SetMenuCheck(viewMenu, IDM_FEAT_SNAP_GRID, IsFeatureEnabled(AppFeature::SnapToGrid));
+
+    const int spacing = NormalizeGridSpacing(gGridSpacing);
+    CheckMenuItem(viewMenu, IDM_GRID_8, MF_BYCOMMAND | (spacing == 8 ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuItem(viewMenu, IDM_GRID_16, MF_BYCOMMAND | (spacing == 16 ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuItem(viewMenu, IDM_GRID_32, MF_BYCOMMAND | (spacing == 32 ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuItem(viewMenu, IDM_GRID_64, MF_BYCOMMAND | (spacing == 64 ? MF_CHECKED : MF_UNCHECKED));
 }

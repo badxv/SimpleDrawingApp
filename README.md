@@ -49,7 +49,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
 - **Status bar tips:** active-tool hints + modifiers; cursor document coordinates while hovering the canvas
 - **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
-- **View preferences:** paste at view origin, selection veil, canvas-shrink warning, reopen last document, autosave recovery, canvas grid, snap to grid (`features.ini`)
+- **View preferences:** paste at view origin, selection veil, canvas-shrink warning, reopen last document, autosave recovery, canvas grid + spacing (8/16/32/64), snap to grid (`features.ini`)
 - **Session:** up to 5 recent documents in `session.ini`; **Open Last** (`Ctrl+Shift+O`), **File → Open Recent**, optional startup reopen; dirty canvases autosave to `autosave.png` for crash recovery
 
 ## Requirements
