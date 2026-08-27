@@ -10,6 +10,7 @@ enum class AppFeature {
     ReopenLastDocument,    // Reload last saved/opened file on startup.
     AutosaveRecovery,      // Periodic dirty-canvas snapshot + crash recovery prompt.
     CanvasGrid,            // Draw document grid overlay in the viewport.
+    SnapToGrid,            // Snap pointer document coords to GRID_SPACING.
     Count
 };
 

@@ -21,6 +21,14 @@ constexpr int BRAND_STRIP_W = 118;
 constexpr int GRID_SPACING = 32;        // document pixels between grid lines
 constexpr int GRID_MAJOR_EVERY = 4;     // emphasize every Nth line
 
+inline int SnapCoordToGrid(int value, int spacing = GRID_SPACING) {
+    if (spacing < 1) return value;
+    if (value >= 0) {
+        return ((value + spacing / 2) / spacing) * spacing;
+    }
+    return -(((-value + spacing / 2) / spacing) * spacing);
+}
+
 constexpr int MENU_BTN_W = 44;
 constexpr int FLOAT_DRAG_H = 22;
 constexpr int FLOAT_CHIP_H = 36;

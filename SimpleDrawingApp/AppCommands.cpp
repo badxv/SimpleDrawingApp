@@ -315,6 +315,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             ToggleFeatureFlag(AppFeature::CanvasGrid);
             InvalidateCanvas();
             return true;
+        case IDM_FEAT_SNAP_GRID:
+            ToggleFeatureFlag(AppFeature::SnapToGrid);
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;

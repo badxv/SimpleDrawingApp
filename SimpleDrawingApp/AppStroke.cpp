@@ -2,6 +2,7 @@
 #include "AppCanvas.h"
 #include "AppState.h"
 #include "AppMetrics.h"
+#include "AppFeatureFlags.h"
 #include "DrawingTools.h"
 #include "AtelierPalette.h"
 #include "AtelierRaii.h"
@@ -214,6 +215,10 @@ void RedrawShapePreview(int endX, int endY, bool shiftConstrained) {
     int y1 = endY;
     if (shiftConstrained) {
         ConstrainShapeEnd(shapeStart.x, shapeStart.y, x1, y1);
+    }
+    if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
+        x1 = SnapCoordToGrid(x1);
+        y1 = SnapCoordToGrid(y1);
     }
     strokeGraphics->Clear(Color(0, 0, 0, 0));
     DrawShapeOnto(strokeGraphics.get(), shapeStart.x, shapeStart.y, x1, y1);
