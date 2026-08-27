@@ -47,6 +47,7 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "  Ctrl+Shift+O  Open Last Document\r\n"
             "  Ctrl+S     Save\r\n"
             "  Ctrl+Shift+S  Save As\r\n"
+            "  Ctrl+Shift+E  Export As\r\n"
             "  Ctrl+Z/Y   Undo / Redo (depth limited)\r\n"
             "  Ctrl+X/C/V Cut / Copy / Paste\r\n"
             "  Ctrl+A     Select all\r\n"

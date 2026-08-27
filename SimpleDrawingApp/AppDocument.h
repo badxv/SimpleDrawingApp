@@ -8,6 +8,7 @@ void ResizeCanvas(HWND hwnd);
 bool PromptSaveIfDirty(HWND hwnd);
 void SaveDocument(HWND hwnd);
 void SaveDocumentAs(HWND hwnd);
+void ExportDocument(HWND hwnd);
 void OpenDocument(HWND hwnd);
 void OpenLastDocument(HWND hwnd);
 void OpenRecentDocument(HWND hwnd, int index);

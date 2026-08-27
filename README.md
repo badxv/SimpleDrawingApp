@@ -44,7 +44,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Zoom:** `Ctrl`+wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
 - **Layers:** add / delete / reorder, visibility, per-layer opacity; Background pinned at bottom; drawing starts on Layer 1
 - **Undo / Redo** (full layer-stack snapshots, capped — up to 30 steps; fewer on large canvases)
-- **New / Clear** with unsaved-change prompts; **Save / Open** PNG, JPG, BMP
+- **New / Clear** with unsaved-change prompts; **Save / Open / Export As** PNG, JPG, BMP
 - **Fixed document canvas** (default 1280×720) + scrollable viewport; **Canvas Size…** (`Ctrl+E`)
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
 - **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
@@ -94,7 +94,7 @@ CI runs the same script on every push / PR to `main` (GitHub Actions → **Build
 | Zoom | `Ctrl`+wheel or **View** menu |
 | Layers | Right panel: `+` / `-` / Up / Dn, Visible, opacity |
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
-| Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` (re-save skips the dialog when a path is known; **Save As** = `Ctrl+Shift+S`) |
+| Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` (re-save skips the dialog when a path is known; **Save As** = `Ctrl+Shift+S`; **Export As** = `Ctrl+Shift+E`, copy only) |
 | Canvas size | **Image → Canvas Size…** or `Ctrl+E` |
 | Shortcuts list | **Help → Keyboard Shortcuts** or `F1` |
 
