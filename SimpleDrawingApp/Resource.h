@@ -17,6 +17,7 @@
 #define IDM_SAVE_AS				138
 #define IDM_EXPORT				148
 #define IDM_PRINT				159
+#define IDM_FLATTEN_LAYERS		160
 #define IDM_OPEN_LAST			139
 #define IDM_FEAT_REOPEN_LAST	140
 #define IDM_FEAT_AUTOSAVE		149

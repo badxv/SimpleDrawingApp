@@ -62,6 +62,7 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "  Ctrl+A     Select all\r\n"
             "  Del        Delete selection\r\n"
             "  Ctrl+E     Canvas size\r\n"
+            "  Image → Flatten Layers   Merge visible layers\r\n"
             "\r\n"
             "View\r\n"
             "  Ctrl++/-   Zoom in / out\r\n"

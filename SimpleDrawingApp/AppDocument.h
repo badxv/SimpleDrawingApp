@@ -4,6 +4,7 @@
 
 bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bool warnOnShrink);
 void ClearCanvas(HWND hwnd, bool pushHistory);
+void FlattenLayers(HWND hwnd);
 void ResizeCanvas(HWND hwnd);
 bool PromptSaveIfDirty(HWND hwnd);
 void SaveDocument(HWND hwnd);

@@ -191,6 +191,15 @@ bool LayerStack::ReplaceWithImage(Bitmap* image) {
     return true;
 }
 
+bool LayerStack::FlattenVisible() {
+    if (Count() < 2) return false;
+    Bitmap* flat = CreateComposite();
+    if (!flat) return false;
+    const bool ok = ReplaceWithImage(flat);
+    delete flat;
+    return ok;
+}
+
 void LayerStack::SetActiveIndex(int index) {
     if (index < 0 || index >= Count()) return;
     active_ = index;

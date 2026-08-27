@@ -348,6 +348,29 @@ void ClearCanvas(HWND hwnd, bool pushHistory) {
     InvalidateCanvas();
 }
 
+void FlattenLayers(HWND hwnd) {
+    EnsureCanvas(hwnd);
+    if (gLayers.Count() < 2) return;
+
+    if (isDrawing) {
+        isDrawing = false;
+        CommitStrokeLayer();
+    }
+    DestroyStrokeLayer();
+    ClearSelection(false);
+
+    gHistory.Push(gLayers);
+    if (!gLayers.FlattenVisible()) {
+        return;
+    }
+
+    InvalidateComposite();
+    MarkDirty(hwnd);
+    RefreshLayerList();
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+}
+
 void SyncPresetSelection(HWND hDlg) {
     HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
     if (!list) return;

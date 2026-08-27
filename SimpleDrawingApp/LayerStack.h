@@ -55,6 +55,8 @@ public:
     // Returns false if allocation fails; existing layers unchanged.
     bool Resize(int width, int height, COLORREF backgroundPad);
     void ClearAllContent(COLORREF background);
+    // Merge all visible layers (with opacity) into Background + empty Layer 1.
+    bool FlattenVisible();
     // Replaces the stack with a single background layer cloned from image.
     bool ReplaceWithImage(Gdiplus::Bitmap* image);
 
