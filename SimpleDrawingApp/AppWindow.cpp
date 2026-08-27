@@ -481,6 +481,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             case VK_F8:
                 SetBottomOpen(hwnd, !gBottomOpen);
                 break;
+            case VK_F2:
+                SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDC_LAYER_RENAME, 0), 0);
+                break;
             default: break;
             }
         }

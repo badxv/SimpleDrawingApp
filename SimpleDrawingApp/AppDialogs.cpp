@@ -1,5 +1,9 @@
 #include "AppDialogs.h"
+#include "AppState.h"
+#include "LayerStack.h"
 #include "Resource.h"
+
+#include <cstring>
 
 namespace {
 
@@ -40,6 +44,10 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "\r\n"
             "Brush\r\n"
             "  [ / ]      Decrease / increase size\r\n"
+            "  Tools → Brush Size   Fine / Medium / Bold presets\r\n"
+            "\r\n"
+            "Layers\r\n"
+            "  Double-click / F2   Rename active layer\r\n"
             "\r\n"
             "File & edit\r\n"
             "  Ctrl+N     New\r\n"
@@ -71,6 +79,43 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
     return FALSE;
 }
 
+struct LayerRenameState {
+    char out[80];
+};
+
+static INT_PTR CALLBACK LayerRenameDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    LayerRenameState* state = reinterpret_cast<LayerRenameState*>(GetWindowLongPtrA(hDlg, GWLP_USERDATA));
+    switch (message) {
+    case WM_INITDIALOG: {
+        state = reinterpret_cast<LayerRenameState*>(lParam);
+        SetWindowLongPtrA(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        const Layer* layer = gLayers.ActiveLayer();
+        if (layer) {
+            SetDlgItemTextA(hDlg, IDC_LAYER_NAME, layer->name.c_str());
+        }
+        if (HWND edit = GetDlgItem(hDlg, IDC_LAYER_NAME)) {
+            SendMessageA(edit, EM_SETSEL, 0, -1);
+            SetFocus(edit);
+            return FALSE;
+        }
+        return TRUE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDOK:
+            if (state) {
+                GetDlgItemTextA(hDlg, IDC_LAYER_NAME, state->out, sizeof(state->out));
+            }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        case IDCANCEL:
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
 
 } // namespace
 
@@ -80,4 +125,18 @@ void ShowAboutDialog(HWND owner) {
 
 void ShowShortcutsDialog(HWND owner) {
     DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_SHORTCUTS), owner, ShortcutsDlgProc);
+}
+
+bool PromptLayerRename(HWND owner, char* outName, size_t outChars) {
+    if (!outName || outChars == 0 || !gLayers.ActiveLayer()) return false;
+    outName[0] = '\0';
+
+    LayerRenameState state = {};
+    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_LAYER_RENAME), owner,
+            LayerRenameDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
+        return false;
+    }
+    strncpy(outName, state.out, outChars - 1);
+    outName[outChars - 1] = '\0';
+    return true;
 }
