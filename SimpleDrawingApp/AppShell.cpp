@@ -1,6 +1,7 @@
 #include "AppShell.h"
 #include "AppState.h"
 #include "AppMetrics.h"
+#include "AppFeatureFlags.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
@@ -8,6 +9,51 @@
 #include <commctrl.h>
 #include <cstdio>
 #include <cstring>
+
+namespace {
+
+const char* StatusToolName() {
+    if (currentTool == DrawTool::Eraser) return "Eraser";
+    if (currentTool == DrawTool::Fill) return "Fill";
+    if (currentTool == DrawTool::Line) return "Line";
+    if (currentTool == DrawTool::Select) return "Select";
+    if (currentTool == DrawTool::Shape) {
+        switch (currentShape) {
+        case ShapeKind::Rectangle: return "Rectangle";
+        case ShapeKind::Ellipse: return "Ellipse";
+        case ShapeKind::Triangle: return "Triangle";
+        case ShapeKind::Star: return "Star";
+        case ShapeKind::Diamond: return "Diamond";
+        case ShapeKind::RoundRect: return "Round rect";
+        }
+    }
+    return "Pen";
+}
+
+void BuildStatusTip(char* out, size_t outChars) {
+    if (!out || outChars == 0) return;
+    out[0] = '\0';
+
+    const char* tip = "B · [ / ] size";
+    if (currentTool == DrawTool::Eraser) tip = "E · erase on active layer";
+    else if (currentTool == DrawTool::Fill) tip = "G · click to flood fill";
+    else if (currentTool == DrawTool::Line) tip = "L · drag · Shift: H/V/45°";
+    else if (currentTool == DrawTool::Select) tip = "M · drag · Ctrl+C/X/V · Del";
+    else if (currentTool == DrawTool::Shape) tip = "U · Alt=fill · Ctrl=both · Shift=constrain";
+    else if (currentTool == DrawTool::Pen) tip = "B · [ / ] size · draw freely";
+
+    char extras[64] = "";
+    if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
+        strcat_s(extras, " · Snap");
+    }
+    if (IsFeatureEnabled(AppFeature::CanvasGrid)) {
+        strcat_s(extras, " · Grid");
+    }
+
+    sprintf_s(out, outChars, "%s — %s%s", StatusToolName(), tip, extras);
+}
+
+}  // namespace
 
 void UpdatePenWidthDisplay() {
     if (!hwndPenWidthBox) return;
@@ -41,34 +87,29 @@ void UpdateWindowTitle(HWND hwnd) {
 void UpdateStatusBar(HWND hwnd) {
     if (!hwndStatus) return;
 
-    const char* toolName = "Pen";
-    if (currentTool == DrawTool::Eraser) toolName = "Eraser";
-    else if (currentTool == DrawTool::Fill) toolName = "Fill";
-    else if (currentTool == DrawTool::Line) toolName = "Line";
-    else if (currentTool == DrawTool::Shape) {
-        switch (currentShape) {
-        case ShapeKind::Rectangle: toolName = "Rectangle"; break;
-        case ShapeKind::Ellipse: toolName = "Ellipse"; break;
-        case ShapeKind::Triangle: toolName = "Triangle"; break;
-        case ShapeKind::Star: toolName = "Star"; break;
-        case ShapeKind::Diamond: toolName = "Diamond"; break;
-        case ShapeKind::RoundRect: toolName = "Round rect"; break;
-        }
-    }
-    else if (currentTool == DrawTool::Select) toolName = "Select";
-
     const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
 
-    char part0[64];
-    char part1[64];
+    char part0[160];
+    char part1[96];
     char part2[80];
-    sprintf_s(part0, "Tool: %s", toolName);
+    BuildStatusTip(part0, sizeof(part0));
+
     if (const Layer* layer = gLayers.ActiveLayer()) {
-        sprintf_s(part1, "%s | %d x %d  %d%%", layer->name.c_str(), docWidth, docHeight, zoomPct);
+        if (gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
+            sprintf_s(part1, "%s | %d×%d %d%% | %d, %d",
+                layer->name.c_str(), docWidth, docHeight, zoomPct,
+                gStatusHoverDocX, gStatusHoverDocY);
+        } else {
+            sprintf_s(part1, "%s | %d×%d %d%%",
+                layer->name.c_str(), docWidth, docHeight, zoomPct);
+        }
+    } else if (gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
+        sprintf_s(part1, "%d×%d %d%% | %d, %d",
+            docWidth, docHeight, zoomPct, gStatusHoverDocX, gStatusHoverDocY);
+    } else {
+        sprintf_s(part1, "%d×%d %d%%", docWidth, docHeight, zoomPct);
     }
-    else {
-        sprintf_s(part1, "Size: %d x %d  %d%%", docWidth, docHeight, zoomPct);
-    }
+
     sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");
 
     SendMessageA(hwndStatus, SB_SETTEXTA, 0, (LPARAM)part0);
@@ -117,6 +158,8 @@ void SetActiveTool(DrawTool tool) {
         payload.type = AtelierEvent::ActiveToolChanged;
         payload.tool = tool;
         AppEventBus().Publish(payload);
+        HWND mainWnd = hwndToolButtons[0] ? GetAncestor(hwndToolButtons[0], GA_ROOT) : nullptr;
+        if (mainWnd) UpdateStatusBar(mainWnd);
     }
 }
 bool IsTypingInEdit() {
@@ -176,6 +219,13 @@ void LayoutStatusParts(HWND hwnd) {
     RECT rc = {};
     GetClientRect(hwnd, &rc);
     const int width = rc.right - rc.left;
-    int parts[4] = { width / 3, (width * 2) / 3, width - 1, -1 };
+    // Wider tip pane (left), then layer/coords, then brush/dirty.
+    int parts[4] = {
+        (width * 48) / 100,
+        (width * 78) / 100,
+        width - 1,
+        -1
+    };
     SendMessageA(hwndStatus, SB_SETPARTS, 3, (LPARAM)parts);
+    (void)hwnd;
 }

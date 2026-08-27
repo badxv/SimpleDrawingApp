@@ -108,3 +108,5 @@ int gRecentDocumentCount = 0;
 
 int gCanvasDlgWidth = 0;
 int gCanvasDlgHeight = 0;
+int gStatusHoverDocX = -1;
+int gStatusHoverDocY = -1;
