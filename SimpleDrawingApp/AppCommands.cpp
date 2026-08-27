@@ -432,6 +432,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     case IDM_CANVAS_SIZE:
         ResizeCanvas(hwnd);
         return true;
+    case IDM_FLATTEN_LAYERS:
+        FlattenLayers(hwnd);
+        return true;
     case IDM_ABOUT:
         ShowAboutDialog(hwnd);
         return true;
