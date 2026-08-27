@@ -140,6 +140,8 @@ extern int gCanvasDlgHeight;
 // Document coords under cursor in the viewport; -1 when not hovering the canvas.
 extern int gStatusHoverDocX;
 extern int gStatusHoverDocY;
+extern int gGridSpacing; // 8 / 16 / 32 / 64 document pixels
+
 
 inline BYTE OpacityToAlpha() {
     int pct = penOpacity;

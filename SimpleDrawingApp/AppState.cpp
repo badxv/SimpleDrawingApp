@@ -110,3 +110,4 @@ int gCanvasDlgWidth = 0;
 int gCanvasDlgHeight = 0;
 int gStatusHoverDocX = -1;
 int gStatusHoverDocY = -1;
+int gGridSpacing = kDefaultGridSpacing;

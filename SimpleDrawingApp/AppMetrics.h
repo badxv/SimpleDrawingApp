@@ -18,10 +18,10 @@ constexpr int LAYER_PANEL_WIDTH = 168;
 constexpr int ICON_BTN = 30;
 constexpr int WELL_FRAME = 6;
 constexpr int BRAND_STRIP_W = 118;
-constexpr int GRID_SPACING = 32;        // document pixels between grid lines
+constexpr int kDefaultGridSpacing = 32; // document pixels between grid lines
 constexpr int GRID_MAJOR_EVERY = 4;     // emphasize every Nth line
 
-inline int SnapCoordToGrid(int value, int spacing = GRID_SPACING) {
+inline int SnapCoordToGrid(int value, int spacing) {
     if (spacing < 1) return value;
     if (value >= 0) {
         return ((value + spacing / 2) / spacing) * spacing;

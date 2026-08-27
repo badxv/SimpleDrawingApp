@@ -21,6 +21,8 @@ bool FeatureDefaultEnabled(AppFeature feature);
 void LoadFeatureFlags();
 void SaveFeatureFlags();
 void SyncFeatureFlagMenuItems();
+int NormalizeGridSpacing(int spacing);
+void SetGridSpacing(int spacing);
 
 // Toggles a preference, persists, and refreshes menu checkmarks. Returns new state.
 bool ToggleFeatureFlag(AppFeature feature);

@@ -320,6 +320,22 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             ToggleFeatureFlag(AppFeature::SnapToGrid);
             UpdateStatusBar(hwnd);
             return true;
+        case IDM_GRID_8:
+            SetGridSpacing(8);
+            InvalidateCanvas();
+            return true;
+        case IDM_GRID_16:
+            SetGridSpacing(16);
+            InvalidateCanvas();
+            return true;
+        case IDM_GRID_32:
+            SetGridSpacing(32);
+            InvalidateCanvas();
+            return true;
+        case IDM_GRID_64:
+            SetGridSpacing(64);
+            InvalidateCanvas();
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
