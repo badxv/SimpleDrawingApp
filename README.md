@@ -45,7 +45,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Layers:** add / delete / reorder, rename (double-click or `F2`), visibility, per-layer opacity; **Image → Flatten Layers**; Background pinned at bottom; drawing starts on Layer 1
 - **Undo / Redo** (full layer-stack snapshots, capped — up to 30 steps; fewer on large canvases)
 - **New / Clear** with unsaved-change prompts; **Save / Open / Export As** PNG, JPG, BMP; **Print** (`Ctrl+P`)
-- **Fixed document canvas** (default 1280×720) + scrollable viewport; **Canvas Size…** (`Ctrl+E`)
+- **Fixed document canvas** (default 1280×720) + scrollable viewport; **Canvas Size…** (`Ctrl+E`); **Flip H/V**, **Rotate 90° CW**
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
 - **Status bar tips:** active-tool hints + modifiers; cursor document coordinates while hovering the canvas
 - **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
@@ -97,6 +97,7 @@ CI runs the same script on every push / PR to `main` (GitHub Actions → **Build
 | Undo / Redo | Buttons, menu, or `Ctrl+Z` / `Ctrl+Y` |
 | Save / Open | Buttons, menu, or `Ctrl+S` / `Ctrl+O` (re-save skips the dialog when a path is known; **Save As** = `Ctrl+Shift+S`; **Export As** = `Ctrl+Shift+E`, copy only; **Print** = `Ctrl+P`) |
 | Canvas size | **Image → Canvas Size…** or `Ctrl+E` |
+| Flip / rotate | **Image → Flip Horizontal / Flip Vertical / Rotate 90° CW** |
 | Shortcuts list | **Help → Keyboard Shortcuts** or `F1` |
 
 ## Project structure

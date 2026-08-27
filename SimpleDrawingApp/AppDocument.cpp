@@ -371,6 +371,53 @@ void FlattenLayers(HWND hwnd) {
     UpdateStatusBar(hwnd);
 }
 
+namespace {
+
+void BeginImageGeometryEdit(HWND hwnd) {
+    EnsureCanvas(hwnd);
+    if (isDrawing) {
+        isDrawing = false;
+        CommitStrokeLayer();
+    }
+    DestroyStrokeLayer();
+    ClearSelection(false);
+    gHistory.Push(gLayers);
+}
+
+void EndImageGeometryEdit(HWND hwnd, bool sizeChanged) {
+    if (sizeChanged) {
+        docWidth = gLayers.Width();
+        docHeight = gLayers.Height();
+        scrollX = 0;
+        scrollY = 0;
+        UpdateScrollBars();
+    }
+    InvalidateComposite();
+    MarkDirty(hwnd);
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+}
+
+} // namespace
+
+void FlipDocumentHorizontal(HWND hwnd) {
+    BeginImageGeometryEdit(hwnd);
+    if (!gLayers.FlipHorizontal()) return;
+    EndImageGeometryEdit(hwnd, false);
+}
+
+void FlipDocumentVertical(HWND hwnd) {
+    BeginImageGeometryEdit(hwnd);
+    if (!gLayers.FlipVertical()) return;
+    EndImageGeometryEdit(hwnd, false);
+}
+
+void RotateDocument90Cw(HWND hwnd) {
+    BeginImageGeometryEdit(hwnd);
+    if (!gLayers.Rotate90Clockwise()) return;
+    EndImageGeometryEdit(hwnd, true);
+}
+
 void SyncPresetSelection(HWND hDlg) {
     HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
     if (!list) return;
