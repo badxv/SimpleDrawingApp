@@ -8,6 +8,7 @@ enum class AppFeature {
     PasteAtViewOrigin,     // Paste floating selection at viewport origin vs doc (0,0).
     SelectionExteriorVeil, // Dim area outside marquee when selecting.
     ReopenLastDocument,    // Reload last saved/opened file on startup.
+    AutosaveRecovery,      // Periodic dirty-canvas snapshot + crash recovery prompt.
     Count
 };
 

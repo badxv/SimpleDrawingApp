@@ -6,6 +6,8 @@ features.ini
 **/features.ini
 session.ini
 **/session.ini
+autosave.png
+**/autosave.png
 
 # Visual Studio / local IDE (do not commit)
 .vs/
