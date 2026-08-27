@@ -19,6 +19,7 @@ const FeatureMeta kFeatures[] = {
     { AppFeature::WarnCanvasShrink, "WarnCanvasShrink", true },
     { AppFeature::PasteAtViewOrigin, "PasteAtViewOrigin", true },
     { AppFeature::SelectionExteriorVeil, "SelectionExteriorVeil", true },
+    { AppFeature::ReopenLastDocument, "ReopenLastDocument", true },
 };
 
 void ApplyDefaults() {
@@ -124,4 +125,5 @@ void SyncFeatureFlagMenuItems() {
     SetMenuCheck(viewMenu, IDM_FEAT_PASTE_VIEW, IsFeatureEnabled(AppFeature::PasteAtViewOrigin));
     SetMenuCheck(viewMenu, IDM_FEAT_SEL_VEIL, IsFeatureEnabled(AppFeature::SelectionExteriorVeil));
     SetMenuCheck(viewMenu, IDM_FEAT_WARN_SHRINK, IsFeatureEnabled(AppFeature::WarnCanvasShrink));
+    SetMenuCheck(viewMenu, IDM_FEAT_REOPEN_LAST, IsFeatureEnabled(AppFeature::ReopenLastDocument));
 }

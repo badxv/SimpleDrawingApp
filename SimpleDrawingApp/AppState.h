@@ -129,6 +129,7 @@ extern ShapePaintMode shapePaintMode;
 extern bool documentDirty;
 extern char gDocumentPath[MAX_PATH];
 extern char gLastBrowseDir[MAX_PATH];
+extern char gLastDocumentPath[MAX_PATH];
 
 extern int gCanvasDlgWidth;
 extern int gCanvasDlgHeight;

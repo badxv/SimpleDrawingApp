@@ -14,6 +14,8 @@
 #define IDM_OPEN				110
 #define IDM_SAVE				111
 #define IDM_SAVE_AS				138
+#define IDM_OPEN_LAST			139
+#define IDM_FEAT_REOPEN_LAST	140
 #define IDM_UNDO				112
 #define IDM_REDO				113
 #define IDM_CLEAR				114

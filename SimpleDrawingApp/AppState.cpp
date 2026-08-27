@@ -102,6 +102,7 @@ ShapePaintMode shapePaintMode = ShapePaintMode::Stroke;
 bool documentDirty = false;
 char gDocumentPath[MAX_PATH] = "";
 char gLastBrowseDir[MAX_PATH] = "";
+char gLastDocumentPath[MAX_PATH] = "";
 
 int gCanvasDlgWidth = 0;
 int gCanvasDlgHeight = 0;

@@ -38,6 +38,10 @@ void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
     HMENU sub = GetSubMenu(gAppMenu, menuIndex);
     if (!sub) return;
     SyncFeatureFlagMenuItems();
+    if (menuIndex == 0) {
+        EnableMenuItem(sub, IDM_OPEN_LAST,
+            MF_BYCOMMAND | (LastDocumentAvailable() ? MF_ENABLED : MF_GRAYED));
+    }
     RECT br = {};
     if (anchorBtn) GetWindowRect(anchorBtn, &br);
     else GetWindowRect(hwnd, &br);
@@ -300,6 +304,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         case IDM_FEAT_WARN_SHRINK:
             ToggleFeatureFlag(AppFeature::WarnCanvasShrink);
             return true;
+        case IDM_FEAT_REOPEN_LAST:
+            ToggleFeatureFlag(AppFeature::ReopenLastDocument);
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
@@ -340,9 +347,12 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             SaveDocumentAs(hwnd);
             return true;
     case IDC_LOAD_BUTTON:
-    case IDM_OPEN:
-        OpenDocument(hwnd);
-        return true;
+        case IDM_OPEN:
+            OpenDocument(hwnd);
+            return true;
+        case IDM_OPEN_LAST:
+            OpenLastDocument(hwnd);
+            return true;
     case IDM_CANVAS_SIZE:
         ResizeCanvas(hwnd);
         return true;

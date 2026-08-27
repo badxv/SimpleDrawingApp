@@ -1,6 +1,7 @@
 #include "AppWindow.h"
 #include "AppShell.h"
 #include "AppCommands.h"
+#include "AppFeatureFlags.h"
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppCanvas.h"
@@ -163,6 +164,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         // Fresco cache once; low-rate idle motion (pauses while drawing/resizing).
         RequestChromeRebuild(hwnd, 1);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
+        if (IsFeatureEnabled(AppFeature::ReopenLastDocument) && LastDocumentAvailable()) {
+            PostMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_OPEN_LAST, 0), 0);
+        }
         break;
     }
     case WM_TIMER:

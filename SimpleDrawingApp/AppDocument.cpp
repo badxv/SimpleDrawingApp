@@ -37,10 +37,43 @@ void RememberBrowseDirFromPath(const char* path) {
     sprintf_s(gLastBrowseDir, "%s", dir);
 }
 
+void GetSessionIniPath(char* path, size_t pathChars) {
+    if (!path || pathChars == 0) return;
+    path[0] = '\0';
+    DWORD len = GetModuleFileNameA(nullptr, path, static_cast<DWORD>(pathChars));
+    if (len == 0 || len >= pathChars) {
+        path[0] = '\0';
+        return;
+    }
+    for (int i = static_cast<int>(len) - 1; i >= 0; --i) {
+        if (path[i] == '\\' || path[i] == '/') {
+            path[i + 1] = '\0';
+            break;
+        }
+    }
+    const size_t used = strlen(path);
+    const char suffix[] = "session.ini";
+    if (used + sizeof(suffix) > pathChars) {
+        path[0] = '\0';
+        return;
+    }
+    strcat_s(path, pathChars, suffix);
+}
+
+void SaveSessionState() {
+    char iniPath[MAX_PATH] = {};
+    GetSessionIniPath(iniPath, MAX_PATH);
+    if (!iniPath[0]) return;
+    WritePrivateProfileStringA("Session", "LastDocument",
+        gLastDocumentPath[0] ? gLastDocumentPath : "", iniPath);
+}
+
 void SetDocumentPath(const char* path) {
     if (path && path[0]) {
         sprintf_s(gDocumentPath, "%s", path);
+        sprintf_s(gLastDocumentPath, "%s", path);
         RememberBrowseDirFromPath(path);
+        SaveSessionState();
     } else {
         gDocumentPath[0] = '\0';
     }
@@ -56,6 +89,38 @@ bool WriteDocumentToPath(HWND hwnd, const char* path) {
     }
     MessageBoxA(hwnd, "Failed to save image.", "Error", MB_OK | MB_ICONERROR);
     return false;
+}
+
+bool OpenDocumentFromPath(HWND hwnd, const char* filePath) {
+    if (!filePath || !filePath[0]) return false;
+
+    DestroyStrokeLayer();
+    isDrawing = false;
+    ClearSelection(false);
+
+    Bitmap* loaded = nullptr;
+    Graphics* loadedG = nullptr;
+    if (!LoadImageFromFile(filePath, loaded, loadedG)) {
+        return false;
+    }
+    delete loadedG;
+    if (!gLayers.ReplaceWithImage(loaded)) {
+        delete loaded;
+        return false;
+    }
+    delete loaded;
+    SyncDocSizeFromBitmap();
+    scrollX = 0;
+    scrollY = 0;
+    InvalidateComposite();
+    UpdateScrollBars();
+    gHistory.Clear();
+    SetDocumentPath(filePath);
+    MarkClean(hwnd);
+    RefreshLayerList();
+    InvalidateCanvas();
+    UpdateStatusBar(hwnd);
+    return true;
 }
 }
 
@@ -289,35 +354,42 @@ void OpenDocument(HWND hwnd) {
     }
 
     if (GetOpenFileNameA(&ofn)) {
-        DestroyStrokeLayer();
-        isDrawing = false;
-        ClearSelection(false);
-
-        Bitmap* loaded = nullptr;
-        Graphics* loadedG = nullptr;
-        if (LoadImageFromFile(filePath, loaded, loadedG)) {
-            delete loadedG;
-            if (!gLayers.ReplaceWithImage(loaded)) {
-                delete loaded;
-                MessageBoxA(hwnd, "Failed to create document from image.", "Error", MB_OK | MB_ICONERROR);
-                return;
-            }
-            delete loaded;
-            SyncDocSizeFromBitmap();
-            scrollX = 0;
-            scrollY = 0;
-            InvalidateComposite();
-            UpdateScrollBars();
-            gHistory.Clear();
-            SetDocumentPath(filePath);
-            MarkClean(hwnd);
-            RefreshLayerList();
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
-        }
-        else {
+        if (!OpenDocumentFromPath(hwnd, filePath)) {
             MessageBoxA(hwnd, "Failed to load image.", "Error", MB_OK | MB_ICONERROR);
         }
+    }
+}
+
+bool LastDocumentAvailable() {
+    if (!gLastDocumentPath[0]) return false;
+    const DWORD attrs = GetFileAttributesA(gLastDocumentPath);
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+void LoadSessionState() {
+    char iniPath[MAX_PATH] = {};
+    GetSessionIniPath(iniPath, MAX_PATH);
+    if (!iniPath[0]) return;
+    GetPrivateProfileStringA("Session", "LastDocument", "",
+        gLastDocumentPath, MAX_PATH, iniPath);
+    if (gLastDocumentPath[0]) {
+        RememberBrowseDirFromPath(gLastDocumentPath);
+    }
+}
+
+void OpenLastDocument(HWND hwnd) {
+    if (!LastDocumentAvailable()) {
+        if (gLastDocumentPath[0]) {
+            gLastDocumentPath[0] = '\0';
+            SaveSessionState();
+        }
+        return;
+    }
+    if (!PromptSaveIfDirty(hwnd)) return;
+    if (!OpenDocumentFromPath(hwnd, gLastDocumentPath)) {
+        MessageBoxA(hwnd, "Failed to open the last document.", "Error", MB_OK | MB_ICONERROR);
+        gLastDocumentPath[0] = '\0';
+        SaveSessionState();
     }
 }
 
