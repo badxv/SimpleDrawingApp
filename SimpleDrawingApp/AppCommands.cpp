@@ -332,10 +332,13 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     case IDM_REDO:
         RedoDocument(hwnd);
         return true;
-    case IDC_SAVE_BUTTON:
-    case IDM_SAVE:
-        SaveDocument(hwnd);
-        return true;
+        case IDC_SAVE_BUTTON:
+        case IDM_SAVE:
+            SaveDocument(hwnd);
+            return true;
+        case IDM_SAVE_AS:
+            SaveDocumentAs(hwnd);
+            return true;
     case IDC_LOAD_BUTTON:
     case IDM_OPEN:
         OpenDocument(hwnd);

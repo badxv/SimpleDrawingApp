@@ -245,7 +245,17 @@ void SaveDocument(HWND hwnd) {
         return;
     }
 
+    SaveDocumentAs(hwnd);
+}
+
+void SaveDocumentAs(HWND hwnd) {
+    EnsureCanvas(hwnd);
+
     char filePath[MAX_PATH] = "";
+    if (gDocumentPath[0]) {
+        sprintf_s(filePath, "%s", gDocumentPath);
+    }
+
     OPENFILENAMEA ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
