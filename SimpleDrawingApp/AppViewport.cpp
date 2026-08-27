@@ -4,6 +4,7 @@
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppSelection.h"
+#include "AppFeatureFlags.h"
 #include "SimpleDrawingApp.h"
 #include "DrawingTools.h"
 #include "LayerHistory.h"
@@ -32,6 +33,34 @@ static void ViewportToDocumentUnclamped(int localX, int localY, int& docX, int& 
     }
     docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
     docY = static_cast<int>(std::floor((localY + scrollY) / zoomFactor));
+}
+
+static void DrawCanvasGrid(Graphics* g) {
+    if (!g || !IsFeatureEnabled(AppFeature::CanvasGrid)) return;
+    if (docWidth < 1 || docHeight < 1 || zoomFactor <= 0.0f) return;
+    if (GRID_SPACING < 1) return;
+
+    const REAL z = zoomFactor;
+    const REAL docW = static_cast<REAL>(docWidth) * z;
+    const REAL docH = static_cast<REAL>(docHeight) * z;
+
+    Pen minor(Color(55, 90, 110, 130), 1.0f);
+    Pen major(Color(90, 70, 90, 110), 1.0f);
+    minor.SetDashStyle(DashStyleSolid);
+    major.SetDashStyle(DashStyleSolid);
+
+    for (int x = 0; x <= docWidth; x += GRID_SPACING) {
+        const bool isMajor = (x % (GRID_SPACING * GRID_MAJOR_EVERY) == 0) || x == docWidth;
+        Pen& pen = isMajor ? major : minor;
+        const REAL sx = static_cast<REAL>(x) * z;
+        g->DrawLine(&pen, sx, 0.0f, sx, docH);
+    }
+    for (int y = 0; y <= docHeight; y += GRID_SPACING) {
+        const bool isMajor = (y % (GRID_SPACING * GRID_MAJOR_EVERY) == 0) || y == docHeight;
+        Pen& pen = isMajor ? major : minor;
+        const REAL sy = static_cast<REAL>(y) * z;
+        g->DrawLine(&pen, 0.0f, sy, docW, sy);
+    }
 }
 static int ScrollByMessage(HWND scrollBar, WPARAM wParam, int current, int maxScroll) {
     int pos = current;
@@ -363,9 +392,10 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                     }
                 }
 
-                // Selection overlay in document space via transform.
+                // Selection overlay + optional grid in document space via transform.
                 g.ResetTransform();
                 g.TranslateTransform(static_cast<REAL>(-scrollX), static_cast<REAL>(-scrollY));
+                DrawCanvasGrid(&g);
                 DrawSelectionOverlay(&g);
             }
 
