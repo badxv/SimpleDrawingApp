@@ -22,6 +22,7 @@ const FeatureMeta kFeatures[] = {
     { AppFeature::ReopenLastDocument, "ReopenLastDocument", true },
     { AppFeature::AutosaveRecovery, "AutosaveRecovery", true },
     { AppFeature::CanvasGrid, "CanvasGrid", false },
+    { AppFeature::SnapToGrid, "SnapToGrid", false },
 };
 
 void ApplyDefaults() {
@@ -130,4 +131,5 @@ void SyncFeatureFlagMenuItems() {
     SetMenuCheck(viewMenu, IDM_FEAT_REOPEN_LAST, IsFeatureEnabled(AppFeature::ReopenLastDocument));
     SetMenuCheck(viewMenu, IDM_FEAT_AUTOSAVE, IsFeatureEnabled(AppFeature::AutosaveRecovery));
     SetMenuCheck(viewMenu, IDM_FEAT_GRID, IsFeatureEnabled(AppFeature::CanvasGrid));
+    SetMenuCheck(viewMenu, IDM_FEAT_SNAP_GRID, IsFeatureEnabled(AppFeature::SnapToGrid));
 }

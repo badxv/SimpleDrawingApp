@@ -15,6 +15,12 @@
 
 using namespace Gdiplus;
 
+static void MaybeSnapDocumentPoint(int& docX, int& docY) {
+    if (!IsFeatureEnabled(AppFeature::SnapToGrid)) return;
+    docX = SnapCoordToGrid(docX);
+    docY = SnapCoordToGrid(docY);
+}
+
 static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
     if (zoomFactor <= 0.0f) return false;
     docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
@@ -22,6 +28,11 @@ static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
     if (docX < 0 || docY < 0 || docX >= docWidth || docY >= docHeight) {
         return false;
     }
+    MaybeSnapDocumentPoint(docX, docY);
+    if (docX < 0) docX = 0;
+    if (docY < 0) docY = 0;
+    if (docX >= docWidth) docX = docWidth - 1;
+    if (docY >= docHeight) docY = docHeight - 1;
     return true;
 }
 
@@ -33,6 +44,7 @@ static void ViewportToDocumentUnclamped(int localX, int localY, int& docX, int& 
     }
     docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
     docY = static_cast<int>(std::floor((localY + scrollY) / zoomFactor));
+    MaybeSnapDocumentPoint(docX, docY);
 }
 
 static void DrawCanvasGrid(Graphics* g) {
