@@ -44,6 +44,7 @@ public:
     Gdiplus::Graphics* ActiveGraphics();
 
     bool AddLayer();
+    bool DuplicateActiveLayer();
     bool DeleteActiveLayer();
     bool MoveActiveUp();
     bool MoveActiveDown();

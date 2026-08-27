@@ -240,6 +240,17 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             UpdateStatusBar(hwnd);
         }
         return true;
+    case IDC_LAYER_DUP:
+        ClearSelection(true);
+        gHistory.Push(gLayers);
+        if (gLayers.DuplicateActiveLayer()) {
+            InvalidateComposite();
+            RefreshLayerList();
+            MarkDirty(hwnd);
+            InvalidateCanvas();
+            UpdateStatusBar(hwnd);
+        }
+        return true;
     case IDC_LAYER_UP:
         ClearSelection(true);
         gHistory.Push(gLayers);
@@ -443,6 +454,17 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         return true;
     case IDM_ROTATE_90:
         RotateDocument90Cw(hwnd);
+        return true;
+    case IDM_DUPLICATE_LAYER:
+        ClearSelection(true);
+        gHistory.Push(gLayers);
+        if (gLayers.DuplicateActiveLayer()) {
+            InvalidateComposite();
+            RefreshLayerList();
+            MarkDirty(hwnd);
+            InvalidateCanvas();
+            UpdateStatusBar(hwnd);
+        }
         return true;
     case IDM_ABOUT:
         ShowAboutDialog(hwnd);

@@ -55,6 +55,7 @@ extern HWND hwndLayerAdd;
 extern HWND hwndLayerDel;
 extern HWND hwndLayerUp;
 extern HWND hwndLayerDown;
+extern HWND hwndLayerDup;
 extern HWND hwndLayerVisible;
 extern HWND hwndLayerOpacity;
 extern HWND hwndToolButtons[kToolButtonCount];

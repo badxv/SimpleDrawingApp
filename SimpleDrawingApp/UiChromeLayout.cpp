@@ -49,8 +49,10 @@ void LayoutLayerPanel(HWND hwnd) {
 
     if (hwndLayerAdd) MoveWindow(hwndLayerAdd, panelX + pad, y, btn, btn, TRUE);
     if (hwndLayerDel) MoveWindow(hwndLayerDel, panelX + pad + btn + 4, y, btn, btn, TRUE);
-    if (hwndLayerUp) MoveWindow(hwndLayerUp, panelX + pad + (btn + 4) * 2, y, btn, btn, TRUE);
-    if (hwndLayerDown) MoveWindow(hwndLayerDown, panelX + pad + (btn + 4) * 3, y, btn, btn, TRUE);
+    if (hwndLayerDup) MoveWindow(hwndLayerDup, panelX + pad + (btn + 4) * 2, y, btn, btn, TRUE);
+    y += btn + 4;
+    if (hwndLayerUp) MoveWindow(hwndLayerUp, panelX + pad, y, btn, btn, TRUE);
+    if (hwndLayerDown) MoveWindow(hwndLayerDown, panelX + pad + btn + 4, y, btn, btn, TRUE);
     y += btn + 8;
 
     if (hwndLayerVisible) {
@@ -195,6 +197,7 @@ void ApplyPanelVisibility() {
     if (hwndLayerDel) ShowWindow(hwndLayerDel, layerShow);
     if (hwndLayerUp) ShowWindow(hwndLayerUp, layerShow);
     if (hwndLayerDown) ShowWindow(hwndLayerDown, layerShow);
+    if (hwndLayerDup) ShowWindow(hwndLayerDup, layerShow);
     if (hwndLayerVisible) ShowWindow(hwndLayerVisible, layerShow);
     if (hwndLayerOpacity) ShowWindow(hwndLayerOpacity, layerShow);
 
