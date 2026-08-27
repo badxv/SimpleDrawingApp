@@ -34,23 +34,23 @@ void BuildStatusTip(char* out, size_t outChars) {
     if (!out || outChars == 0) return;
     out[0] = '\0';
 
-    const char* tip = "B · [ / ] size";
-    if (currentTool == DrawTool::Eraser) tip = "E · erase on active layer";
-    else if (currentTool == DrawTool::Fill) tip = "G · click to flood fill";
-    else if (currentTool == DrawTool::Line) tip = "L · drag · Shift: H/V/45°";
-    else if (currentTool == DrawTool::Select) tip = "M · drag · Ctrl+C/X/V · Del";
-    else if (currentTool == DrawTool::Shape) tip = "U · Alt=fill · Ctrl=both · Shift=constrain";
-    else if (currentTool == DrawTool::Pen) tip = "B · [ / ] size · draw freely";
+    const char* tip = "B  [ / ] size";
+    if (currentTool == DrawTool::Eraser) tip = "E  erase on active layer";
+    else if (currentTool == DrawTool::Fill) tip = "G  click to flood fill";
+    else if (currentTool == DrawTool::Line) tip = "L  drag  Shift: H/V/45";
+    else if (currentTool == DrawTool::Select) tip = "M  drag  Ctrl+C/X/V  Del";
+    else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
+    else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
     char extras[64] = "";
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
-        strcat_s(extras, " · Snap");
+        strcat_s(extras, "  Snap");
     }
     if (IsFeatureEnabled(AppFeature::CanvasGrid)) {
-        strcat_s(extras, " · Grid");
+        strcat_s(extras, "  Grid");
     }
 
-    sprintf_s(out, outChars, "%s — %s%s", StatusToolName(), tip, extras);
+    sprintf_s(out, outChars, "%s - %s%s", StatusToolName(), tip, extras);
 }
 
 }  // namespace
@@ -96,18 +96,18 @@ void UpdateStatusBar(HWND hwnd) {
 
     if (const Layer* layer = gLayers.ActiveLayer()) {
         if (gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
-            sprintf_s(part1, "%s | %d×%d %d%% | %d, %d",
+            sprintf_s(part1, "%s | %dx%d %d%% | %d, %d",
                 layer->name.c_str(), docWidth, docHeight, zoomPct,
                 gStatusHoverDocX, gStatusHoverDocY);
         } else {
-            sprintf_s(part1, "%s | %d×%d %d%%",
+            sprintf_s(part1, "%s | %dx%d %d%%",
                 layer->name.c_str(), docWidth, docHeight, zoomPct);
         }
     } else if (gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
-        sprintf_s(part1, "%d×%d %d%% | %d, %d",
+        sprintf_s(part1, "%dx%d %d%% | %d, %d",
             docWidth, docHeight, zoomPct, gStatusHoverDocX, gStatusHoverDocY);
     } else {
-        sprintf_s(part1, "%d×%d %d%%", docWidth, docHeight, zoomPct);
+        sprintf_s(part1, "%dx%d %d%%", docWidth, docHeight, zoomPct);
     }
 
     sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");
