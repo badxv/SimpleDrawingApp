@@ -73,15 +73,21 @@ void UpdateOpacityDisplay() {
     suppressEditNotify = false;
 }
 void UpdateWindowTitle(HWND hwnd) {
-    char title[MAX_PATH + 64];
-    const char* name = "Untitled";
+    wchar_t nameBuf[MAX_PATH] = L"Untitled";
+    const wchar_t* name = nameBuf;
     if (gDocumentPath[0]) {
-        const char* slash = strrchr(gDocumentPath, '\\');
-        if (!slash) slash = strrchr(gDocumentPath, '/');
-        name = slash ? (slash + 1) : gDocumentPath;
+        wchar_t pathW[MAX_PATH] = {};
+        MultiByteToWideChar(CP_ACP, 0, gDocumentPath, -1, pathW, MAX_PATH);
+        const wchar_t* slash = wcsrchr(pathW, L'\\');
+        if (!slash) slash = wcsrchr(pathW, L'/');
+        const wchar_t* base = slash ? (slash + 1) : pathW;
+        wcsncpy_s(nameBuf, base, _TRUNCATE);
     }
-    sprintf_s(title, "%s%s — Simple Drawing App", name, documentDirty ? " *" : "");
-    SetWindowTextA(hwnd, title);
+
+    wchar_t title[MAX_PATH + 64];
+    // Em dash (U+2014) via UTF-16 — SetWindowTextA would mojibake UTF-8.
+    swprintf_s(title, L"%s%s \x2014 Simple Drawing App", name, documentDirty ? L" *" : L"");
+    SetWindowTextW(hwnd, title);
 }
 
 void UpdateStatusBar(HWND hwnd) {
