@@ -18,6 +18,7 @@
 
 #include <commctrl.h>
 #include <cstdlib>
+#include <string>
 
 namespace {
 
@@ -31,6 +32,22 @@ void InvalidateColorChips() {
     if (hwndActionButtons[0]) InvalidateRect(hwndActionButtons[0], NULL, FALSE);
     if (hwndBgButton) InvalidateRect(hwndBgButton, NULL, FALSE);
     SyncPaletteFromApp();
+}
+
+bool TryRenameActiveLayer(HWND hwnd) {
+    char name[80] = {};
+    if (!PromptLayerRename(hwnd, name, sizeof(name))) return false;
+    std::string normalized;
+    const Layer* cur = gLayers.ActiveLayer();
+    if (!cur || !LayerStack::NormalizeLayerName(name, normalized) || normalized == cur->name) {
+        return false;
+    }
+    gHistory.Push(gLayers);
+    if (!gLayers.RenameActive(name)) return false;
+    RefreshLayerList();
+    MarkDirty(hwnd);
+    UpdateStatusBar(hwnd);
+    return true;
 }
 
 void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
@@ -266,7 +283,12 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
                 RefreshLayerList();
                 UpdateStatusBar(hwnd);
             }
+        } else if (notifyCode == LBN_DBLCLK) {
+            TryRenameActiveLayer(hwnd);
         }
+        return true;
+    case IDC_LAYER_RENAME:
+        TryRenameActiveLayer(hwnd);
         return true;
     case IDM_CUT:
         CutSelection(hwnd);

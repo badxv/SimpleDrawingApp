@@ -47,6 +47,8 @@ public:
     bool DeleteActiveLayer();
     bool MoveActiveUp();
     bool MoveActiveDown();
+    bool RenameActive(const char* name);
+    static bool NormalizeLayerName(const char* name, std::string& out);
     void SetActiveVisible(bool visible);
     void SetActiveOpacity(int opacity);
 

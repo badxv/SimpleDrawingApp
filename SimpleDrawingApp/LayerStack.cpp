@@ -1,6 +1,7 @@
 #include "LayerStack.h"
 #include "DrawingTools.h"
 #include <cstdio>
+#include <cstring>
 #include <utility>
 
 using namespace Gdiplus;
@@ -259,6 +260,29 @@ bool LayerStack::MoveActiveUp() {
     }
     std::swap(layers_[static_cast<size_t>(active_)], layers_[static_cast<size_t>(active_ + 1)]);
     ++active_;
+    return true;
+}
+
+bool LayerStack::NormalizeLayerName(const char* name, std::string& out) {
+    out.clear();
+    if (!name) return false;
+    while (*name == ' ' || *name == '\t') ++name;
+    size_t len = strlen(name);
+    while (len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t')) --len;
+    if (len == 0) return false;
+    if (len > 64) len = 64;
+    out.assign(name, len);
+    return true;
+}
+
+bool LayerStack::RenameActive(const char* name) {
+    Layer* layer = ActiveLayer();
+    if (!layer) return false;
+
+    std::string next;
+    if (!NormalizeLayerName(name, next)) return false;
+    if (next == layer->name) return false;
+    layer->name = std::move(next);
     return true;
 }
 
