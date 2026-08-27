@@ -466,6 +466,52 @@ void SaveDocumentAs(HWND hwnd) {
     }
 }
 
+void ExportDocument(HWND hwnd) {
+    EnsureCanvas(hwnd);
+
+    char filePath[MAX_PATH] = "";
+    if (gDocumentPath[0]) {
+        // Suggest "name-export.png" beside the current document.
+        sprintf_s(filePath, "%s", gDocumentPath);
+        char* dot = strrchr(filePath, '.');
+        char* slash = strrchr(filePath, '\\');
+        if (!slash) slash = strrchr(filePath, '/');
+        if (dot && (!slash || dot > slash)) {
+            *dot = '\0';
+            char base[MAX_PATH];
+            sprintf_s(base, "%s", filePath);
+            sprintf_s(filePath, "%s-export.png", base);
+        } else {
+            strcat_s(filePath, "-export.png");
+        }
+    } else {
+        sprintf_s(filePath, "export.png");
+    }
+
+    OPENFILENAMEA ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = "PNG Files\0*.png\0JPG Files\0*.jpg\0BMP Files\0*.bmp\0";
+    ofn.lpstrFile = filePath;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    ofn.lpstrDefExt = "png";
+    ofn.lpstrTitle = "Export As";
+    if (gLastBrowseDir[0]) {
+        ofn.lpstrInitialDir = gLastBrowseDir;
+    }
+
+    if (!GetSaveFileNameA(&ofn)) return;
+
+    // Flatten layers only — do not change the active document path or dirty flag.
+    Bitmap* flat = GetCompositeBitmap();
+    if (flat && SaveCanvasToFile(flat, filePath)) {
+        RememberBrowseDirFromPath(filePath);
+        return;
+    }
+    MessageBoxA(hwnd, "Failed to export image.", "Error", MB_OK | MB_ICONERROR);
+}
+
 void OpenDocument(HWND hwnd) {
     if (!PromptSaveIfDirty(hwnd)) return;
 

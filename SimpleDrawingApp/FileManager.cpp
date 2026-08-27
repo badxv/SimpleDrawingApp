@@ -87,6 +87,18 @@ bool SaveCanvasToFile(Bitmap* bitmap, const char* filename) {
     CLSID clsid;
     if (!GetEncoderClsid(filename, &clsid)) return false;
 
+    const std::string ext = GetFileExtension(filename);
+    if (ext == "jpg" || ext == "jpeg") {
+        EncoderParameters params = {};
+        params.Count = 1;
+        params.Parameter[0].Guid = EncoderQuality;
+        params.Parameter[0].Type = EncoderParameterValueTypeLong;
+        params.Parameter[0].NumberOfValues = 1;
+        ULONG quality = 92;
+        params.Parameter[0].Value = &quality;
+        return (bitmap->Save(StringToWString(filename).c_str(), &clsid, &params) == Ok);
+    }
+
     return (bitmap->Save(StringToWString(filename).c_str(), &clsid, NULL) == Ok);
 }
 
