@@ -1,9 +1,11 @@
 # Linux cross-compile output (scripts/build-linux.sh)
 build-linux/
 
-# Runtime feature-flag store (written beside the exe)
+# Runtime stores beside the exe (not committed)
 features.ini
 **/features.ini
+session.ini
+**/session.ini
 
 # Visual Studio / local IDE (do not commit)
 .vs/

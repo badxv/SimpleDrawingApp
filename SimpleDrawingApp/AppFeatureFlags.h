@@ -7,6 +7,7 @@ enum class AppFeature {
     WarnCanvasShrink,      // Confirm before shrinking canvas dimensions.
     PasteAtViewOrigin,     // Paste floating selection at viewport origin vs doc (0,0).
     SelectionExteriorVeil, // Dim area outside marquee when selecting.
+    ReopenLastDocument,    // Reload last saved/opened file on startup.
     Count
 };
 
