@@ -409,6 +409,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         case IDM_EXPORT:
             ExportDocument(hwnd);
             return true;
+        case IDM_PRINT:
+            PrintDocument(hwnd);
+            return true;
     case IDC_LOAD_BUTTON:
         case IDM_OPEN:
             OpenDocument(hwnd);

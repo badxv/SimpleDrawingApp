@@ -9,6 +9,7 @@ bool PromptSaveIfDirty(HWND hwnd);
 void SaveDocument(HWND hwnd);
 void SaveDocumentAs(HWND hwnd);
 void ExportDocument(HWND hwnd);
+void PrintDocument(HWND hwnd);
 void AutosaveIfNeeded(HWND hwnd);
 bool OfferAutosaveRecovery(HWND hwnd);
 void OpenDocument(HWND hwnd);

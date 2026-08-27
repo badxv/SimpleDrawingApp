@@ -542,6 +542,72 @@ void ExportDocument(HWND hwnd) {
     MessageBoxA(hwnd, "Failed to export image.", "Error", MB_OK | MB_ICONERROR);
 }
 
+void PrintDocument(HWND hwnd) {
+    EnsureCanvas(hwnd);
+
+    Bitmap* flat = GetCompositeBitmap();
+    if (!flat) {
+        MessageBoxA(hwnd, "Nothing to print.", "Print", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    PRINTDLGA pd = {};
+    pd.lStructSize = sizeof(pd);
+    pd.hwndOwner = hwnd;
+    pd.Flags = PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS;
+    if (!PrintDlgA(&pd)) {
+        return; // cancelled or no printers
+    }
+
+    HDC hdc = pd.hDC;
+    if (!hdc) {
+        MessageBoxA(hwnd, "Failed to open printer.", "Print", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    DOCINFOA di = {};
+    di.cbSize = sizeof(di);
+    di.lpszDocName = "Simple Drawing App";
+
+    bool ok = false;
+    if (StartDocA(hdc, &di) > 0) {
+        if (StartPage(hdc) > 0) {
+            const int pageW = GetDeviceCaps(hdc, HORZRES);
+            const int pageH = GetDeviceCaps(hdc, VERTRES);
+            const int imgW = flat->GetWidth();
+            const int imgH = flat->GetHeight();
+
+            // Fit image on page, preserve aspect ratio, center.
+            float scale = 1.0f;
+            if (imgW > 0 && imgH > 0 && pageW > 0 && pageH > 0) {
+                const float sx = static_cast<float>(pageW) / static_cast<float>(imgW);
+                const float sy = static_cast<float>(pageH) / static_cast<float>(imgH);
+                scale = (sx < sy) ? sx : sy;
+            }
+            const int destW = static_cast<int>(imgW * scale);
+            const int destH = static_cast<int>(imgH * scale);
+            const int destX = (pageW - destW) / 2;
+            const int destY = (pageH - destH) / 2;
+
+            Graphics printer(hdc);
+            printer.SetPageUnit(UnitPixel);
+            printer.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+            printer.DrawImage(flat, destX, destY, destW, destH);
+            EndPage(hdc);
+            ok = true;
+        }
+        EndDoc(hdc);
+    }
+
+    DeleteDC(hdc);
+    if (pd.hDevMode) GlobalFree(pd.hDevMode);
+    if (pd.hDevNames) GlobalFree(pd.hDevNames);
+
+    if (!ok) {
+        MessageBoxA(hwnd, "Print job failed to start.", "Print", MB_OK | MB_ICONERROR);
+    }
+}
+
 void AutosaveIfNeeded(HWND hwnd) {
     if (!IsFeatureEnabled(AppFeature::AutosaveRecovery)) return;
     if (!documentDirty) return;
