@@ -250,6 +250,25 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         int docX = 0, docY = 0;
         ViewportToDocumentUnclamped(localX, localY, docX, docY);
 
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
+        TrackMouseEvent(&tme);
+
+        HWND parent = GetParent(hwnd);
+        if (docX >= 0 && docY >= 0 && docX < docWidth && docY < docHeight) {
+            if (gStatusHoverDocX != docX || gStatusHoverDocY != docY) {
+                gStatusHoverDocX = docX;
+                gStatusHoverDocY = docY;
+                if (parent) UpdateStatusBar(parent);
+            }
+        } else if (gStatusHoverDocX >= 0 || gStatusHoverDocY >= 0) {
+            gStatusHoverDocX = -1;
+            gStatusHoverDocY = -1;
+            if (parent) UpdateStatusBar(parent);
+        }
+
         if (gSel.creating) {
             NormalizeSelRect(gSel.anchorX, gSel.anchorY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
             InvalidateCanvas();
@@ -274,6 +293,16 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         else if (IsShapeTool(currentTool)) {
             RedrawShapePreview(docX, docY, (wParam & MK_SHIFT) != 0);
             InvalidateCanvas();
+        }
+        break;
+    }
+    case WM_MOUSELEAVE: {
+        if (gStatusHoverDocX >= 0 || gStatusHoverDocY >= 0) {
+            gStatusHoverDocX = -1;
+            gStatusHoverDocY = -1;
+            if (HWND parent = GetParent(hwnd)) {
+                UpdateStatusBar(parent);
+            }
         }
         break;
     }

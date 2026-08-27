@@ -137,6 +137,10 @@ extern int gRecentDocumentCount;
 extern int gCanvasDlgWidth;
 extern int gCanvasDlgHeight;
 
+// Document coords under cursor in the viewport; -1 when not hovering the canvas.
+extern int gStatusHoverDocX;
+extern int gStatusHoverDocY;
+
 inline BYTE OpacityToAlpha() {
     int pct = penOpacity;
     if (pct < 1) pct = 1;
