@@ -24,6 +24,9 @@
 #define IDM_GRID_16				153
 #define IDM_GRID_32				154
 #define IDM_GRID_64				155
+#define IDM_BRUSH_FINE			156
+#define IDM_BRUSH_MEDIUM		157
+#define IDM_BRUSH_BOLD			158
 #define IDM_RECENT_0			141
 #define IDM_RECENT_1			142
 #define IDM_RECENT_2			143
