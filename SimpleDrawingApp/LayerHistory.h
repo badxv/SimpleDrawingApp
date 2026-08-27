@@ -1,12 +1,16 @@
 #pragma once
 
 #include "LayerStack.h"
-#include <vector>
+#include <cstddef>
+#include <deque>
 
 // Snapshot-based undo/redo for the full layer stack.
 class LayerHistory {
 public:
+    // Soft cap on retained undo (and redo) snapshots. Large canvases use a
+    // smaller effective depth so memory stays bounded (see EffectiveMaxDepth).
     static constexpr size_t kMaxDepth = 30;
+    static constexpr size_t kMinDepth = 8;
 
     LayerHistory() = default;
     ~LayerHistory() { Clear(); }
@@ -21,9 +25,17 @@ public:
     bool Undo(LayerStack& stack);
     bool Redo(LayerStack& stack);
 
-private:
-    std::vector<LayerStack*> undoStack_;
-    std::vector<LayerStack*> redoStack_;
+    size_t UndoCount() const { return undoStack_.size(); }
+    size_t RedoCount() const { return redoStack_.size(); }
+    static size_t EffectiveMaxDepth(int docWidth, int docHeight);
 
-    static void FreeStack(std::vector<LayerStack*>& stack);
+private:
+    std::deque<LayerStack*> undoStack_;
+    std::deque<LayerStack*> redoStack_;
+
+    size_t maxDepth_ = kMaxDepth;
+
+    static void FreeStack(std::deque<LayerStack*>& stack);
+    static void TrimFront(std::deque<LayerStack*>& stack, size_t maxDepth);
+    void RememberDepthFor(const LayerStack& stack);
 };

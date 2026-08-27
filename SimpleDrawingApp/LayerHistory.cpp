@@ -3,24 +3,46 @@
 void LayerHistory::Clear() {
     FreeStack(undoStack_);
     FreeStack(redoStack_);
+    maxDepth_ = kMaxDepth;
 }
 
-void LayerHistory::FreeStack(std::vector<LayerStack*>& stack) {
+void LayerHistory::FreeStack(std::deque<LayerStack*>& stack) {
     for (LayerStack* snap : stack) {
         delete snap;
     }
     stack.clear();
 }
 
+void LayerHistory::TrimFront(std::deque<LayerStack*>& stack, size_t maxDepth) {
+    while (stack.size() > maxDepth) {
+        delete stack.front();
+        stack.pop_front();
+    }
+}
+
+size_t LayerHistory::EffectiveMaxDepth(int docWidth, int docHeight) {
+    if (docWidth < 1 || docHeight < 1) return kMaxDepth;
+    const long long pixels = static_cast<long long>(docWidth) * static_cast<long long>(docHeight);
+    // Full layer-stack clones are large; shrink history for bigger canvases.
+    if (pixels >= 8LL * 1024 * 1024) return kMinDepth;          // >= 8 MP
+    if (pixels >= 2LL * 1024 * 1024) return (kMaxDepth * 2) / 3; // >= 2 MP → 20
+    return kMaxDepth;
+}
+
+void LayerHistory::RememberDepthFor(const LayerStack& stack) {
+    maxDepth_ = EffectiveMaxDepth(stack.Width(), stack.Height());
+    if (maxDepth_ < kMinDepth) maxDepth_ = kMinDepth;
+    if (maxDepth_ > kMaxDepth) maxDepth_ = kMaxDepth;
+}
+
 void LayerHistory::Push(const LayerStack& stack) {
+    RememberDepthFor(stack);
+
     LayerStack* snapshot = stack.Clone();
     if (!snapshot) return;
 
     undoStack_.push_back(snapshot);
-    if (undoStack_.size() > kMaxDepth) {
-        delete undoStack_.front();
-        undoStack_.erase(undoStack_.begin());
-    }
+    TrimFront(undoStack_, maxDepth_);
     FreeStack(redoStack_);
 }
 
@@ -35,6 +57,8 @@ bool LayerHistory::CanRedo() const {
 bool LayerHistory::Undo(LayerStack& stack) {
     if (undoStack_.empty()) return false;
 
+    RememberDepthFor(stack);
+
     LayerStack* current = stack.Clone();
     LayerStack* previous = undoStack_.back();
     undoStack_.pop_back();
@@ -44,12 +68,15 @@ bool LayerHistory::Undo(LayerStack& stack) {
 
     if (current) {
         redoStack_.push_back(current);
+        TrimFront(redoStack_, maxDepth_);
     }
     return true;
 }
 
 bool LayerHistory::Redo(LayerStack& stack) {
     if (redoStack_.empty()) return false;
+
+    RememberDepthFor(stack);
 
     LayerStack* current = stack.Clone();
     LayerStack* next = redoStack_.back();
@@ -60,6 +87,7 @@ bool LayerHistory::Redo(LayerStack& stack) {
 
     if (current) {
         undoStack_.push_back(current);
+        TrimFront(undoStack_, maxDepth_);
     }
     return true;
 }
