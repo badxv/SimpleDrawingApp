@@ -43,7 +43,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Selection:** marquee, move, Delete; Cut / Copy / Paste (`Ctrl+X/C/V`)
 - **Zoom:** `Ctrl`+wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
 - **Layers:** add / delete / reorder, visibility, per-layer opacity; Background pinned at bottom; drawing starts on Layer 1
-- **Undo / Redo** (full layer-stack snapshots)
+- **Undo / Redo** (full layer-stack snapshots, capped — up to 30 steps; fewer on large canvases)
 - **New / Clear** with unsaved-change prompts; **Save / Open** PNG, JPG, BMP
 - **Fixed document canvas** (default 1280×720) + scrollable viewport; **Canvas Size…** (`Ctrl+E`)
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
