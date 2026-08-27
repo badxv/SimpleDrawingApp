@@ -41,6 +41,7 @@ void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
     if (menuIndex == 0) {
         EnableMenuItem(sub, IDM_OPEN_LAST,
             MF_BYCOMMAND | (LastDocumentAvailable() ? MF_ENABLED : MF_GRAYED));
+        SyncRecentFileMenu(sub);
     }
     RECT br = {};
     if (anchorBtn) GetWindowRect(anchorBtn, &br);
@@ -352,6 +353,16 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             return true;
         case IDM_OPEN_LAST:
             OpenLastDocument(hwnd);
+            return true;
+        case IDM_RECENT_0:
+        case IDM_RECENT_1:
+        case IDM_RECENT_2:
+        case IDM_RECENT_3:
+        case IDM_RECENT_4:
+            OpenRecentDocument(hwnd, cmdId - IDM_RECENT_0);
+            return true;
+        case IDM_CLEAR_RECENT:
+            ClearRecentDocuments();
             return true;
     case IDM_CANVAS_SIZE:
         ResizeCanvas(hwnd);
