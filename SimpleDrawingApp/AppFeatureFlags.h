@@ -9,6 +9,7 @@ enum class AppFeature {
     SelectionExteriorVeil, // Dim area outside marquee when selecting.
     ReopenLastDocument,    // Reload last saved/opened file on startup.
     AutosaveRecovery,      // Periodic dirty-canvas snapshot + crash recovery prompt.
+    CanvasGrid,            // Draw document grid overlay in the viewport.
     Count
 };
 

@@ -18,6 +18,7 @@
 #define IDM_OPEN_LAST			139
 #define IDM_FEAT_REOPEN_LAST	140
 #define IDM_FEAT_AUTOSAVE		149
+#define IDM_FEAT_GRID			150
 #define IDM_RECENT_0			141
 #define IDM_RECENT_1			142
 #define IDM_RECENT_2			143

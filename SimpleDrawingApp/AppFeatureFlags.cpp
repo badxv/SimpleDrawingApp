@@ -21,6 +21,7 @@ const FeatureMeta kFeatures[] = {
     { AppFeature::SelectionExteriorVeil, "SelectionExteriorVeil", true },
     { AppFeature::ReopenLastDocument, "ReopenLastDocument", true },
     { AppFeature::AutosaveRecovery, "AutosaveRecovery", true },
+    { AppFeature::CanvasGrid, "CanvasGrid", false },
 };
 
 void ApplyDefaults() {
@@ -128,4 +129,5 @@ void SyncFeatureFlagMenuItems() {
     SetMenuCheck(viewMenu, IDM_FEAT_WARN_SHRINK, IsFeatureEnabled(AppFeature::WarnCanvasShrink));
     SetMenuCheck(viewMenu, IDM_FEAT_REOPEN_LAST, IsFeatureEnabled(AppFeature::ReopenLastDocument));
     SetMenuCheck(viewMenu, IDM_FEAT_AUTOSAVE, IsFeatureEnabled(AppFeature::AutosaveRecovery));
+    SetMenuCheck(viewMenu, IDM_FEAT_GRID, IsFeatureEnabled(AppFeature::CanvasGrid));
 }

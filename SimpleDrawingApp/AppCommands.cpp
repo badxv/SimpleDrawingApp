@@ -311,6 +311,10 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         case IDM_FEAT_AUTOSAVE:
             ToggleFeatureFlag(AppFeature::AutosaveRecovery);
             return true;
+        case IDM_FEAT_GRID:
+            ToggleFeatureFlag(AppFeature::CanvasGrid);
+            InvalidateCanvas();
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
