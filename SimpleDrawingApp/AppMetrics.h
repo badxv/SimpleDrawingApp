@@ -27,6 +27,8 @@ constexpr int CAPTION_BTN_H = 30;
 constexpr UINT_PTR IDT_UI_ANIM = 42;
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;
+constexpr UINT_PTR IDT_AUTOSAVE = 45;
+constexpr UINT kAutosaveIntervalMs = 30000;
 
 constexpr int DEFAULT_DOC_WIDTH = 1280;
 constexpr int DEFAULT_DOC_HEIGHT = 720;

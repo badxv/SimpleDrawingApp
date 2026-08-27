@@ -164,6 +164,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         // Fresco cache once; low-rate idle motion (pauses while drawing/resizing).
         RequestChromeRebuild(hwnd, 1);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
+        SetTimer(hwnd, IDT_AUTOSAVE, kAutosaveIntervalMs, NULL);
+        if (OfferAutosaveRecovery(hwnd)) {
+            break;
+        }
         if (IsFeatureEnabled(AppFeature::ReopenLastDocument) && LastDocumentAvailable()) {
             PostMessageA(hwnd, WM_COMMAND, MAKEWPARAM(IDM_OPEN_LAST, 0), 0);
         }
@@ -196,6 +200,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 if (gSelAntOffset >= 9.0f) gSelAntOffset -= 9.0f;
                 InvalidateCanvas();
             }
+        }
+        else if (wParam == IDT_AUTOSAVE) {
+            AutosaveIfNeeded(hwnd);
         }
         else if (wParam == IDT_CHROME_REBUILD) {
             KillTimer(hwnd, IDT_CHROME_REBUILD);
@@ -520,6 +527,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         KillTimer(hwnd, IDT_UI_ANIM);
         KillTimer(hwnd, IDT_UI_IDLE);
+        KillTimer(hwnd, IDT_AUTOSAVE);
         KillTimer(hwnd, IDT_CHROME_REBUILD);
         if (GetCapture() == hwnd || (hwndViewport && GetCapture() == hwndViewport)) {
             ReleaseCapture();

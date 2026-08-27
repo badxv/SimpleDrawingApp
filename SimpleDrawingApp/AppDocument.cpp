@@ -60,6 +60,35 @@ void GetSessionIniPath(char* path, size_t pathChars) {
     strcat_s(path, pathChars, suffix);
 }
 
+void GetAutosavePath(char* path, size_t pathChars) {
+    if (!path || pathChars == 0) return;
+    path[0] = '\0';
+    DWORD len = GetModuleFileNameA(nullptr, path, static_cast<DWORD>(pathChars));
+    if (len == 0 || len >= pathChars) {
+        path[0] = '\0';
+        return;
+    }
+    for (int i = static_cast<int>(len) - 1; i >= 0; --i) {
+        if (path[i] == '\\' || path[i] == '/') {
+            path[i + 1] = '\0';
+            break;
+        }
+    }
+    const size_t used = strlen(path);
+    const char suffix[] = "autosave.png";
+    if (used + sizeof(suffix) > pathChars) {
+        path[0] = '\0';
+        return;
+    }
+    strcat_s(path, pathChars, suffix);
+}
+
+void ClearAutosaveRecovery() {
+    char path[MAX_PATH] = {};
+    GetAutosavePath(path, MAX_PATH);
+    if (path[0]) DeleteFileA(path);
+}
+
 bool PathIsExistingFile(const char* path) {
     if (!path || !path[0]) return false;
     const DWORD attrs = GetFileAttributesA(path);
@@ -213,6 +242,7 @@ bool WriteDocumentToPath(HWND hwnd, const char* path) {
     if (flat && SaveCanvasToFile(flat, path)) {
         SetDocumentPath(path);
         MarkClean(hwnd);
+        ClearAutosaveRecovery();
         return true;
     }
     MessageBoxA(hwnd, "Failed to save image.", "Error", MB_OK | MB_ICONERROR);
@@ -512,6 +542,51 @@ void ExportDocument(HWND hwnd) {
     MessageBoxA(hwnd, "Failed to export image.", "Error", MB_OK | MB_ICONERROR);
 }
 
+void AutosaveIfNeeded(HWND hwnd) {
+    if (!IsFeatureEnabled(AppFeature::AutosaveRecovery)) return;
+    if (!documentDirty) return;
+    EnsureCanvas(hwnd);
+
+    char path[MAX_PATH] = {};
+    GetAutosavePath(path, MAX_PATH);
+    if (!path[0]) return;
+
+    Bitmap* flat = GetCompositeBitmap();
+    if (!flat) return;
+    SaveCanvasToFile(flat, path);
+}
+
+bool OfferAutosaveRecovery(HWND hwnd) {
+    if (!IsFeatureEnabled(AppFeature::AutosaveRecovery)) return false;
+
+    char path[MAX_PATH] = {};
+    GetAutosavePath(path, MAX_PATH);
+    if (!path[0] || !PathIsExistingFile(path)) return false;
+
+    const int choice = MessageBoxA(
+        hwnd,
+        "A recovered drawing was found from the last session.\n\nRestore it?",
+        "Autosave Recovery",
+        MB_YESNO | MB_ICONQUESTION);
+    if (choice != IDYES) {
+        ClearAutosaveRecovery();
+        return false;
+    }
+
+    if (!OpenDocumentFromPath(hwnd, path)) {
+        MessageBoxA(hwnd, "Failed to restore the autosave.", "Error", MB_OK | MB_ICONERROR);
+        ClearAutosaveRecovery();
+        return false;
+    }
+
+    // Treat as untitled dirty work — do not keep autosave.png as the document path.
+    RemoveRecentPath(path);
+    SaveSessionState();
+    SetDocumentPath(nullptr);
+    MarkDirty(hwnd);
+    return true;
+}
+
 void OpenDocument(HWND hwnd) {
     if (!PromptSaveIfDirty(hwnd)) return;
 
@@ -669,6 +744,7 @@ void NewDocument(HWND hwnd) {
     SetDocumentPath(nullptr);
     InvalidateComposite();
     MarkClean(hwnd);
+    ClearAutosaveRecovery();
     RefreshLayerList();
     InvalidateCanvas();
     UpdateStatusBar(hwnd);

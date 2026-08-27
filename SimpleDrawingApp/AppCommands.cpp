@@ -308,6 +308,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         case IDM_FEAT_REOPEN_LAST:
             ToggleFeatureFlag(AppFeature::ReopenLastDocument);
             return true;
+        case IDM_FEAT_AUTOSAVE:
+            ToggleFeatureFlag(AppFeature::AutosaveRecovery);
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
