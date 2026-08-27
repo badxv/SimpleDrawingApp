@@ -10,10 +10,11 @@ suite, or CI. The canonical build is Visual Studio 2022 on Windows (see
 
 ### Running it on the Linux Cloud VM
 The app is Windows-only, so on this Linux VM it is **cross-compiled with
-MinGW-w64** and **run under Wine on a headless Xvfb display**. Two helper
-scripts encapsulate this (the toolchain is installed by the environment update
-script):
+MinGW-w64** and **run under Wine on a headless Xvfb display**. Helper scripts:
 
+- Install (Cloud Agent env): `scripts/cloud-agent-install.sh` — mingw-w64, wine,
+  xvfb, fluxbox, xdotool (idempotent)
+- Start (Cloud Agent env): `scripts/cloud-agent-start.sh` — Xvfb+fluxbox on `:99`
 - Build:  `scripts/build-linux.sh`  → `build-linux/SimpleDrawingApp.exe`
 - Run:    `scripts/run-linux.sh`     (auto-builds, starts Xvfb+fluxbox on `:99`, launches under Wine)
 
@@ -47,8 +48,10 @@ script):
   MinGW does not define Windows `min`/`max` macros the same way MSVC does — prefer
   `NOMINMAX` (see `framework.h`) and avoid bare `std::min`/`std::max` near Win32 headers.
 
-### Follow-up (not done yet)
-- **Cursor Environment snapshot:** MinGW/Wine are currently installed ad-hoc on
-  the cloud VM. Later, link a persistent Cursor Environment with an `install`
-  script (mingw-w64, wine, xvfb, fluxbox, xdotool) and a snapshot so new agents
-  boot ready-to-build without reinstalling packages each time.
+### Cloud Agent environment
+Use the dashboard-managed environment with:
+- `install`: `./scripts/cloud-agent-install.sh`
+- `start`: `./scripts/cloud-agent-start.sh`
+
+After Save, new agents should boot with MinGW/Wine already available (snapshot /
+environment build) and only need a quick install refresh.
