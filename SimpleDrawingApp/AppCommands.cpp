@@ -336,6 +336,15 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             SetGridSpacing(64);
             InvalidateCanvas();
             return true;
+        case IDM_BRUSH_FINE:
+            ApplyPenWidth(hwnd, kBrushPresetFine);
+            return true;
+        case IDM_BRUSH_MEDIUM:
+            ApplyPenWidth(hwnd, kBrushPresetMedium);
+            return true;
+        case IDM_BRUSH_BOLD:
+            ApplyPenWidth(hwnd, kBrushPresetBold);
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;

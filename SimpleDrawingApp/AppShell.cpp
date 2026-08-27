@@ -64,6 +64,23 @@ void UpdatePenWidthDisplay() {
     suppressEditNotify = false;
 }
 
+void ApplyPenWidth(HWND hwnd, int width) {
+    if (width < kPenWidthMin) width = kPenWidthMin;
+    if (width > kPenWidthMax) width = kPenWidthMax;
+    if (width == penWidth) {
+        SyncFeatureFlagMenuItems();
+        return;
+    }
+    penWidth = width;
+    if (hwndSlider) {
+        SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
+    }
+    UpdatePenWidthDisplay();
+    UpdateStatusBar(hwnd);
+    SaveFeatureFlags();
+    SyncFeatureFlagMenuItems();
+}
+
 void UpdateOpacityDisplay() {
     if (!hwndOpacityBox) return;
     char buf[16];

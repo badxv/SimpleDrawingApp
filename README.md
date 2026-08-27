@@ -39,7 +39,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Color:** HSV disc + value strip, Recent + Favorites (persisted), FG/BG chips, swap (`X`), system picker from disc center
 - **Floating palette:** `Tab` collapses the tools rail and undocks the color well as a draggable panel
 - **Chrome:** Firefox-style top bar (File / Edit / Image / View / Tools / Help), custom caption buttons on Windows, collapsible rail / layers / bottom bar (`Tab`, `F9`, `F8`)
-- **Opacity & width:** sliders, edit boxes, mouse wheel / `Shift`+wheel, `[` `]`
+- **Opacity & width:** sliders, edit boxes, mouse wheel / `Shift`+wheel, `[` `]`; **Tools → Brush Size** presets (Fine / Medium / Bold)
 - **Selection:** marquee, move, Delete; Cut / Copy / Paste (`Ctrl+X/C/V`)
 - **Zoom:** `Ctrl`+wheel, View menu (`Ctrl++` / `Ctrl+-` / `Ctrl+0` / Fit)
 - **Layers:** add / delete / reorder, visibility, per-layer opacity; Background pinned at bottom; drawing starts on Layer 1
@@ -49,7 +49,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
 - **Status bar tips:** active-tool hints + modifiers; cursor document coordinates while hovering the canvas
 - **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
-- **View preferences:** paste at view origin, selection veil, canvas-shrink warning, reopen last document, autosave recovery, canvas grid + spacing (8/16/32/64), snap to grid (`features.ini`)
+- **View preferences:** paste at view origin, selection veil, canvas-shrink warning, reopen last document, autosave recovery, canvas grid + spacing (8/16/32/64), snap to grid; pen width (`features.ini`)
 - **Session:** up to 5 recent documents in `session.ini`; **Open Last** (`Ctrl+Shift+O`), **File → Open Recent**, optional startup reopen; dirty canvases autosave to `autosave.png` for crash recovery
 
 ## Requirements
@@ -90,7 +90,7 @@ CI runs the same script on every push / PR to `main` (GitHub Actions → **Build
 | Select / move | **Select** (`M`), marquee; drag inside to move |
 | Color | HSV disc (LMB = FG, RMB = BG), Recent / Favorites, or FG/BG chips |
 | Swap FG/BG | `X` or swap button |
-| Width / opacity | Sliders, boxes, wheel / `Shift`+wheel, `[` `]` |
+| Width / opacity | Sliders, boxes, wheel / `Shift`+wheel, `[` `]`, or **Tools → Brush Size** (Fine 2 / Medium 8 / Bold 20) |
 | Panels | `Tab` tools · `F9` layers · `F8` size/opacity bar |
 | Zoom | `Ctrl`+wheel or **View** menu |
 | Layers | Right panel: `+` / `-` / Up / Dn, Visible, opacity |

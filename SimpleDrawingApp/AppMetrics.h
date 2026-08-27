@@ -20,6 +20,12 @@ constexpr int WELL_FRAME = 6;
 constexpr int BRAND_STRIP_W = 118;
 constexpr int kDefaultGridSpacing = 32; // document pixels between grid lines
 constexpr int GRID_MAJOR_EVERY = 4;     // emphasize every Nth line
+constexpr int kBrushPresetFine = 2;     // Tools → Brush Size presets
+constexpr int kBrushPresetMedium = 8;
+constexpr int kBrushPresetBold = 20;
+constexpr int kPenWidthMin = 1;
+constexpr int kPenWidthMax = 50;
+constexpr int kDefaultPenWidth = 5;
 
 inline int SnapCoordToGrid(int value, int spacing) {
     if (spacing < 1) return value;

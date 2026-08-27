@@ -5,6 +5,7 @@
 
 void UpdatePenWidthDisplay();
 void UpdateOpacityDisplay();
+void ApplyPenWidth(HWND hwnd, int width);
 void UpdateWindowTitle(HWND hwnd);
 void UpdateStatusBar(HWND hwnd);
 void LayoutStatusParts(HWND hwnd);

@@ -44,17 +44,7 @@ using namespace Gdiplus;
 namespace {
 
 static void AdjustPenWidth(HWND hwnd, int delta) {
-    int next = penWidth + delta;
-    if (next < 1) next = 1;
-    if (next > 50) next = 50;
-    if (next == penWidth) return;
-
-    penWidth = next;
-    if (hwndSlider) {
-        SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
-    }
-    UpdatePenWidthDisplay();
-    UpdateStatusBar(hwnd);
+    ApplyPenWidth(hwnd, penWidth + delta);
 }
 
 static void AdjustOpacity(HWND hwnd, int delta) {

@@ -1,5 +1,6 @@
 #include "AppFeatureFlags.h"
 #include "AppState.h"
+#include "AppMetrics.h"
 #include "Resource.h"
 #include <windows.h>
 #include <cstdio>
@@ -95,9 +96,16 @@ bool ToggleFeatureFlag(AppFeature feature) {
     return next;
 }
 
+static int ClampPenWidth(int width) {
+    if (width < kPenWidthMin) return kPenWidthMin;
+    if (width > kPenWidthMax) return kPenWidthMax;
+    return width;
+}
+
 void LoadFeatureFlags() {
     ApplyDefaults();
     gGridSpacing = kDefaultGridSpacing;
+    penWidth = kDefaultPenWidth;
 
     char iniPath[MAX_PATH] = {};
     GetFeatureFlagsIniPath(iniPath, MAX_PATH);
@@ -110,6 +118,8 @@ void LoadFeatureFlags() {
     }
     gGridSpacing = NormalizeGridSpacing(
         GetPrivateProfileIntA("Features", "GridSpacing", kDefaultGridSpacing, iniPath));
+    penWidth = ClampPenWidth(
+        GetPrivateProfileIntA("Features", "PenWidth", kDefaultPenWidth, iniPath));
 }
 
 void SaveFeatureFlags() {
@@ -124,6 +134,9 @@ void SaveFeatureFlags() {
     char spacingBuf[16];
     sprintf_s(spacingBuf, "%d", NormalizeGridSpacing(gGridSpacing));
     WritePrivateProfileStringA("Features", "GridSpacing", spacingBuf, iniPath);
+    char widthBuf[16];
+    sprintf_s(widthBuf, "%d", ClampPenWidth(penWidth));
+    WritePrivateProfileStringA("Features", "PenWidth", widthBuf, iniPath);
 }
 
 int NormalizeGridSpacing(int spacing) {
@@ -142,19 +155,30 @@ void SetGridSpacing(int spacing) {
 void SyncFeatureFlagMenuItems() {
     if (!gAppMenu) return;
     HMENU viewMenu = GetSubMenu(gAppMenu, 3); // File, Edit, Image, View
-    if (!viewMenu) return;
+    if (viewMenu) {
+        SetMenuCheck(viewMenu, IDM_FEAT_PASTE_VIEW, IsFeatureEnabled(AppFeature::PasteAtViewOrigin));
+        SetMenuCheck(viewMenu, IDM_FEAT_SEL_VEIL, IsFeatureEnabled(AppFeature::SelectionExteriorVeil));
+        SetMenuCheck(viewMenu, IDM_FEAT_WARN_SHRINK, IsFeatureEnabled(AppFeature::WarnCanvasShrink));
+        SetMenuCheck(viewMenu, IDM_FEAT_REOPEN_LAST, IsFeatureEnabled(AppFeature::ReopenLastDocument));
+        SetMenuCheck(viewMenu, IDM_FEAT_AUTOSAVE, IsFeatureEnabled(AppFeature::AutosaveRecovery));
+        SetMenuCheck(viewMenu, IDM_FEAT_GRID, IsFeatureEnabled(AppFeature::CanvasGrid));
+        SetMenuCheck(viewMenu, IDM_FEAT_SNAP_GRID, IsFeatureEnabled(AppFeature::SnapToGrid));
 
-    SetMenuCheck(viewMenu, IDM_FEAT_PASTE_VIEW, IsFeatureEnabled(AppFeature::PasteAtViewOrigin));
-    SetMenuCheck(viewMenu, IDM_FEAT_SEL_VEIL, IsFeatureEnabled(AppFeature::SelectionExteriorVeil));
-    SetMenuCheck(viewMenu, IDM_FEAT_WARN_SHRINK, IsFeatureEnabled(AppFeature::WarnCanvasShrink));
-    SetMenuCheck(viewMenu, IDM_FEAT_REOPEN_LAST, IsFeatureEnabled(AppFeature::ReopenLastDocument));
-    SetMenuCheck(viewMenu, IDM_FEAT_AUTOSAVE, IsFeatureEnabled(AppFeature::AutosaveRecovery));
-    SetMenuCheck(viewMenu, IDM_FEAT_GRID, IsFeatureEnabled(AppFeature::CanvasGrid));
-    SetMenuCheck(viewMenu, IDM_FEAT_SNAP_GRID, IsFeatureEnabled(AppFeature::SnapToGrid));
+        const int spacing = NormalizeGridSpacing(gGridSpacing);
+        CheckMenuItem(viewMenu, IDM_GRID_8, MF_BYCOMMAND | (spacing == 8 ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(viewMenu, IDM_GRID_16, MF_BYCOMMAND | (spacing == 16 ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(viewMenu, IDM_GRID_32, MF_BYCOMMAND | (spacing == 32 ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(viewMenu, IDM_GRID_64, MF_BYCOMMAND | (spacing == 64 ? MF_CHECKED : MF_UNCHECKED));
+    }
 
-    const int spacing = NormalizeGridSpacing(gGridSpacing);
-    CheckMenuItem(viewMenu, IDM_GRID_8, MF_BYCOMMAND | (spacing == 8 ? MF_CHECKED : MF_UNCHECKED));
-    CheckMenuItem(viewMenu, IDM_GRID_16, MF_BYCOMMAND | (spacing == 16 ? MF_CHECKED : MF_UNCHECKED));
-    CheckMenuItem(viewMenu, IDM_GRID_32, MF_BYCOMMAND | (spacing == 32 ? MF_CHECKED : MF_UNCHECKED));
-    CheckMenuItem(viewMenu, IDM_GRID_64, MF_BYCOMMAND | (spacing == 64 ? MF_CHECKED : MF_UNCHECKED));
+    HMENU toolsMenu = GetSubMenu(gAppMenu, 4); // Tools
+    if (toolsMenu) {
+        const int w = ClampPenWidth(penWidth);
+        CheckMenuItem(toolsMenu, IDM_BRUSH_FINE,
+            MF_BYCOMMAND | (w == kBrushPresetFine ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(toolsMenu, IDM_BRUSH_MEDIUM,
+            MF_BYCOMMAND | (w == kBrushPresetMedium ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(toolsMenu, IDM_BRUSH_BOLD,
+            MF_BYCOMMAND | (w == kBrushPresetBold ? MF_CHECKED : MF_UNCHECKED));
+    }
 }
