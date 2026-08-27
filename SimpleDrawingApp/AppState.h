@@ -130,6 +130,9 @@ extern bool documentDirty;
 extern char gDocumentPath[MAX_PATH];
 extern char gLastBrowseDir[MAX_PATH];
 extern char gLastDocumentPath[MAX_PATH];
+constexpr int kMaxRecentDocuments = 5;
+extern char gRecentDocuments[kMaxRecentDocuments][MAX_PATH];
+extern int gRecentDocumentCount;
 
 extern int gCanvasDlgWidth;
 extern int gCanvasDlgHeight;

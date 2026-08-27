@@ -49,7 +49,7 @@ Pen, eraser, fill, shapes, layers, and an HSV color well — no Electron, no hea
 - **Shortcuts:** `B` Pen · `E` Eraser · `G` Fill · `M` Select · `L` Line · `U` Shapes · `X` Swap FG/BG · `F1` Help
 - **Look:** Bronze & parchment atelier chrome, Cinzel + DM Sans (OFL), fresco panels, idle compass motion
 - **View preferences:** paste at view origin, selection veil, canvas-shrink warning, reopen last document (`features.ini`)
-- **Session:** last document path remembered in `session.ini`; **Open Last** (`Ctrl+Shift+O`) / optional startup reopen
+- **Session:** up to 5 recent documents in `session.ini`; **Open Last** (`Ctrl+Shift+O`), **File → Open Recent**, optional startup reopen
 
 ## Requirements
 

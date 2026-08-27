@@ -103,6 +103,8 @@ bool documentDirty = false;
 char gDocumentPath[MAX_PATH] = "";
 char gLastBrowseDir[MAX_PATH] = "";
 char gLastDocumentPath[MAX_PATH] = "";
+char gRecentDocuments[kMaxRecentDocuments][MAX_PATH] = {};
+int gRecentDocumentCount = 0;
 
 int gCanvasDlgWidth = 0;
 int gCanvasDlgHeight = 0;
