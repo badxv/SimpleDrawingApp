@@ -45,6 +45,7 @@ public:
 
     bool AddLayer();
     bool DuplicateActiveLayer();
+    bool MergeActiveDown();
     bool DeleteActiveLayer();
     bool MoveActiveUp();
     bool MoveActiveDown();

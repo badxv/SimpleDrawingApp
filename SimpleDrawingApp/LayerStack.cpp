@@ -443,6 +443,58 @@ bool LayerStack::DuplicateActiveLayer() {
     return true;
 }
 
+bool LayerStack::MergeActiveDown() {
+    if (active_ <= 0 || width_ < 1 || height_ < 1) return false;
+
+    const size_t upperIdx = static_cast<size_t>(active_);
+    const size_t lowerIdx = upperIdx - 1;
+    Layer& upper = layers_[upperIdx];
+    Layer& lower = layers_[lowerIdx];
+    if (!upper.bitmap || !lower.bitmap) return false;
+
+    Bitmap* mergedBmp = CloneBitmap(lower.bitmap);
+    if (!mergedBmp) return false;
+    Graphics* mergedG = Graphics::FromImage(mergedBmp);
+    if (!mergedG || mergedG->GetLastStatus() != Ok) {
+        delete mergedG;
+        delete mergedBmp;
+        return false;
+    }
+    Configure(mergedG);
+
+    if (upper.visible && upper.bitmap) {
+        int opacity = upper.opacity;
+        if (opacity > 100) opacity = 100;
+        if (opacity >= 100) {
+            mergedG->DrawImage(upper.bitmap, 0, 0);
+        } else if (opacity >= 1) {
+            const REAL alpha = static_cast<REAL>(opacity) / 100.0f;
+            ColorMatrix matrix = {
+                1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, alpha, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+            };
+            ImageAttributes attrs;
+            attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+            const int w = static_cast<int>(upper.bitmap->GetWidth());
+            const int h = static_cast<int>(upper.bitmap->GetHeight());
+            mergedG->DrawImage(upper.bitmap, Rect(0, 0, w, h), 0, 0, w, h, UnitPixel, &attrs);
+        }
+    }
+
+    delete lower.graphics;
+    delete lower.bitmap;
+    lower.bitmap = mergedBmp;
+    lower.graphics = mergedG;
+
+    FreeLayer(upper);
+    layers_.erase(layers_.begin() + static_cast<ptrdiff_t>(upperIdx));
+    --active_;
+    return true;
+}
+
 bool LayerStack::DeleteActiveLayer() {
     if (Count() <= 1) return false;
     // Keep the special Background layer; delete content layers only.

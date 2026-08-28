@@ -49,6 +49,7 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "Layers\r\n"
             "  Double-click / F2   Rename active layer\r\n"
             "  Ctrl+Shift+D        Duplicate active layer\r\n"
+            "  Ctrl+Shift+M        Merge active layer down\r\n"
             "\r\n"
             "File & edit\r\n"
             "  Ctrl+N     New\r\n"
