@@ -141,7 +141,6 @@ bool PromptLayerRename(HWND owner, char* outName, size_t outChars) {
             LayerRenameDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
         return false;
     }
-    strncpy(outName, state.out, outChars - 1);
-    outName[outChars - 1] = '\0';
+    strncpy_s(outName, outChars, state.out, _TRUNCATE);
     return true;
 }
