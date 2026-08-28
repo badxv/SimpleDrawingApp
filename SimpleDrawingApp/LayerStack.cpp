@@ -205,7 +205,8 @@ namespace {
 enum class GeomTransform {
     FlipH,
     FlipV,
-    Rotate90Cw
+    Rotate90Cw,
+    Rotate90Ccw
 };
 
 bool TransformLayerBitmap(Bitmap* src, int outW, int outH, GeomTransform kind,
@@ -254,6 +255,10 @@ bool TransformLayerBitmap(Bitmap* src, int outW, int outH, GeomTransform kind,
     case GeomTransform::Rotate90Cw:
         outG->TranslateTransform(static_cast<REAL>(outW), 0.0f);
         outG->RotateTransform(90.0f);
+        break;
+    case GeomTransform::Rotate90Ccw:
+        outG->TranslateTransform(0.0f, static_cast<REAL>(outH));
+        outG->RotateTransform(-90.0f);
         break;
     }
     outG->DrawImage(src, 0, 0, srcW, srcH);
@@ -351,6 +356,43 @@ bool LayerStack::Rotate90Clockwise() {
         NextLayer n;
         if (!layer.bitmap
             || !TransformLayerBitmap(layer.bitmap, newW, newH, GeomTransform::Rotate90Cw,
+                layer.isBackground, n.bmp, n.g)) {
+            freeNext();
+            return false;
+        }
+        next.push_back(n);
+    }
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        FreeLayer(layers_[i]);
+        layers_[i].bitmap = next[i].bmp;
+        layers_[i].graphics = next[i].g;
+    }
+    width_ = newW;
+    height_ = newH;
+    return true;
+}
+
+bool LayerStack::Rotate90CounterClockwise() {
+    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
+    const int newW = height_;
+    const int newH = width_;
+
+    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
+    std::vector<NextLayer> next;
+    next.reserve(layers_.size());
+    auto freeNext = [&]() {
+        for (NextLayer& n : next) {
+            delete n.g;
+            delete n.bmp;
+        }
+        next.clear();
+    };
+
+    for (Layer& layer : layers_) {
+        NextLayer n;
+        if (!layer.bitmap
+            || !TransformLayerBitmap(layer.bitmap, newW, newH, GeomTransform::Rotate90Ccw,
                 layer.isBackground, n.bmp, n.g)) {
             freeNext();
             return false;

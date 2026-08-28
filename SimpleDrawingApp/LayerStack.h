@@ -62,6 +62,7 @@ public:
     bool FlipHorizontal();
     bool FlipVertical();
     bool Rotate90Clockwise();
+    bool Rotate90CounterClockwise();
     // Replaces the stack with a single background layer cloned from image.
     bool ReplaceWithImage(Gdiplus::Bitmap* image);
 
