@@ -466,6 +466,17 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             UpdateStatusBar(hwnd);
         }
         return true;
+    case IDM_MERGE_DOWN:
+        ClearSelection(true);
+        gHistory.Push(gLayers);
+        if (gLayers.MergeActiveDown()) {
+            InvalidateComposite();
+            RefreshLayerList();
+            MarkDirty(hwnd);
+            InvalidateCanvas();
+            UpdateStatusBar(hwnd);
+        }
+        return true;
     case IDM_ABOUT:
         ShowAboutDialog(hwnd);
         return true;
