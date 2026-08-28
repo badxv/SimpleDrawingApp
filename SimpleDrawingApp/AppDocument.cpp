@@ -418,6 +418,12 @@ void RotateDocument90Cw(HWND hwnd) {
     EndImageGeometryEdit(hwnd, true);
 }
 
+void RotateDocument90Ccw(HWND hwnd) {
+    BeginImageGeometryEdit(hwnd);
+    if (!gLayers.Rotate90CounterClockwise()) return;
+    EndImageGeometryEdit(hwnd, true);
+}
+
 void SyncPresetSelection(HWND hDlg) {
     HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
     if (!list) return;

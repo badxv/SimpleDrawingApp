@@ -65,7 +65,7 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "  Del        Delete selection\r\n"
             "  Ctrl+E     Canvas size\r\n"
             "  Image → Flatten Layers   Merge visible layers\r\n"
-            "  Image → Flip / Rotate    Horizontal, Vertical, 90 CW\r\n"
+            "  Image → Flip / Rotate    Horizontal, Vertical, 90 CW/CCW\r\n"
             "\r\n"
             "View\r\n"
             "  Ctrl++/-   Zoom in / out\r\n"

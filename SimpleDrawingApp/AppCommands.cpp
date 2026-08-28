@@ -455,6 +455,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     case IDM_ROTATE_90:
         RotateDocument90Cw(hwnd);
         return true;
+    case IDM_ROTATE_90_CCW:
+        RotateDocument90Ccw(hwnd);
+        return true;
     case IDM_DUPLICATE_LAYER:
         ClearSelection(true);
         gHistory.Push(gLayers);
