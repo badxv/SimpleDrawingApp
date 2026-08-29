@@ -1,6 +1,7 @@
 #include "BrushEngine.h"
 #include "BrushTips.h"
 #include "BrushPresets.h"
+#include "UiBrushFlyout.h"
 #include "AppPaths.h"
 #include "AppMetrics.h"
 #include "DrawingTools.h"
@@ -357,4 +358,5 @@ void SyncBrushMenuItems() {
     CheckMenuItem(dynamicsMenu, IDM_HARD_HARD, MF_BYCOMMAND | (brushHardness == 100 ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(dynamicsMenu, IDM_PRESSURE_ENABLE,
         MF_BYCOMMAND | (penPressureEnabled ? MF_CHECKED : MF_UNCHECKED));
+    SyncBrushFlyoutChecks();
 }
