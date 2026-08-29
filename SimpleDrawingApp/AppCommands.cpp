@@ -14,6 +14,7 @@
 #include "LayerStack.h"
 #include "DrawingTools.h"
 #include "BrushEngine.h"
+#include "BrushGallery.h"
 #include "AtelierPalette.h"
 #include "Resource.h"
 
@@ -393,6 +394,14 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             UpdateStatusBar(hwnd);
             return true;
         }
+        case IDM_BRUSH_GALLERY:
+            if (ShowBrushGalleryDialog(hwnd)) {
+                if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
+                    ApplyPenWidth(hwnd, preset->defaultSize);
+                }
+                UpdateStatusBar(hwnd);
+            }
+            return true;
         case IDM_BRUSH_IMPORT:
             if (PromptImportBrushTip(hwnd)) {
                 if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
