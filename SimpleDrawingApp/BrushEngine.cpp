@@ -462,6 +462,96 @@ bool PromptImportBrushTip(HWND owner) {
     return true;
 }
 
+struct AbrImportPickerState {
+    const std::vector<AbrSampledBrush>* samples = nullptr;
+    std::vector<int> selected;
+};
+
+static void AbrListSelectAll(HWND list, int count, bool select) {
+    for (int i = 0; i < count; ++i) {
+        SendMessageA(list, LB_SETSEL, select ? TRUE : FALSE, i);
+    }
+}
+
+static INT_PTR CALLBACK AbrImportDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    AbrImportPickerState* state = reinterpret_cast<AbrImportPickerState*>(
+        GetWindowLongPtrA(hDlg, GWLP_USERDATA));
+    switch (message) {
+    case WM_INITDIALOG: {
+        state = reinterpret_cast<AbrImportPickerState*>(lParam);
+        SetWindowLongPtrA(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        if (!state || !state->samples) return TRUE;
+        HWND list = GetDlgItem(hDlg, IDC_ABR_LIST);
+        if (!list) return TRUE;
+        const auto& samples = *state->samples;
+        for (const AbrSampledBrush& sample : samples) {
+            char line[128];
+            snprintf(line, sizeof(line), "%s (%dx%d)", sample.name.c_str(), sample.width, sample.height);
+            SendMessageA(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line));
+        }
+        AbrListSelectAll(list, static_cast<int>(samples.size()), true);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDC_ABR_SELECT_ALL:
+            if (state && state->samples) {
+                if (HWND list = GetDlgItem(hDlg, IDC_ABR_LIST)) {
+                    AbrListSelectAll(list, static_cast<int>(state->samples->size()), true);
+                }
+            }
+            return TRUE;
+        case IDC_ABR_CLEAR_ALL:
+            if (state && state->samples) {
+                if (HWND list = GetDlgItem(hDlg, IDC_ABR_LIST)) {
+                    AbrListSelectAll(list, static_cast<int>(state->samples->size()), false);
+                }
+            }
+            return TRUE;
+        case IDOK:
+            if (state && state->samples) {
+                HWND list = GetDlgItem(hDlg, IDC_ABR_LIST);
+                if (!list) {
+                    EndDialog(hDlg, IDCANCEL);
+                    return TRUE;
+                }
+                const int count = static_cast<int>(SendMessageA(list, LB_GETSELCOUNT, 0, 0));
+                if (count <= 0) {
+                    MessageBoxA(hDlg, "Select at least one brush.", "Import ABR", MB_OK | MB_ICONWARNING);
+                    return TRUE;
+                }
+                state->selected.resize(static_cast<size_t>(count));
+                SendMessageA(list, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(state->selected.data()));
+            }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        case IDCANCEL:
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+bool PromptAbrBrushSelection(HWND owner, const std::vector<AbrSampledBrush>& samples,
+    std::vector<int>& outIndices) {
+    outIndices.clear();
+    if (samples.empty()) return false;
+    if (samples.size() == 1) {
+        outIndices.push_back(0);
+        return true;
+    }
+    AbrImportPickerState state = {};
+    state.samples = &samples;
+    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_ABR_IMPORT), owner,
+            AbrImportDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
+        return false;
+    }
+    outIndices = std::move(state.selected);
+    return !outIndices.empty();
+}
+
 bool ImportAbrBrushesFromFile(HWND owner, const char* path) {
     if (!path || !path[0]) return false;
     std::vector<AbrSampledBrush> samples;
@@ -473,12 +563,19 @@ bool ImportAbrBrushesFromFile(HWND owner, const char* path) {
         return false;
     }
 
+    std::vector<int> pickIndices;
+    if (!PromptAbrBrushSelection(owner, samples, pickIndices)) {
+        return false;
+    }
+
     int imported = 0;
     int firstIndex = -1;
-    for (const AbrSampledBrush& sample : samples) {
+    for (int sampleIdx : pickIndices) {
+        if (sampleIdx < 0 || sampleIdx >= static_cast<int>(samples.size())) continue;
         if (CustomBrushCount() >= kMaxCustomBrushes || static_cast<int>(gPresets.size()) >= kMaxTotalBrushes) {
             break;
         }
+        const AbrSampledBrush& sample = samples[static_cast<size_t>(sampleIdx)];
         Bitmap* tip = TipFromSampleMask(sample.mask.data(), sample.width, sample.height);
         if (!tip) continue;
         const float spacing = MaxFloat(0.05f, static_cast<float>(sample.spacing) / 100.0f);
