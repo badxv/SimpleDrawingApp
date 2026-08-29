@@ -30,6 +30,13 @@ void DrawBrushStrokeSegment(Gdiplus::Graphics* target, int x0, int y0, int x1, i
 
 bool ImportBrushTipFromFile(HWND owner, const char* path);
 bool PromptImportBrushTip(HWND owner);
+bool ImportAbrBrushesFromFile(HWND owner, const char* path);
+bool PromptImportAbrBrushes(HWND owner);
+
+int GetBrushFlow();
+int GetBrushHardness();
+void SetBrushFlow(int flow);
+void SetBrushHardness(int hardness);
 
 void LoadBrushSettings();
 void SaveBrushSettings();

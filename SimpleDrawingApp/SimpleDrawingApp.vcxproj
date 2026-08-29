@@ -147,6 +147,7 @@
     <ClInclude Include="UiShapeFlyout.h" />
     <ClInclude Include="UiToolbar.h" />
     <ClInclude Include="AppCanvas.h" />
+    <ClInclude Include="AbrImport.h" />
     <ClInclude Include="BrushEngine.h" />
     <ClInclude Include="AppStroke.h" />
     <ClInclude Include="AppViewport.h" />
@@ -184,6 +185,7 @@
     <ClCompile Include="UiShapeFlyout.cpp" />
     <ClCompile Include="UiToolbar.cpp" />
     <ClCompile Include="AppCanvas.cpp" />
+    <ClCompile Include="AbrImport.cpp" />
     <ClCompile Include="BrushEngine.cpp" />
     <ClCompile Include="AppStroke.cpp" />
     <ClCompile Include="AppViewport.cpp" />
