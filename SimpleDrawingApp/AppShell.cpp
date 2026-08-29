@@ -6,6 +6,7 @@
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "LayerStack.h"
 #include <commctrl.h>
 #include <cstdio>
@@ -176,6 +177,9 @@ void SetActiveTool(DrawTool tool) {
         if (tool != DrawTool::Shape) {
             CloseShapeFlyout();
         }
+        if (tool != DrawTool::Pen) {
+            CloseBrushFlyout();
+        }
     }
     for (int i = 0; i < kToolButtonCount; ++i) {
         if (!hwndToolButtons[i]) continue;
@@ -185,6 +189,7 @@ void SetActiveTool(DrawTool tool) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
     SyncShapeFlyoutChecks();
+    SyncBrushFlyoutChecks();
     if (changed) {
         EventPayload payload{};
         payload.type = AtelierEvent::ActiveToolChanged;

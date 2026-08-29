@@ -1,5 +1,6 @@
 #include "BrushGallery.h"
 #include "BrushEngine.h"
+#include "AppState.h"
 #include "Resource.h"
 
 #include <gdiplus.h>
@@ -8,26 +9,22 @@
 
 using namespace Gdiplus;
 
-namespace {
-
-constexpr int kListRowHeight = 52;
-constexpr int kThumbSize = 40;
-
-struct BrushGalleryState {
-    int selected = 0;
-    HWND previewHwnd = nullptr;
-    WNDPROC previewOrigProc = nullptr;
-};
-
-void DrawTipPreview(HDC hdc, const RECT& rc, const BrushPreset* preset) {
+void DrawBrushTipPreview(HDC hdc, const RECT& rc, const BrushPreset* preset, bool onDark) {
     if (!hdc) return;
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
     const int w = rc.right - rc.left;
     const int h = rc.bottom - rc.top;
-    SolidBrush bg(Color(255, 36, 40, 48));
-    g.FillRectangle(&bg, rc.left, rc.top, w, h);
+    if (onDark) {
+        SolidBrush bg(Color(255, 36, 40, 48));
+        g.FillRectangle(&bg, rc.left, rc.top, w, h);
+    } else {
+        SolidBrush bg(Color(255, GetRValue(gTheme.chromeElevated), GetGValue(gTheme.chromeElevated),
+            GetBValue(gTheme.chromeElevated)));
+        g.FillRectangle(&bg, rc.left, rc.top, w, h);
+    }
 
     if (!preset || !preset->tip) return;
 
@@ -41,7 +38,7 @@ void DrawTipPreview(HDC hdc, const RECT& rc, const BrushPreset* preset) {
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, alphaScale, 0.0f,
-        0.85f, 0.85f, 0.85f, 0.0f, 1.0f
+        0.28f, 0.24f, 0.18f, 0.0f, 1.0f
     };
     ImageAttributes attrs;
     attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
@@ -54,6 +51,17 @@ void DrawTipPreview(HDC hdc, const RECT& rc, const BrushPreset* preset) {
     g.DrawImage(preset->tip.get(), dest, 0.0f, 0.0f, static_cast<REAL>(tw), static_cast<REAL>(th),
         UnitPixel, &attrs);
 }
+
+namespace {
+
+constexpr int kListRowHeight = 52;
+constexpr int kThumbSize = 40;
+
+struct BrushGalleryState {
+    int selected = 0;
+    HWND previewHwnd = nullptr;
+    WNDPROC previewOrigProc = nullptr;
+};
 
 void UpdatePreviewPane(HWND hDlg, BrushGalleryState* state) {
     if (!state || !state->previewHwnd) return;
@@ -70,7 +78,7 @@ void UpdatePreviewPane(HWND hDlg, BrushGalleryState* state) {
     SetDlgItemTextA(hDlg, IDC_BRUSH_GALLERY_INFO, details);
 }
 
-static LRESULT CALLBACK PreviewPaneProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK PreviewPaneProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_PAINT) {
         PAINTSTRUCT ps = {};
         HDC hdc = BeginPaint(hwnd, &ps);
@@ -79,7 +87,7 @@ static LRESULT CALLBACK PreviewPaneProc(HWND hwnd, UINT message, WPARAM wParam, 
         if (state) {
             RECT rc = ps.rcPaint;
             if (const BrushPreset* preset = GetBrushPreset(state->selected)) {
-                DrawTipPreview(hdc, rc, preset);
+                DrawBrushTipPreview(hdc, rc, preset, true);
             }
         }
         EndPaint(hwnd, &ps);
@@ -88,7 +96,7 @@ static LRESULT CALLBACK PreviewPaneProc(HWND hwnd, UINT message, WPARAM wParam, 
     return DefWindowProcA(hwnd, message, wParam, lParam);
 }
 
-static INT_PTR CALLBACK BrushGalleryDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BrushGalleryDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     BrushGalleryState* state = reinterpret_cast<BrushGalleryState*>(GetWindowLongPtrA(hDlg, GWLP_USERDATA));
 
     switch (message) {
@@ -157,7 +165,7 @@ static INT_PTR CALLBACK BrushGalleryDlgProc(HWND hDlg, UINT message, WPARAM wPar
         thumbRc.top += (dis->rcItem.bottom - dis->rcItem.top - kThumbSize) / 2;
         thumbRc.right = thumbRc.left + kThumbSize;
         thumbRc.bottom = thumbRc.top + kThumbSize;
-        DrawTipPreview(dis->hDC, thumbRc, preset);
+        DrawBrushTipPreview(dis->hDC, thumbRc, preset, true);
 
         char label[96] = "";
         if (preset) {
