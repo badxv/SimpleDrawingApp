@@ -124,6 +124,8 @@ extern COLORREF penColor;
 extern COLORREF backColor;
 extern int penWidth;
 extern int penOpacity;
+extern int brushFlow;
+extern int brushHardness;
 extern DrawTool currentTool;
 extern ShapeKind currentShape;
 extern ShapePaintMode shapePaintMode;

@@ -401,6 +401,38 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
                 UpdateStatusBar(hwnd);
             }
             return true;
+        case IDM_BRUSH_IMPORT_ABR:
+            if (PromptImportAbrBrushes(hwnd)) {
+                if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
+                    ApplyPenWidth(hwnd, preset->defaultSize);
+                }
+                UpdateStatusBar(hwnd);
+            }
+            return true;
+        case IDM_FLOW_LOW:
+            SetBrushFlow(25);
+            UpdateStatusBar(hwnd);
+            return true;
+        case IDM_FLOW_MED:
+            SetBrushFlow(50);
+            UpdateStatusBar(hwnd);
+            return true;
+        case IDM_FLOW_FULL:
+            SetBrushFlow(100);
+            UpdateStatusBar(hwnd);
+            return true;
+        case IDM_HARD_SOFT:
+            SetBrushHardness(35);
+            UpdateStatusBar(hwnd);
+            return true;
+        case IDM_HARD_MED:
+            SetBrushHardness(65);
+            UpdateStatusBar(hwnd);
+            return true;
+        case IDM_HARD_HARD:
+            SetBrushHardness(100);
+            UpdateStatusBar(hwnd);
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
