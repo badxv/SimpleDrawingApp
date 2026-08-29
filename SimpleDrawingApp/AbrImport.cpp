@@ -13,9 +13,14 @@ namespace {
 class AbrReader {
 public:
     explicit AbrReader(const char* path) {
-        if (path && path[0]) {
-            file_.reset(fopen(path, "rb"));
-        }
+        if (!path || !path[0]) return;
+        FILE* f = nullptr;
+#ifdef _MSC_VER
+        if (fopen_s(&f, path, "rb") != 0) return;
+#else
+        f = fopen(path, "rb");
+#endif
+        if (f) file_.reset(f);
     }
 
     explicit operator bool() const { return file_ != nullptr; }
