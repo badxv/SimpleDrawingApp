@@ -148,6 +148,8 @@
     <ClInclude Include="UiToolbar.h" />
     <ClInclude Include="AppCanvas.h" />
     <ClInclude Include="AbrImport.h" />
+    <ClInclude Include="AbrComputed.h" />
+    <ClInclude Include="AbrDescriptor.h" />
     <ClInclude Include="PenInput.h" />
     <ClInclude Include="BrushGallery.h" />
     <ClInclude Include="BrushEngine.h" />
@@ -188,6 +190,8 @@
     <ClCompile Include="UiToolbar.cpp" />
     <ClCompile Include="AppCanvas.cpp" />
     <ClCompile Include="AbrImport.cpp" />
+    <ClCompile Include="AbrComputed.cpp" />
+    <ClCompile Include="AbrDescriptor.cpp" />
     <ClCompile Include="PenInput.cpp" />
     <ClCompile Include="BrushGallery.cpp" />
     <ClCompile Include="BrushEngine.cpp" />

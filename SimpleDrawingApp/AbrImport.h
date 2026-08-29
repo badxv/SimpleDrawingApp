@@ -12,5 +12,5 @@ struct AbrSampledBrush {
     std::vector<std::uint8_t> mask; // grayscale, row-major
 };
 
-// Parses Photoshop .abr sampled brushes (v1/v2 and v6/v10 samp sections).
+// Parses Photoshop .abr sampled and computed brushes (v1/v2 and v6/v10).
 bool LoadAbrSampledBrushes(const char* path, std::vector<AbrSampledBrush>& out, std::string& error);
