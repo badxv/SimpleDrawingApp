@@ -5,6 +5,7 @@
 #include "AppMetrics.h"
 #include "AppSelection.h"
 #include "AppFeatureFlags.h"
+#include "PenInput.h"
 #include "SimpleDrawingApp.h"
 #include "DrawingTools.h"
 #include "LayerHistory.h"
@@ -108,6 +109,171 @@ static int ScrollByMessage(HWND scrollBar, WPARAM wParam, int current, int maxSc
     if (pos > maxScroll) pos = maxScroll;
     return pos;
 }
+
+static void ViewportUpdateHover(HWND hwnd, HWND parent, int localX, int localY) {
+    int docX = 0, docY = 0;
+    ViewportToDocumentUnclamped(localX, localY, docX, docY);
+
+    TRACKMOUSEEVENT tme = {};
+    tme.cbSize = sizeof(tme);
+    tme.dwFlags = TME_LEAVE;
+    tme.hwndTrack = hwnd;
+    TrackMouseEvent(&tme);
+
+    if (docX >= 0 && docY >= 0 && docX < docWidth && docY < docHeight) {
+        if (gStatusHoverDocX != docX || gStatusHoverDocY != docY) {
+            gStatusHoverDocX = docX;
+            gStatusHoverDocY = docY;
+            if (parent) UpdateStatusBar(parent);
+        }
+    } else if (gStatusHoverDocX >= 0 || gStatusHoverDocY >= 0) {
+        gStatusHoverDocX = -1;
+        gStatusHoverDocY = -1;
+        if (parent) UpdateStatusBar(parent);
+    }
+}
+
+static void ViewportOnCanvasDown(HWND hwnd, HWND parent, int localX, int localY, float pressure, bool shiftDown) {
+    int docX = 0, docY = 0;
+    ViewportToDocumentUnclamped(localX, localY, docX, docY);
+    lastPenPressure = pressure;
+
+    if (currentTool == DrawTool::Select) {
+        if (SelectionHitTest(docX, docY)) {
+            gHistory.Push(gLayers);
+            if (!gSel.isFloating) {
+                LiftSelection();
+            }
+            gSel.moving = true;
+            gSel.creating = false;
+            gSel.grabDX = docX - gSel.x;
+            gSel.grabDY = docY - gSel.y;
+            SetCapture(hwnd);
+            MarkDirty(parent);
+            InvalidateCanvas();
+        } else {
+            ClearSelection(true);
+            gSel.creating = true;
+            gSel.moving = false;
+            gSel.hasMarquee = true;
+            gSel.anchorX = docX;
+            gSel.anchorY = docY;
+            NormalizeSelRect(docX, docY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
+            SetCapture(hwnd);
+            InvalidateCanvas();
+        }
+        return;
+    }
+
+    if (!ViewportToDocument(localX, localY, docX, docY)) {
+        return;
+    }
+
+    ClearSelection(true);
+
+    if (currentTool == DrawTool::Fill) {
+        gHistory.Push(gLayers);
+        if (FloodFillCanvas(gLayers.ActiveBitmap(), docX, docY, penColor, OpacityToAlpha())) {
+            InvalidateComposite();
+            NoteDrawnColors();
+            MarkDirty(parent);
+            InvalidateCanvas();
+        }
+        return;
+    }
+
+    BeginStrokeLayer();
+    if (!strokeGraphics) {
+        return;
+    }
+    gHistory.Push(gLayers);
+    isDrawing = true;
+    lastPoint.x = docX;
+    lastPoint.y = docY;
+    shapeStart.x = docX;
+    shapeStart.y = docY;
+
+    if (IsFreehandTool(currentTool)) {
+        DrawStrokeOnto(strokeGraphics.get(), docX, docY, docX, docY, pressure, pressure);
+    } else if (IsShapeTool(currentTool)) {
+        RedrawShapePreview(docX, docY, shiftDown);
+    }
+
+    SetCapture(hwnd);
+    MarkDirty(parent);
+    InvalidateCanvas();
+}
+
+static void ViewportOnCanvasMove(HWND hwnd, int localX, int localY, float pressure, bool shiftDown) {
+    HWND parent = GetParent(hwnd);
+    ViewportUpdateHover(hwnd, parent, localX, localY);
+
+    int docX = 0, docY = 0;
+    ViewportToDocumentUnclamped(localX, localY, docX, docY);
+
+    if (gSel.creating) {
+        NormalizeSelRect(gSel.anchorX, gSel.anchorY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
+        InvalidateCanvas();
+        return;
+    }
+    if (gSel.moving && gSel.isFloating) {
+        gSel.x = docX - gSel.grabDX;
+        gSel.y = docY - gSel.grabDY;
+        InvalidateCanvas();
+        return;
+    }
+
+    if (!isDrawing || !strokeGraphics) return;
+    if (!ViewportToDocument(localX, localY, docX, docY)) return;
+
+    const float pressureStart = lastPenPressure;
+    lastPenPressure = pressure;
+
+    if (IsFreehandTool(currentTool)) {
+        DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, docX, docY, pressureStart, pressure);
+        lastPoint.x = docX;
+        lastPoint.y = docY;
+        InvalidateCanvas();
+    } else if (IsShapeTool(currentTool)) {
+        RedrawShapePreview(docX, docY, shiftDown);
+        InvalidateCanvas();
+    }
+}
+
+static void ViewportOnCanvasUp(HWND hwnd) {
+    if (gSel.creating) {
+        gSel.creating = false;
+        if (gSel.w < 2 || gSel.h < 2) {
+            gSel.hasMarquee = false;
+            gSel.w = gSel.h = 0;
+        }
+        if (GetCapture() == hwnd) ReleaseCapture();
+        InvalidateCanvas();
+        return;
+    }
+    if (gSel.moving) {
+        gSel.moving = false;
+        if (GetCapture() == hwnd) ReleaseCapture();
+        InvalidateCanvas();
+        if (HWND parent = GetParent(hwnd)) {
+            UpdateStatusBar(parent);
+        }
+        return;
+    }
+    if (isDrawing) {
+        isDrawing = false;
+        lastPenPressure = 1.0f;
+        CommitStrokeLayer();
+        if (GetCapture() == hwnd) {
+            ReleaseCapture();
+        }
+        InvalidateCanvas();
+        if (HWND parent = GetParent(hwnd)) {
+            UpdateStatusBar(parent);
+        }
+    }
+}
+
 static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
     case WM_ERASEBKGND:
@@ -168,133 +334,18 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         return 0;
     }
     case WM_LBUTTONDOWN: {
+        if (IsSyntheticPenMouseMessage()) return 0;
         HWND parent = GetParent(hwnd);
         if (!parent) break;
         EnsureCanvas(parent);
-
-        const int localX = GET_X_LPARAM(lParam);
-        const int localY = GET_Y_LPARAM(lParam);
-        int docX = 0, docY = 0;
-        ViewportToDocumentUnclamped(localX, localY, docX, docY);
-
-        if (currentTool == DrawTool::Select) {
-            if (SelectionHitTest(docX, docY)) {
-                gHistory.Push(gLayers);
-                if (!gSel.isFloating) {
-                    LiftSelection();
-                }
-                gSel.moving = true;
-                gSel.creating = false;
-                gSel.grabDX = docX - gSel.x;
-                gSel.grabDY = docY - gSel.y;
-                SetCapture(hwnd);
-                MarkDirty(parent);
-                InvalidateCanvas();
-            }
-            else {
-                ClearSelection(true);
-                gSel.creating = true;
-                gSel.moving = false;
-                gSel.hasMarquee = true;
-                gSel.anchorX = docX;
-                gSel.anchorY = docY;
-                NormalizeSelRect(docX, docY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
-                SetCapture(hwnd);
-                InvalidateCanvas();
-            }
-            break;
-        }
-
-        if (!ViewportToDocument(localX, localY, docX, docY)) {
-            break;
-        }
-
-        ClearSelection(true);
-
-        if (currentTool == DrawTool::Fill) {
-            gHistory.Push(gLayers);
-            if (FloodFillCanvas(gLayers.ActiveBitmap(), docX, docY, penColor, OpacityToAlpha())) {
-                InvalidateComposite();
-                NoteDrawnColors();
-                MarkDirty(parent);
-                InvalidateCanvas();
-            }
-            break;
-        }
-
-        BeginStrokeLayer();
-        if (!strokeGraphics) {
-            break;
-        }
-        gHistory.Push(gLayers);
-        isDrawing = true;
-        lastPoint.x = docX;
-        lastPoint.y = docY;
-        shapeStart.x = docX;
-        shapeStart.y = docY;
-
-        if (IsFreehandTool(currentTool)) {
-            DrawStrokeOnto(strokeGraphics.get(), docX, docY, docX, docY);
-        }
-        else if (IsShapeTool(currentTool)) {
-            RedrawShapePreview(docX, docY, (wParam & MK_SHIFT) != 0);
-        }
-
-        SetCapture(hwnd);
-        MarkDirty(parent);
-        InvalidateCanvas();
+        ViewportOnCanvasDown(hwnd, parent, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), 1.0f,
+            (wParam & MK_SHIFT) != 0);
         break;
     }
     case WM_MOUSEMOVE: {
-        const int localX = GET_X_LPARAM(lParam);
-        const int localY = GET_Y_LPARAM(lParam);
-        int docX = 0, docY = 0;
-        ViewportToDocumentUnclamped(localX, localY, docX, docY);
-
-        TRACKMOUSEEVENT tme = {};
-        tme.cbSize = sizeof(tme);
-        tme.dwFlags = TME_LEAVE;
-        tme.hwndTrack = hwnd;
-        TrackMouseEvent(&tme);
-
-        HWND parent = GetParent(hwnd);
-        if (docX >= 0 && docY >= 0 && docX < docWidth && docY < docHeight) {
-            if (gStatusHoverDocX != docX || gStatusHoverDocY != docY) {
-                gStatusHoverDocX = docX;
-                gStatusHoverDocY = docY;
-                if (parent) UpdateStatusBar(parent);
-            }
-        } else if (gStatusHoverDocX >= 0 || gStatusHoverDocY >= 0) {
-            gStatusHoverDocX = -1;
-            gStatusHoverDocY = -1;
-            if (parent) UpdateStatusBar(parent);
-        }
-
-        if (gSel.creating) {
-            NormalizeSelRect(gSel.anchorX, gSel.anchorY, docX, docY, gSel.x, gSel.y, gSel.w, gSel.h);
-            InvalidateCanvas();
-            break;
-        }
-        if (gSel.moving && gSel.isFloating) {
-            gSel.x = docX - gSel.grabDX;
-            gSel.y = docY - gSel.grabDY;
-            InvalidateCanvas();
-            break;
-        }
-
-        if (!isDrawing || !strokeGraphics) break;
-        if (!ViewportToDocument(localX, localY, docX, docY)) break;
-
-        if (IsFreehandTool(currentTool)) {
-            DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, docX, docY);
-            lastPoint.x = docX;
-            lastPoint.y = docY;
-            InvalidateCanvas();
-        }
-        else if (IsShapeTool(currentTool)) {
-            RedrawShapePreview(docX, docY, (wParam & MK_SHIFT) != 0);
-            InvalidateCanvas();
-        }
+        if (IsSyntheticPenMouseMessage() && isDrawing) return 0;
+        ViewportOnCanvasMove(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), 1.0f,
+            (wParam & MK_SHIFT) != 0);
         break;
     }
     case WM_MOUSELEAVE: {
@@ -308,37 +359,29 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         break;
     }
     case WM_LBUTTONUP:
-        if (gSel.creating) {
-            gSel.creating = false;
-            if (gSel.w < 2 || gSel.h < 2) {
-                gSel.hasMarquee = false;
-                gSel.w = gSel.h = 0;
-            }
-            if (GetCapture() == hwnd) ReleaseCapture();
-            InvalidateCanvas();
-            break;
-        }
-        if (gSel.moving) {
-            gSel.moving = false;
-            if (GetCapture() == hwnd) ReleaseCapture();
-            InvalidateCanvas();
-            if (HWND parent = GetParent(hwnd)) {
-                UpdateStatusBar(parent);
-            }
-            break;
-        }
-        if (isDrawing) {
-            isDrawing = false;
-            CommitStrokeLayer();
-            if (GetCapture() == hwnd) {
-                ReleaseCapture();
-            }
-            InvalidateCanvas();
-            if (HWND parent = GetParent(hwnd)) {
-                UpdateStatusBar(parent);
-            }
-        }
+        if (IsSyntheticPenMouseMessage()) return 0;
+        ViewportOnCanvasUp(hwnd);
         break;
+    case WM_POINTERDOWN: {
+        PenPointerSample sample = {};
+        if (!TryReadPenPointer(hwnd, GET_POINTERID_WPARAM(wParam), sample)) break;
+        HWND parent = GetParent(hwnd);
+        if (!parent) break;
+        EnsureCanvas(parent);
+        ViewportOnCanvasDown(hwnd, parent, sample.clientX, sample.clientY, sample.pressure,
+            (GetKeyState(VK_SHIFT) & 0x8000) != 0);
+        return 0;
+    }
+    case WM_POINTERUPDATE: {
+        PenPointerSample sample = {};
+        if (!TryReadPenPointer(hwnd, GET_POINTERID_WPARAM(wParam), sample)) break;
+        ViewportOnCanvasMove(hwnd, sample.clientX, sample.clientY, sample.pressure,
+            (GetKeyState(VK_SHIFT) & 0x8000) != 0);
+        return 0;
+    }
+    case WM_POINTERUP:
+        ViewportOnCanvasUp(hwnd);
+        return 0;
     case WM_CAPTURECHANGED:
         if (gSel.creating) {
             gSel.creating = false;
@@ -354,6 +397,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         }
         if (isDrawing) {
             isDrawing = false;
+            lastPenPressure = 1.0f;
             CommitStrokeLayer();
             InvalidateCanvas();
         }

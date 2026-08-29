@@ -47,7 +47,7 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "  Tools → Brush Size   Fine / Medium / Bold presets\r\n"
             "  Tools → Brush Preset   Round / Charcoal / Import PNG or ABR\r\n"
             "  Multi-brush ABR files open a picker to choose which tips to import\r\n"
-            "  Tools → Brush Dynamics Flow / Hardness presets\r\n"
+            "  Tools → Brush Dynamics Flow / Hardness / Pen Pressure\r\n"
             "\r\n"
             "Layers\r\n"
             "  Double-click / F2   Rename active layer\r\n"

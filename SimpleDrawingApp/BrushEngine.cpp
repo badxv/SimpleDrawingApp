@@ -288,7 +288,8 @@ void DrawRoundLine(Graphics* target, int x0, int y0, int x1, int y1, COLORREF co
     target->DrawLine(&pen, x0, y0, x1, y1);
 }
 
-void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent) {
+void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent,
+    float pressure = 1.0f) {
     if (!target || !tip || size < 1) return;
 
     const REAL half = static_cast<REAL>(size) * 0.5f;
@@ -315,7 +316,7 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     const REAL r = static_cast<REAL>(GetRValue(color)) / 255.0f;
     const REAL g = static_cast<REAL>(GetGValue(color)) / 255.0f;
     const REAL b = static_cast<REAL>(GetBValue(color)) / 255.0f;
-    const REAL alphaScale = StampAlphaScale();
+    const REAL alphaScale = StampAlphaScale() * PenPressureFactor(pressure);
     ColorMatrix matrix = {
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -378,38 +379,71 @@ void ResetBrushStrokeState() {
     gStampCarry = 0.0f;
 }
 
+bool IsPenPressureEnabled() {
+    return penPressureEnabled;
+}
+
+void SetPenPressureEnabled(bool enabled) {
+    penPressureEnabled = enabled;
+    SaveBrushSettings();
+    SyncBrushMenuItems();
+}
+
+float PenPressureFactor(float pressure) {
+    if (!penPressureEnabled) return 1.0f;
+    if (pressure < 0.0f) pressure = 0.0f;
+    if (pressure > 1.0f) pressure = 1.0f;
+    constexpr float kMin = 0.15f;
+    return kMin + (1.0f - kMin) * pressure;
+}
+
+int PenPressureWidth(int baseWidth, float pressure) {
+    const float factor = PenPressureFactor(pressure);
+    int width = static_cast<int>(static_cast<float>(baseWidth) * factor + 0.5f);
+    if (width < 1) width = 1;
+    if (width > kPenWidthMax) width = kPenWidthMax;
+    return width;
+}
+
 void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
-    COLORREF color, int width, bool eraseTransparent, bool eraseOpaque) {
+    COLORREF color, int width, bool eraseTransparent, bool eraseOpaque,
+    float pressure0, float pressure1) {
     if (!target) return;
 
+    const float avgPressure = (pressure0 + pressure1) * 0.5f;
+    const int effectiveWidth = PenPressureWidth(width, avgPressure);
+
     if (eraseOpaque) {
-        DrawRoundLine(target, x0, y0, x1, y1, gTheme.canvasBg, width, false);
+        DrawRoundLine(target, x0, y0, x1, y1, gTheme.canvasBg, effectiveWidth, false);
         return;
     }
 
     const BrushPreset* preset = ActivePreset();
     if (!preset || !preset->tip || currentTool != DrawTool::Pen) {
-        DrawRoundLine(target, x0, y0, x1, y1, color, width, eraseTransparent);
+        DrawRoundLine(target, x0, y0, x1, y1, color, effectiveWidth, eraseTransparent);
         return;
     }
 
     const float dx = static_cast<float>(x1 - x0);
     const float dy = static_cast<float>(y1 - y0);
     const float segLen = sqrtf(dx * dx + dy * dy);
-    const float spacing = MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, width)));
+    const float spacing = MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, effectiveWidth)));
 
     if (segLen < 0.001f) {
-        DrawStamp(target, preset->tip.get(), x1, y1, color, width, eraseTransparent);
+        const int stampW = PenPressureWidth(width, pressure1);
+        DrawStamp(target, preset->tip.get(), x1, y1, color, stampW, eraseTransparent, pressure1);
         return;
     }
 
     float dist = gStampCarry;
     while (dist <= segLen) {
         const float t = dist / segLen;
+        const float pressure = pressure0 + (pressure1 - pressure0) * t;
+        const int stampW = PenPressureWidth(width, pressure);
         const int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
         const int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
-        DrawStamp(target, preset->tip.get(), sx, sy, color, width, eraseTransparent);
-        dist += spacing;
+        DrawStamp(target, preset->tip.get(), sx, sy, color, stampW, eraseTransparent, pressure);
+        dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, stampW)));
     }
     gStampCarry = dist - segLen;
 }
@@ -653,6 +687,7 @@ void LoadBrushSettings() {
     }
     brushFlow = GetPrivateProfileIntA("Features", "BrushFlow", 100, iniPath);
     brushHardness = GetPrivateProfileIntA("Features", "BrushHardness", 100, iniPath);
+    penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
     if (brushHardness < 1) brushHardness = 1;
@@ -670,6 +705,7 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlow", buf, iniPath);
     sprintf_s(buf, "%d", brushHardness);
     WritePrivateProfileStringA("Features", "BrushHardness", buf, iniPath);
+    WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
 void SyncBrushMenuItems() {
@@ -694,4 +730,6 @@ void SyncBrushMenuItems() {
     CheckMenuItem(dynamicsMenu, IDM_HARD_SOFT, MF_BYCOMMAND | (brushHardness == 35 ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(dynamicsMenu, IDM_HARD_MED, MF_BYCOMMAND | (brushHardness == 65 ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(dynamicsMenu, IDM_HARD_HARD, MF_BYCOMMAND | (brushHardness == 100 ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuItem(dynamicsMenu, IDM_PRESSURE_ENABLE,
+        MF_BYCOMMAND | (penPressureEnabled ? MF_CHECKED : MF_UNCHECKED));
 }

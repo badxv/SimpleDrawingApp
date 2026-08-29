@@ -26,7 +26,13 @@ const char* GetActiveBrushName();
 
 void ResetBrushStrokeState();
 void DrawBrushStrokeSegment(Gdiplus::Graphics* target, int x0, int y0, int x1, int y1,
-    COLORREF color, int width, bool eraseTransparent, bool eraseOpaque);
+    COLORREF color, int width, bool eraseTransparent, bool eraseOpaque,
+    float pressure0 = 1.0f, float pressure1 = 1.0f);
+
+bool IsPenPressureEnabled();
+void SetPenPressureEnabled(bool enabled);
+float PenPressureFactor(float pressure);
+int PenPressureWidth(int baseWidth, float pressure);
 
 bool ImportBrushTipFromFile(HWND owner, const char* path);
 bool PromptImportBrushTip(HWND owner);
