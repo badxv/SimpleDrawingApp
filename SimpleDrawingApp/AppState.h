@@ -126,6 +126,8 @@ extern int penWidth;
 extern int penOpacity;
 extern int brushFlow;
 extern int brushHardness;
+extern bool penPressureEnabled;
+extern float lastPenPressure;
 extern DrawTool currentTool;
 extern ShapeKind currentShape;
 extern ShapePaintMode shapePaintMode;

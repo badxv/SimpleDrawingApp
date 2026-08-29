@@ -60,14 +60,15 @@ void BeginStrokeLayer() {
     strokeGraphics->SetCompositingMode(CompositingModeSourceOver);
 }
 
-void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
+void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1, float pressure0, float pressure1) {
     if (!target) return;
 
     const Layer* layer = gLayers.ActiveLayer();
     const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
     const bool eraseOpaque = (currentTool == DrawTool::Eraser && layer && layer->isBackground);
     COLORREF strokeColor = eraseOpaque ? gTheme.canvasBg : penColor;
-    DrawBrushStrokeSegment(target, x0, y0, x1, y1, strokeColor, penWidth, eraseTransparent, eraseOpaque);
+    DrawBrushStrokeSegment(target, x0, y0, x1, y1, strokeColor, penWidth, eraseTransparent, eraseOpaque,
+        pressure0, pressure1);
 }
 
 static void ConstrainShapeEnd(int x0, int y0, int& x1, int& y1) {

@@ -45,7 +45,12 @@ void BuildStatusTip(char* out, size_t outChars) {
 
     char extras[64] = "";
     if (currentTool == DrawTool::Pen) {
-        sprintf_s(extras, "  %s  F:%d%% H:%d%%", GetActiveBrushName(), brushFlow, brushHardness);
+        if (penPressureEnabled) {
+            sprintf_s(extras, "  %s  F:%d%% H:%d%%  P:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
+                static_cast<int>(lastPenPressure * 100.0f + 0.5f));
+        } else {
+            sprintf_s(extras, "  %s  F:%d%% H:%d%%", GetActiveBrushName(), brushFlow, brushHardness);
+        }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
         strcat_s(extras, "  Snap");

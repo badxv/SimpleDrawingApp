@@ -433,6 +433,10 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             SetBrushHardness(100);
             UpdateStatusBar(hwnd);
             return true;
+        case IDM_PRESSURE_ENABLE:
+            SetPenPressureEnabled(!IsPenPressureEnabled());
+            UpdateStatusBar(hwnd);
+            return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;

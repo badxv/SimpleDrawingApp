@@ -3,6 +3,7 @@
 #include "SimpleDrawingApp.h"
 #include "AppFeatureFlags.h"
 #include "BrushEngine.h"
+#include "PenInput.h"
 #include "AppDocument.h"
 #include "AppViewport.h"
 #include "UiChromeRender.h"
@@ -33,6 +34,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
     LoadFeatureFlags();
+    InitPenInput();
     InitBrushEngine();
     LoadBrushSettings();
     LoadSessionState();

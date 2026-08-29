@@ -38,6 +38,7 @@
 #define IDM_HARD_SOFT			178
 #define IDM_HARD_MED			179
 #define IDM_HARD_HARD			180
+#define IDM_PRESSURE_ENABLE		182
 #define IDD_ABR_IMPORT			181
 #define IDC_ABR_LIST			1065
 #define IDC_ABR_SELECT_ALL		1066
