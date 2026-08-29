@@ -1,4 +1,5 @@
 #include "AppFeatureFlags.h"
+#include "BrushEngine.h"
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "Resource.h"
@@ -181,4 +182,5 @@ void SyncFeatureFlagMenuItems() {
         CheckMenuItem(toolsMenu, IDM_BRUSH_BOLD,
             MF_BYCOMMAND | (w == kBrushPresetBold ? MF_CHECKED : MF_UNCHECKED));
     }
+    SyncBrushMenuItems();
 }

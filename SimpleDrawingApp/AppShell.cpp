@@ -2,6 +2,7 @@
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppFeatureFlags.h"
+#include "BrushEngine.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
@@ -43,6 +44,9 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
     char extras[64] = "";
+    if (currentTool == DrawTool::Pen) {
+        sprintf_s(extras, "  %s", GetActiveBrushName());
+    }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
         strcat_s(extras, "  Snap");
     }
