@@ -49,7 +49,7 @@ CXXFLAGS="-std=c++17 -O2 -DMINGW_HAS_SECURE_API=1 -I$SHIM -I$SRC"
 
 echo "== Compiling sources =="
 OBJS=()
-for f in AtelierFonts AtelierArtwork AtelierControls AtelierPalette ColorPicker DrawingTools FileManager LayerHistory LayerStack UiChrome AppState EventBus UiFramework UiChromeLayout UiChromeRender UiControls UiPaletteFloat UiShapeFlyout UiToolbar AppCanvas AbrImport AbrComputed AbrDescriptor PenInput BrushEngine BrushGallery AppStroke AppViewport AppShell AppDialogs AppFeatureFlags AppCommands AppWindow CaptionBar AppSelection AppDocument SimpleDrawingApp; do
+for f in AtelierFonts AtelierArtwork AtelierControls AtelierPalette ColorPicker DrawingTools FileManager LayerHistory LayerStack UiChrome AppState EventBus UiFramework UiChromeLayout UiChromeRender UiControls UiPaletteFloat UiShapeFlyout UiToolbar AppCanvas AbrCommon AbrImport AbrComputed AbrDescriptor PenInput BrushTips BrushEngine BrushImport BrushGallery AppStroke AppViewport AppShell AppDialogs AppFeatureFlags AppCommands AppWindow AppPaths CaptionBar AppSelection AppDocument SimpleDrawingApp; do
   echo "  cc $f.cpp"
   "$CXX" $CXXFLAGS -c "$SRC/$f.cpp" -o "$OUT_DIR/$f.o"
   OBJS+=("$OUT_DIR/$f.o")
