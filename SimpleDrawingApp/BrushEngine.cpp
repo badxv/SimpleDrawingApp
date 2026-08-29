@@ -127,7 +127,7 @@ Bitmap* MakeConceptTip() {
     for (int y = 0; y < kTipSize; ++y) {
         for (int x = 0; x < kTipSize; ++x) {
             float base = RadialAlpha(x, y, cx, cy, kTipSize / 2 - 1, kTipSize / 2 - 1, 0.55f);
-            const int n = ((x + y * 3) * 2654435761u) & 255u;
+            const unsigned n = ((static_cast<unsigned>(x + y * 3)) * 2654435761u) & 255u;
             const float tex = 0.82f + 0.18f * (static_cast<float>(n) / 255.0f);
             alpha[y * kTipSize + x] = base * tex;
         }
@@ -142,7 +142,7 @@ Bitmap* MakePencilTip() {
     for (int y = 0; y < kTipSize; ++y) {
         for (int x = 0; x < kTipSize; ++x) {
             float base = RadialAlpha(x, y, cx, cy, kTipSize / 4, kTipSize / 4, 0.75f);
-            const int n = (x * 92837111) ^ (y * 689287499);
+            const unsigned n = (static_cast<unsigned>(x) * 92837111u) ^ (static_cast<unsigned>(y) * 689287499u);
             const float grain = 0.55f + 0.45f * (static_cast<float>(n & 255) / 255.0f);
             alpha[y * kTipSize + x] = base * grain;
         }
