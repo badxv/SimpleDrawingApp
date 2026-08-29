@@ -1,4 +1,6 @@
 #include "AbrImport.h"
+#include "AbrComputed.h"
+#include "AbrDescriptor.h"
 
 #include <cstdio>
 #include <cstring>
@@ -122,16 +124,8 @@ bool MaskToSample(const std::uint8_t* mask, int width, int height, int spacing,
     return true;
 }
 
-bool LoadSampledV12(AbrReader& in, int version, int index, const char* path,
+bool LoadSampledV12(AbrReader& in, int version, int index, const char* path, long blockEnd,
     AbrSampledBrush& out) {
-    std::int16_t type = 0;
-    std::int32_t blockSize = 0;
-    if (!in.readI16(type) || !in.readI32(blockSize)) return false;
-    if (type != 2) {
-        if (blockSize > 0) in.skip(static_cast<size_t>(blockSize));
-        return false;
-    }
-
     std::int32_t misc = 0;
     std::int16_t spacing = 25;
     if (!in.readI32(misc) || !in.readI16(spacing)) return false;
@@ -174,6 +168,8 @@ bool LoadSampledV12(AbrReader& in, int version, int index, const char* path,
         return false;
     }
 
+    in.seek(blockEnd);
+
     std::string name;
     if (!sampleName.empty()) name = sampleName;
     else {
@@ -191,17 +187,75 @@ bool LoadSampledV12(AbrReader& in, int version, int index, const char* path,
     return MaskToSample(mask.data(), width, height, spacing, name, out);
 }
 
-bool Reach8BimSection(AbrReader& in, const char* tagName) {
-    while (true) {
-        char tag[4];
-        char name[4];
-        if (!in.readBytes(tag, 4) || !in.readBytes(name, 4)) return false;
-        if (strncmp(tag, "8BIM", 4) != 0) return false;
-        if (strncmp(name, tagName, 4) == 0) return true;
-        std::int32_t sectionSize = 0;
-        if (!in.readI32(sectionSize) || sectionSize < 0) return false;
-        if (!in.skip(static_cast<size_t>(sectionSize))) return false;
+bool LoadComputedV12(AbrReader& in, int version, int index, const char* path, long blockEnd,
+    AbrSampledBrush& out) {
+    std::int32_t misc = 0;
+    std::int16_t spacing = 25;
+    if (!in.readI32(misc) || !in.readI16(spacing)) return false;
+
+    std::string sampleName;
+    if (version == 2 && !ReadUcs2String(in, sampleName)) return false;
+
+    std::uint8_t antialias = 0;
+    if (!in.readU8(antialias)) return false;
+    (void)antialias;
+
+    for (int i = 0; i < 4; ++i) {
+        std::int16_t ignored = 0;
+        if (!in.readI16(ignored)) return false;
     }
+
+    std::int32_t top = 0, left = 0, bottom = 0, right = 0;
+    if (!in.readI32(top) || !in.readI32(left) || !in.readI32(bottom) || !in.readI32(right)) {
+        return false;
+    }
+
+    std::int16_t depthBits = 0;
+    if (!in.readI16(depthBits)) return false;
+    (void)depthBits;
+
+    std::uint8_t hardnessByte = 100;
+    std::int16_t angle = 0;
+    std::uint8_t roundnessByte = 100;
+    if (!in.readU8(hardnessByte) || !in.readI16(angle) || !in.readU8(roundnessByte)) {
+        return false;
+    }
+    in.seek(blockEnd);
+
+    int width = right - left;
+    int height = bottom - top;
+    int maskSize = (width > height) ? width : height;
+    if (maskSize < 8) maskSize = 32;
+    if (maskSize > 128) maskSize = 128;
+
+    AbrComputedParams params = {};
+    params.diameter = static_cast<float>(maskSize);
+    params.hardness = static_cast<float>(hardnessByte) / 100.0f;
+    params.roundness = static_cast<float>(roundnessByte) / 100.0f;
+    params.angleDeg = static_cast<float>(angle);
+    params.spacing = spacing;
+
+    std::string name;
+    if (!sampleName.empty()) name = sampleName;
+    else {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "computed-%03d", index + 1);
+        name = buf;
+    }
+    const char* slash = strrchr(path, '\\');
+    if (!slash) slash = strrchr(path, '/');
+    if (slash && slash[1]) {
+        name = std::string(slash + 1) + "-" + name;
+        const size_t dot = name.rfind('.');
+        if (dot != std::string::npos) name.erase(dot);
+    }
+
+    if (!RasterizeComputedMask(params, maskSize, out.mask)) return false;
+    out.name = name;
+    out.width = maskSize;
+    out.height = maskSize;
+    out.spacing = spacing;
+    return true;
 }
 
 bool LoadSampledV6(AbrReader& in, int subVersion, int index, const char* path,
@@ -295,8 +349,21 @@ bool LoadAbrSampledBrushes(const char* path, std::vector<AbrSampledBrush>& out, 
             return false;
         }
         for (int i = 0; i < count; ++i) {
+            std::int16_t type = 0;
+            std::int32_t blockSize = 0;
+            if (!in.readI16(type) || !in.readI32(blockSize) || blockSize < 0) break;
+            const long blockEnd = in.tell() + blockSize;
+
             AbrSampledBrush sample;
-            if (LoadSampledV12(in, version, i, path, sample)) {
+            bool loaded = false;
+            if (type == 2) {
+                loaded = LoadSampledV12(in, version, i, path, blockEnd, sample);
+            } else if (type == 1) {
+                loaded = LoadComputedV12(in, version, i, path, blockEnd, sample);
+            }
+            if (!loaded) {
+                in.seek(blockEnd);
+            } else {
                 out.push_back(std::move(sample));
             }
         }
@@ -306,24 +373,47 @@ bool LoadAbrSampledBrushes(const char* path, std::vector<AbrSampledBrush>& out, 
             error = "Unsupported ABR sub-version.";
             return false;
         }
-        if (!Reach8BimSection(in, "samp")) {
-            error = "No sampled brush section.";
-            return false;
-        }
-        std::int32_t sectionSize = 0;
-        if (!in.readI32(sectionSize) || sectionSize < 0) {
-            error = "Invalid samp section.";
-            return false;
-        }
-        const long sectionEnd = in.tell() + sectionSize;
-        int index = 0;
-        while (in.tell() < sectionEnd) {
-            AbrSampledBrush sample;
-            if (LoadSampledV6(in, subVersion, index, path, sample)) {
-                out.push_back(std::move(sample));
+
+        std::vector<std::uint8_t> descPayload;
+        while (true) {
+            char tag[4];
+            char name[4];
+            if (!in.readBytes(tag, 4) || !in.readBytes(name, 4)) break;
+            if (std::strncmp(tag, "8BIM", 4) != 0) break;
+
+            std::int32_t sectionSize = 0;
+            if (!in.readI32(sectionSize) || sectionSize < 0) break;
+            const long sectionStart = in.tell();
+
+            if (std::strncmp(name, "samp", 4) == 0) {
+                const long sectionEnd = sectionStart + sectionSize;
+                int index = 0;
+                while (in.tell() < sectionEnd) {
+                    AbrSampledBrush sample;
+                    if (LoadSampledV6(in, subVersion, index, path, sample)) {
+                        out.push_back(std::move(sample));
+                    }
+                    ++index;
+                    if (index > 512) break;
+                }
+            } else if (std::strncmp(name, "desc", 4) == 0) {
+                descPayload.resize(static_cast<size_t>(sectionSize));
+                if (sectionSize > 0 && !in.readBytes(descPayload.data(), descPayload.size())) {
+                    error = "Truncated desc section.";
+                    return false;
+                }
+            } else {
+                if (!in.skip(static_cast<size_t>(sectionSize))) break;
             }
-            ++index;
-            if (index > 512) break;
+
+            long next = sectionStart + sectionSize;
+            while (next % 4 != 0) ++next;
+            if (in.tell() < next) in.seek(next);
+            else if (in.tell() > next) in.seek(next);
+        }
+
+        if (!descPayload.empty()) {
+            ParseDescComputedBrushes(descPayload.data(), descPayload.size(), out);
         }
     } else {
         error = "Unsupported ABR version.";
@@ -331,7 +421,7 @@ bool LoadAbrSampledBrushes(const char* path, std::vector<AbrSampledBrush>& out, 
     }
 
     if (out.empty()) {
-        error = "No sampled brushes found.";
+        error = "No brushes found (sampled or computed).";
         return false;
     }
     return true;
