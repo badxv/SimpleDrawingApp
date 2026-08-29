@@ -13,6 +13,7 @@
 #include "LayerHistory.h"
 #include "LayerStack.h"
 #include "DrawingTools.h"
+#include "BrushEngine.h"
 #include "AtelierPalette.h"
 #include "Resource.h"
 
@@ -377,6 +378,28 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             return true;
         case IDM_BRUSH_BOLD:
             ApplyPenWidth(hwnd, kBrushPresetBold);
+            return true;
+        case IDM_BRUSH_ROUND:
+        case IDM_BRUSH_HARD:
+        case IDM_BRUSH_CHARCOAL:
+        case IDM_BRUSH_FLAT:
+        case IDM_BRUSH_CONCEPT:
+        case IDM_BRUSH_PENCIL: {
+            const int idx = cmdId - IDM_BRUSH_ROUND;
+            SetActiveBrushIndex(idx);
+            if (const BrushPreset* preset = GetBrushPreset(idx)) {
+                ApplyPenWidth(hwnd, preset->defaultSize);
+            }
+            UpdateStatusBar(hwnd);
+            return true;
+        }
+        case IDM_BRUSH_IMPORT:
+            if (PromptImportBrushTip(hwnd)) {
+                if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
+                    ApplyPenWidth(hwnd, preset->defaultSize);
+                }
+                UpdateStatusBar(hwnd);
+            }
             return true;
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);

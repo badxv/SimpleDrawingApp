@@ -3,6 +3,7 @@
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppFeatureFlags.h"
+#include "BrushEngine.h"
 #include "DrawingTools.h"
 #include "AtelierPalette.h"
 #include "AtelierRaii.h"
@@ -40,6 +41,7 @@ void DestroyStrokeLayer() {
 
 void BeginStrokeLayer() {
     DestroyStrokeLayer();
+    ResetBrushStrokeState();
     if (!gLayers.ActiveBitmap()) return;
 
     const int width = gLayers.Width();
@@ -61,27 +63,11 @@ void BeginStrokeLayer() {
 void DrawStrokeOnto(Graphics* target, int x0, int y0, int x1, int y1) {
     if (!target) return;
 
-    // Draw fully opaque ink onto the stroke layer; opacity is applied once when compositing.
-    // Eraser on non-background layers builds an alpha coverage mask (committed as transparent holes).
     const Layer* layer = gLayers.ActiveLayer();
     const bool eraseTransparent = (currentTool == DrawTool::Eraser && layer && !layer->isBackground);
-    if (eraseTransparent) {
-        // SourceOver + white ink: AA coverage accumulates in alpha (SourceCopy left speckled gaps).
-        target->SetCompositingMode(CompositingModeSourceOver);
-        Pen pen(Color(255, 255, 255, 255), static_cast<REAL>(penWidth));
-        pen.SetStartCap(LineCapRound);
-        pen.SetEndCap(LineCapRound);
-        pen.SetLineJoin(LineJoinRound);
-        target->DrawLine(&pen, x0, y0, x1, y1);
-        return;
-    }
-
-    COLORREF strokeColor = (currentTool == DrawTool::Eraser) ? gTheme.canvasBg : penColor;
-    Pen pen(GdiplusFromColor(strokeColor, 255), static_cast<REAL>(penWidth));
-    pen.SetStartCap(LineCapRound);
-    pen.SetEndCap(LineCapRound);
-    pen.SetLineJoin(LineJoinRound);
-    target->DrawLine(&pen, x0, y0, x1, y1);
+    const bool eraseOpaque = (currentTool == DrawTool::Eraser && layer && layer->isBackground);
+    COLORREF strokeColor = eraseOpaque ? gTheme.canvasBg : penColor;
+    DrawBrushStrokeSegment(target, x0, y0, x1, y1, strokeColor, penWidth, eraseTransparent, eraseOpaque);
 }
 
 static void ConstrainShapeEnd(int x0, int y0, int& x1, int& y1) {

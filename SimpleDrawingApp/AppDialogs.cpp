@@ -45,6 +45,7 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
             "Brush\r\n"
             "  [ / ]      Decrease / increase size\r\n"
             "  Tools → Brush Size   Fine / Medium / Bold presets\r\n"
+            "  Tools → Brush Preset Round / Charcoal / Concept / Import PNG\r\n"
             "\r\n"
             "Layers\r\n"
             "  Double-click / F2   Rename active layer\r\n"
