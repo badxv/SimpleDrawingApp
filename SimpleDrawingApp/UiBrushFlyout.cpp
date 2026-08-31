@@ -2,8 +2,10 @@
 #include "BrushEngine.h"
 #include "BrushGallery.h"
 #include "UiControls.h"
+#include "AtelierControls.h"
 #include "AppState.h"
 #include "AppMetrics.h"
+#include "AppShell.h"
 #include "UiChrome.h"
 #include "Resource.h"
 
@@ -17,9 +19,10 @@ using namespace Gdiplus;
 namespace {
 
 constexpr int kFlyoutW = 210;
-constexpr int kFlyoutH = 318;
-constexpr int kSubFlyoutW = 152;
-constexpr int kSubFlyoutH = 98;
+constexpr int kFlyoutH = 338;
+constexpr int kSubFlyoutW = 168;
+constexpr int kSubFlyoutH = 108;
+constexpr int kSubFlyoutSliderH = 88;
 constexpr int kPresetCell = 58;
 constexpr int kPresetCols = 3;
 constexpr int kMaxFlyoutPresets = 9;
@@ -29,10 +32,49 @@ enum class BrushSubPanel { None = 0, Flow, Hardness, Pressure };
 BrushSubPanel gBrushSubPanel = BrushSubPanel::None;
 int gBrushSubAnchorY = 0;
 int gBrushSubCmdIds[3] = {};
+int gBrushPresetPage = 0;
+
+int BrushFlyoutPageCount() {
+    return (BrushPresetCount() + kMaxFlyoutPresets - 1) / kMaxFlyoutPresets;
+}
+
+int BrushFlyoutPresetIndexFromCmd(int cmdId) {
+    if (cmdId < IDC_BRUSH_PRESET_BASE || cmdId >= IDC_BRUSH_PRESET_BASE + kMaxFlyoutPresets) return -1;
+    const int slot = cmdId - IDC_BRUSH_PRESET_BASE;
+    return gBrushPresetPage * kMaxFlyoutPresets + slot;
+}
+
+void RefreshPresetGrid() {
+    const int total = BrushPresetCount();
+    const int pageStart = gBrushPresetPage * kMaxFlyoutPresets;
+    for (int slot = 0; slot < kMaxFlyoutPresets; ++slot) {
+        HWND btn = hwndBrushPresetButtons[slot];
+        if (!btn) continue;
+        const int idx = pageStart + slot;
+        if (idx < total) {
+            ShowWindow(btn, SW_SHOW);
+            const BrushPreset* preset = GetBrushPreset(idx);
+            char tip[96] = {};
+            if (preset) snprintf(tip, sizeof(tip), "%s\r\nClick to select", preset->name.c_str());
+            InvalidateRect(btn, NULL, FALSE);
+            (void)tip;
+        } else {
+            ShowWindow(btn, SW_HIDE);
+        }
+    }
+    if (hwndBrushPageButtons[0]) {
+        EnableWindow(hwndBrushPageButtons[0], gBrushPresetPage > 0 ? TRUE : FALSE);
+    }
+    if (hwndBrushPageButtons[1]) {
+        EnableWindow(hwndBrushPageButtons[1],
+            gBrushPresetPage + 1 < BrushFlyoutPageCount() ? TRUE : FALSE);
+    }
+}
 
 void PaintBrushPresetCell(const DRAWITEMSTRUCT* dis) {
     if (!dis) return;
-    const int idx = static_cast<int>(dis->CtlID) - IDC_BRUSH_PRESET_BASE;
+    const int slot = static_cast<int>(dis->CtlID) - IDC_BRUSH_PRESET_BASE;
+    const int idx = gBrushPresetPage * kMaxFlyoutPresets + slot;
     const BrushPreset* preset = GetBrushPreset(idx);
     const bool selected = (GetActiveBrushIndex() == idx);
     const bool hot = (dis->itemState & ODS_HOTLIGHT) != 0;
@@ -127,10 +169,10 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     // Section rules
     HPEN pen = CreatePen(PS_SOLID, 1, gTheme.chromeLine);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
-    MoveToEx(hdc, rc.left + 10, rc.top + 196, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 196);
-    MoveToEx(hdc, rc.left + 10, rc.top + 278, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 278);
+    MoveToEx(hdc, rc.left + 10, rc.top + 206, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 206);
+    MoveToEx(hdc, rc.left + 10, rc.top + 298, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 298);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 }
@@ -145,7 +187,23 @@ void CloseBrushSubFlyoutInternal() {
 void LayoutSubFlyoutOptions() {
     if (!hwndBrushSubFlyout) return;
 
-    const int ids[3] = { IDC_BRUSH_SUB_OPT1, IDC_BRUSH_SUB_OPT2, IDC_BRUSH_SUB_OPT3 };
+    const bool useSlider = (gBrushSubPanel == BrushSubPanel::Flow || gBrushSubPanel == BrushSubPanel::Hardness);
+    if (hwndBrushSubSlider) {
+        ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
+        if (useSlider) {
+            SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
+            const int pos = (gBrushSubPanel == BrushSubPanel::Flow) ? brushFlow : brushHardness;
+            SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
+        }
+    }
+
+    if (useSlider) {
+        for (HWND btn : hwndBrushSubButtons) {
+            if (btn) ShowWindow(btn, SW_HIDE);
+        }
+        return;
+    }
+
     char labels[3][48] = {};
 
     switch (gBrushSubPanel) {
@@ -203,7 +261,11 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
 
     RECT fr = {};
     GetWindowRect(hwndBrushFlyout, &fr);
-    const int subH = (panel == BrushSubPanel::Pressure) ? 44 : kSubFlyoutH;
+    int subH = kSubFlyoutH;
+    if (gBrushSubPanel == BrushSubPanel::Pressure) subH = 44;
+    else if (gBrushSubPanel == BrushSubPanel::Flow || gBrushSubPanel == BrushSubPanel::Hardness) {
+        subH = kSubFlyoutSliderH;
+    }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
         kSubFlyoutW, subH, SWP_SHOWWINDOW | SWP_NOACTIVATE);
     SetForegroundWindow(hwndBrushSubFlyout);
@@ -227,6 +289,20 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         CloseBrushSubFlyoutInternal();
         return 0;
     }
+    case WM_HSCROLL:
+        if (hwndBrushSubSlider && reinterpret_cast<HWND>(lParam) == hwndBrushSubSlider) {
+            const int pos = static_cast<int>(SendMessage(hwndBrushSubSlider, TBM_GETPOS, 0, 0));
+            if (gBrushSubPanel == BrushSubPanel::Flow) {
+                SetBrushFlow(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Hardness) {
+                SetBrushHardness(pos);
+            }
+            SyncBrushFlyoutChecks();
+            HWND parent = GetWindow(hwnd, GW_OWNER);
+            if (!parent) parent = GetParent(hwndBrushFlyout);
+            if (parent) UpdateStatusBar(parent);
+        }
+        return 0;
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
         int cmdId = id;
@@ -304,6 +380,18 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             OpenBrushSubFlyoutInternal(BrushSubPanel::Pressure, rr.top - 4);
             return 0;
         }
+        if (id == IDC_BRUSH_PAGE_PREV && gBrushPresetPage > 0) {
+            --gBrushPresetPage;
+            RefreshPresetGrid();
+            SyncBrushFlyoutChecks();
+            return 0;
+        }
+        if (id == IDC_BRUSH_PAGE_NEXT && gBrushPresetPage + 1 < BrushFlyoutPageCount()) {
+            ++gBrushPresetPage;
+            RefreshPresetGrid();
+            SyncBrushFlyoutChecks();
+            return 0;
+        }
         HWND parent = GetParent(hwnd);
         if (!parent) parent = GetWindow(hwnd, GW_OWNER);
         if (parent) {
@@ -364,6 +452,9 @@ void EnsureBrushSubFlyout(HWND owner) {
             hwndBrushSubFlyout, (HMENU)(INT_PTR)id, GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushSubButtons[i]);
     }
+    hwndBrushSubSlider = AtelierSlider_Create(hwndBrushSubFlyout, 8, 28, kSubFlyoutW - 16, 28,
+        (HMENU)(INT_PTR)IDC_BRUSH_SUB_SLIDER);
+    if (hwndBrushSubSlider) ShowWindow(hwndBrushSubSlider, SW_HIDE);
 }
 
 void EnsureBrushFlyout(HWND owner) {
@@ -379,25 +470,30 @@ void EnsureBrushFlyout(HWND owner) {
         owner, NULL, GetModuleHandle(NULL), NULL);
     if (!hwndBrushFlyout) return;
 
-    const int presetCount = (BrushPresetCount() < kMaxFlyoutPresets) ? BrushPresetCount() : kMaxFlyoutPresets;
+    const int presetCount = BrushPresetCount();
     for (int i = 0; i < kMaxFlyoutPresets; ++i) {
         const int id = IDC_BRUSH_PRESET_BASE + i;
-        if (i < presetCount) {
-            const BrushPreset* preset = GetBrushPreset(i);
-            char tip[96] = {};
-            if (preset) snprintf(tip, sizeof(tip), "%s\r\nClick to select", preset->name.c_str());
-            hwndBrushPresetButtons[i] = CreateIconButton(hwndBrushFlyout, id, tip, true);
+        if (i < presetCount || i < kMaxFlyoutPresets) {
+            hwndBrushPresetButtons[i] = CreateIconButton(hwndBrushFlyout, id, "Brush preset", true);
             const int col = i % kPresetCols;
             const int row = i / kPresetCols;
             MoveWindow(hwndBrushPresetButtons[i],
                 12 + col * (kPresetCell + 4),
                 34 + row * (kPresetCell + 4),
                 kPresetCell, kPresetCell, TRUE);
-        } else if (hwndBrushPresetButtons[i]) {
-            DestroyWindow(hwndBrushPresetButtons[i]);
-            hwndBrushPresetButtons[i] = nullptr;
         }
     }
+
+    hwndBrushPageButtons[0] = CreateWindowA("BUTTON", "\xE2\x80\xB9",
+        WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+        12, 192, 28, 20, hwndBrushFlyout, (HMENU)(INT_PTR)IDC_BRUSH_PAGE_PREV,
+        GetModuleHandle(NULL), NULL);
+    hwndBrushPageButtons[1] = CreateWindowA("BUTTON", "\xE2\x80\xBA",
+        WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+        kFlyoutW - 40, 192, 28, 20, hwndBrushFlyout, (HMENU)(INT_PTR)IDC_BRUSH_PAGE_NEXT,
+        GetModuleHandle(NULL), NULL);
+    ApplyUiFont(hwndBrushPageButtons[0]);
+    ApplyUiFont(hwndBrushPageButtons[1]);
 
     const int rowIds[3] = { IDC_BRUSH_ROW_FLOW, IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_PRESSURE };
     const char* rowTips[3] = { "Flow — paint opacity per stamp", "Hardness — edge falloff",
@@ -405,7 +501,7 @@ void EnsureBrushFlyout(HWND owner) {
     for (int i = 0; i < 3; ++i) {
         hwndBrushRowButtons[i] = CreateWindowA("BUTTON", "",
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10, 204 + i * 26, kFlyoutW - 20, 22,
+            10, 214 + i * 26, kFlyoutW - 20, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)rowIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushRowButtons[i]);
         if (hwndTooltip && rowTips[i]) {
@@ -421,11 +517,11 @@ void EnsureBrushFlyout(HWND owner) {
 
     const int actionIds[2] = { IDC_BRUSH_FLYOUT_GALLERY, IDC_BRUSH_FLYOUT_IMPORT };
     const char* actionLabels[2] = { "Gallery...", "Import..." };
-    const char* actionTips[2] = { "Open brush gallery", "Import PNG or ABR brush" };
+    const char* actionTips[2] = { "Open brush gallery", "Import PNG tip or ABR set" };
     for (int i = 0; i < 2; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10 + i * ((kFlyoutW - 20) / 2 + 2), 286, (kFlyoutW - 24) / 2, 22,
+            10 + i * ((kFlyoutW - 20) / 2 + 2), 306, (kFlyoutW - 24) / 2, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)actionIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushActionButtons[i]);
         if (hwndTooltip) {
@@ -439,20 +535,41 @@ void EnsureBrushFlyout(HWND owner) {
         }
     }
 
+    RefreshPresetGrid();
     SyncBrushFlyoutChecks();
 }
 
 } // namespace
 
+int BrushFlyoutPresetIndexFromCmd(int cmdId) {
+    if (cmdId < IDC_BRUSH_PRESET_BASE || cmdId >= IDC_BRUSH_PRESET_BASE + kMaxFlyoutPresets) return -1;
+    const int slot = cmdId - IDC_BRUSH_PRESET_BASE;
+    return gBrushPresetPage * kMaxFlyoutPresets + slot;
+}
+
+void RebuildBrushFlyoutPresets() {
+    if (gBrushPresetPage >= BrushFlyoutPageCount()) {
+        gBrushPresetPage = BrushFlyoutPageCount() - 1;
+    }
+    if (gBrushPresetPage < 0) gBrushPresetPage = 0;
+    if (hwndBrushFlyout && IsWindow(hwndBrushFlyout)) {
+        RefreshPresetGrid();
+        SyncBrushFlyoutChecks();
+    }
+}
+
 void SyncBrushFlyoutChecks() {
-    const int presetCount = (BrushPresetCount() < kMaxFlyoutPresets) ? BrushPresetCount() : kMaxFlyoutPresets;
-    for (int i = 0; i < kMaxFlyoutPresets; ++i) {
-        if (!hwndBrushPresetButtons[i]) continue;
-        const bool on = (GetActiveBrushIndex() == i);
-        SendMessageA(hwndBrushPresetButtons[i], BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
-        InvalidateRect(hwndBrushPresetButtons[i], NULL, FALSE);
-        if (i >= presetCount) ShowWindow(hwndBrushPresetButtons[i], SW_HIDE);
-        else ShowWindow(hwndBrushPresetButtons[i], SW_SHOW);
+    const int total = BrushPresetCount();
+    const int pageStart = gBrushPresetPage * kMaxFlyoutPresets;
+    for (int slot = 0; slot < kMaxFlyoutPresets; ++slot) {
+        HWND btn = hwndBrushPresetButtons[slot];
+        if (!btn) continue;
+        const int idx = pageStart + slot;
+        const bool on = (GetActiveBrushIndex() == idx);
+        SendMessageA(btn, BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
+        InvalidateRect(btn, NULL, FALSE);
+        if (idx >= total) ShowWindow(btn, SW_HIDE);
+        else ShowWindow(btn, SW_SHOW);
     }
 
     char flowLabel[48];

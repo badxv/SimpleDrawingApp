@@ -156,6 +156,7 @@
     <ClInclude Include="BrushGallery.h" />
     <ClInclude Include="BrushTips.h" />
     <ClInclude Include="BrushPresets.h" />
+    <ClInclude Include="BrushPersistence.h" />
     <ClInclude Include="BrushEngine.h" />
     <ClInclude Include="AppPaths.h" />
     <ClInclude Include="AppStroke.h" />
@@ -204,6 +205,7 @@
     <ClCompile Include="BrushTips.cpp" />
     <ClCompile Include="BrushEngine.cpp" />
     <ClCompile Include="BrushImport.cpp" />
+    <ClCompile Include="BrushPersistence.cpp" />
     <ClCompile Include="AppPaths.cpp" />
     <ClCompile Include="AppStroke.cpp" />
     <ClCompile Include="AppViewport.cpp" />

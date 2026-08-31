@@ -1,6 +1,7 @@
 #include "BrushEngine.h"
 #include "BrushTips.h"
 #include "BrushPresets.h"
+#include "BrushPersistence.h"
 #include "UiBrushFlyout.h"
 #include "AppPaths.h"
 #include "AppMetrics.h"
@@ -144,8 +145,11 @@ bool BrushPresetsCanAddCustom() {
     return CustomBrushCount() < kMaxCustomBrushes && static_cast<int>(gPresets.size()) < kMaxTotalBrushes;
 }
 
-bool BrushPresetsAddCustom(const char* name, Bitmap* tip, float spacing, int defaultSize) {
-    return AddCustomPreset(name, tip, spacing, defaultSize);
+bool BrushPresetsAddCustom(const char* name, Bitmap* tip, float spacing, int defaultSize, bool persist) {
+    if (!AddCustomPreset(name, tip, spacing, defaultSize)) return false;
+    if (persist) SaveCustomBrushesToDisk();
+    RebuildBrushFlyoutPresets();
+    return true;
 }
 
 void BrushPresetsSetActive(int index) {
@@ -174,10 +178,12 @@ void InitBrushEngine() {
     AddBuiltinPreset("Flat Oil", MakeRoundTip(0.35f, 1.0f, 0.35f), 0.16f, 16);
     AddBuiltinPreset("Concept Soft", MakeConceptTip(), 0.20f, 20);
     AddBuiltinPreset("Pencil", MakePencilTip(), 0.08f, 4);
+    LoadCustomBrushesFromDisk();
     LoadBrushSettings();
 }
 
 void ShutdownBrushEngine() {
+    SaveCustomBrushesToDisk();
     gPresets.clear();
     gActiveBrush = 0;
     gStampCarry = 0.0f;
@@ -334,11 +340,37 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
+namespace {
+
+bool MenuContainsCommand(HMENU menu, UINT commandId) {
+    if (!menu) return false;
+    const int count = GetMenuItemCount(menu);
+    for (int i = 0; i < count; ++i) {
+        const UINT id = GetMenuItemID(menu, i);
+        if (id == commandId) return true;
+        HMENU sub = GetSubMenu(menu, i);
+        if (sub && MenuContainsCommand(sub, commandId)) return true;
+    }
+    return false;
+}
+
+HMENU FindToolsSubmenuContaining(UINT commandId) {
+    if (!gAppMenu) return nullptr;
+    HMENU toolsMenu = GetSubMenu(gAppMenu, 4);
+    if (!toolsMenu) return nullptr;
+    const int count = GetMenuItemCount(toolsMenu);
+    for (int i = 0; i < count; ++i) {
+        HMENU sub = GetSubMenu(toolsMenu, i);
+        if (sub && MenuContainsCommand(sub, commandId)) return sub;
+    }
+    return nullptr;
+}
+
+} // namespace
+
 void SyncBrushMenuItems() {
     if (!gAppMenu) return;
-    HMENU toolsMenu = GetSubMenu(gAppMenu, 4);
-    if (!toolsMenu) return;
-    HMENU presetMenu = GetSubMenu(toolsMenu, 8);
+    HMENU presetMenu = FindToolsSubmenuContaining(IDM_BRUSH_ROUND);
     if (presetMenu) {
         for (int i = IDM_BRUSH_ROUND; i <= IDM_BRUSH_PENCIL; ++i) {
             CheckMenuItem(presetMenu, i, MF_BYCOMMAND | MF_UNCHECKED);
@@ -348,7 +380,7 @@ void SyncBrushMenuItems() {
         }
     }
 
-    HMENU dynamicsMenu = GetSubMenu(toolsMenu, 9);
+    HMENU dynamicsMenu = FindToolsSubmenuContaining(IDM_FLOW_LOW);
     if (!dynamicsMenu) return;
     CheckMenuItem(dynamicsMenu, IDM_FLOW_LOW, MF_BYCOMMAND | (brushFlow == 25 ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(dynamicsMenu, IDM_FLOW_MED, MF_BYCOMMAND | (brushFlow == 50 ? MF_CHECKED : MF_UNCHECKED));

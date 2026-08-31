@@ -6,7 +6,8 @@
 
 // Internal preset list helpers shared by BrushEngine and BrushImport.
 bool BrushPresetsCanAddCustom();
-bool BrushPresetsAddCustom(const char* name, Gdiplus::Bitmap* tip, float spacing, int defaultSize);
+bool BrushPresetsAddCustom(const char* name, Gdiplus::Bitmap* tip, float spacing, int defaultSize,
+    bool persist = true);
 void BrushPresetsSetActive(int index);
 const char* BrushPresetsActiveName();
 void BrushPresetsSaveSettings();

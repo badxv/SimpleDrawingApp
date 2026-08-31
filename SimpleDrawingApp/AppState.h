@@ -72,6 +72,8 @@ extern HWND hwndBrushPresetButtons[9];
 extern HWND hwndBrushRowButtons[3];
 extern HWND hwndBrushActionButtons[2];
 extern HWND hwndBrushSubButtons[3];
+extern HWND hwndBrushPageButtons[2];
+extern HWND hwndBrushSubSlider;
 extern HWND hwndToggleRail;
 extern HWND hwndToggleLayers;
 extern HWND hwndPaletteFloat;

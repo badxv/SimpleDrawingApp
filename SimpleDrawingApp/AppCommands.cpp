@@ -139,7 +139,7 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     }
 
     if (cmdId >= IDC_BRUSH_PRESET_BASE && cmdId < IDC_BRUSH_PRESET_BASE + 9) {
-        const int idx = cmdId - IDC_BRUSH_PRESET_BASE;
+        const int idx = BrushFlyoutPresetIndexFromCmd(cmdId);
         if (idx >= 0 && idx < BrushPresetCount()) {
             SetActiveBrushIndex(idx);
             if (const BrushPreset* preset = GetBrushPreset(idx)) {
@@ -478,15 +478,21 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
                 UpdateStatusBar(hwnd);
             }
             return true;
-        case IDC_BRUSH_FLYOUT_IMPORT:
-            if (PromptImportBrushTip(hwnd)) {
-                if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
-                    ApplyPenWidth(hwnd, preset->defaultSize);
-                }
-                SyncBrushFlyoutChecks();
-                UpdateStatusBar(hwnd);
+        case IDC_BRUSH_FLYOUT_IMPORT: {
+            HMENU popup = CreatePopupMenu();
+            if (!popup) return true;
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_IMPORT, "PNG tip...");
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_IMPORT_ABR, "ABR set...");
+            RECT br = {};
+            if (hwndBrushActionButtons[1]) GetWindowRect(hwndBrushActionButtons[1], &br);
+            const UINT pick = TrackPopupMenu(popup, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+                br.left, br.bottom, 0, hwnd, NULL);
+            DestroyMenu(popup);
+            if (pick == IDM_BRUSH_IMPORT || pick == IDM_BRUSH_IMPORT_ABR) {
+                SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(pick, 0), 0);
             }
             return true;
+        }
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;
