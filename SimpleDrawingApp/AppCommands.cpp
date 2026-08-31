@@ -9,6 +9,7 @@
 #include "AppDocument.h"
 #include "UiChromeLayout.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "ColorPicker.h"
 #include "LayerHistory.h"
 #include "LayerStack.h"
@@ -137,11 +138,30 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         return true;
     }
 
+    if (cmdId >= IDC_BRUSH_PRESET_BASE && cmdId < IDC_BRUSH_PRESET_BASE + 9) {
+        const int idx = BrushFlyoutPresetIndexFromCmd(cmdId);
+        if (idx >= 0 && idx < BrushPresetCount()) {
+            SetActiveBrushIndex(idx);
+            if (const BrushPreset* preset = GetBrushPreset(idx)) {
+                ApplyPenWidth(hwnd, preset->defaultSize);
+            }
+            SyncBrushFlyoutChecks();
+            UpdateStatusBar(hwnd);
+        }
+        return true;
+    }
+
     switch (cmdId) {
     case IDC_TOOL_PEN:
     case IDM_TOOL_PEN:
         ClearSelection(true);
-        SetActiveTool(DrawTool::Pen);
+        if (cmdId == IDC_TOOL_PEN
+            && currentTool == DrawTool::Pen && hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
+            CloseBrushFlyout();
+        } else {
+            SetActiveTool(DrawTool::Pen);
+            OpenBrushFlyout(hwnd);
+        }
         UpdateStatusBar(hwnd);
         return true;
     case IDC_TOOL_ERASER:
@@ -391,22 +411,16 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             if (const BrushPreset* preset = GetBrushPreset(idx)) {
                 ApplyPenWidth(hwnd, preset->defaultSize);
             }
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         }
-        case IDM_BRUSH_GALLERY:
-            if (ShowBrushGalleryDialog(hwnd)) {
-                if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
-                    ApplyPenWidth(hwnd, preset->defaultSize);
-                }
-                UpdateStatusBar(hwnd);
-            }
-            return true;
         case IDM_BRUSH_IMPORT:
             if (PromptImportBrushTip(hwnd)) {
                 if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
                     ApplyPenWidth(hwnd, preset->defaultSize);
                 }
+                SyncBrushFlyoutChecks();
                 UpdateStatusBar(hwnd);
             }
             return true;
@@ -415,37 +429,70 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
                 if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
                     ApplyPenWidth(hwnd, preset->defaultSize);
                 }
+                SyncBrushFlyoutChecks();
                 UpdateStatusBar(hwnd);
             }
             return true;
         case IDM_FLOW_LOW:
             SetBrushFlow(25);
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         case IDM_FLOW_MED:
             SetBrushFlow(50);
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         case IDM_FLOW_FULL:
             SetBrushFlow(100);
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         case IDM_HARD_SOFT:
             SetBrushHardness(35);
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         case IDM_HARD_MED:
             SetBrushHardness(65);
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         case IDM_HARD_HARD:
             SetBrushHardness(100);
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
         case IDM_PRESSURE_ENABLE:
             SetPenPressureEnabled(!IsPenPressureEnabled());
+            SyncBrushFlyoutChecks();
             UpdateStatusBar(hwnd);
             return true;
+        case IDC_BRUSH_FLYOUT_GALLERY:
+        case IDM_BRUSH_GALLERY:
+            if (ShowBrushGalleryDialog(hwnd)) {
+                if (const BrushPreset* preset = GetBrushPreset(GetActiveBrushIndex())) {
+                    ApplyPenWidth(hwnd, preset->defaultSize);
+                }
+                SyncBrushFlyoutChecks();
+                UpdateStatusBar(hwnd);
+            }
+            return true;
+        case IDC_BRUSH_FLYOUT_IMPORT: {
+            HMENU popup = CreatePopupMenu();
+            if (!popup) return true;
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_IMPORT, "PNG tip...");
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_IMPORT_ABR, "ABR set...");
+            RECT br = {};
+            if (hwndBrushActionButtons[1]) GetWindowRect(hwndBrushActionButtons[1], &br);
+            const UINT pick = TrackPopupMenu(popup, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+                br.left, br.bottom, 0, hwnd, NULL);
+            DestroyMenu(popup);
+            if (pick == IDM_BRUSH_IMPORT || pick == IDM_BRUSH_IMPORT_ABR) {
+                SendMessageA(hwnd, WM_COMMAND, MAKEWPARAM(pick, 0), 0);
+            }
+            return true;
+        }
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;

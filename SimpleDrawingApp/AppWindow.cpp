@@ -15,6 +15,7 @@
 #include "UiControls.h"
 #include "UiPaletteFloat.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "UiToolbar.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
@@ -445,6 +446,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
         if (wParam == VK_ESCAPE) {
+            if (hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout)) {
+                CloseBrushFlyout();
+                break;
+            }
+            if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
+                CloseBrushFlyout();
+                break;
+            }
             if (hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
                 CloseShapeFlyout();
                 break;
@@ -536,6 +545,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DestroyWindow(hwndShapeFlyout);
         }
         hwndShapeFlyout = nullptr;
+        if (hwndBrushSubFlyout && IsWindow(hwndBrushSubFlyout)) {
+            DestroyWindow(hwndBrushSubFlyout);
+        }
+        hwndBrushSubFlyout = nullptr;
+        if (hwndBrushFlyout && IsWindow(hwndBrushFlyout)) {
+            DestroyWindow(hwndBrushFlyout);
+        }
+        hwndBrushFlyout = nullptr;
         if (hwndPalette && IsWindow(hwndPalette)) {
             AtelierPalette_Save(hwndPalette);
         }
