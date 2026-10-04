@@ -446,8 +446,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
         if (wParam == VK_ESCAPE) {
-            if (hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout)) {
-                CloseBrushFlyout();
+            // Sub-panel first, then main — matches Brush Atelier dismiss contract.
+            if (CloseBrushSubFlyout()) {
                 break;
             }
             if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {

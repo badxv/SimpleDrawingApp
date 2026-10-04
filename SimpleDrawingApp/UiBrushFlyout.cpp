@@ -135,11 +135,13 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     DeleteObject(pen);
 }
 
-void CloseBrushSubFlyoutInternal() {
+bool CloseBrushSubFlyoutInternal() {
+    const bool wasOpen = hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout);
     gBrushSubPanel = BrushSubPanel::None;
-    if (hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout)) {
+    if (wasOpen) {
         ShowWindow(hwndBrushSubFlyout, SW_HIDE);
     }
+    return wasOpen;
 }
 
 void LayoutSubFlyoutOptions() {
@@ -458,9 +460,10 @@ void SyncBrushFlyoutChecks() {
     char flowLabel[48];
     char hardLabel[48];
     char pressLabel[48];
-    sprintf_s(flowLabel, "Flow  \xE2\x80\xBA  %d%%", brushFlow);
-    sprintf_s(hardLabel, "Hardness  \xE2\x80\xBA  %d%%", brushHardness);
-    sprintf_s(pressLabel, "Pressure  \xE2\x80\xBA  %s", penPressureEnabled ? "On" : "Off");
+    // ASCII separators — SetWindowTextA is not UTF-8 on typical Windows ACP builds.
+    sprintf_s(flowLabel, "Flow  >  %d%%", brushFlow);
+    sprintf_s(hardLabel, "Hardness  >  %d%%", brushHardness);
+    sprintf_s(pressLabel, "Pressure  >  %s", penPressureEnabled ? "On" : "Off");
 
     if (hwndBrushRowButtons[0]) SetWindowTextA(hwndBrushRowButtons[0], flowLabel);
     if (hwndBrushRowButtons[1]) SetWindowTextA(hwndBrushRowButtons[1], hardLabel);
@@ -469,6 +472,10 @@ void SyncBrushFlyoutChecks() {
     if (gBrushSubPanel != BrushSubPanel::None) {
         LayoutSubFlyoutOptions();
     }
+}
+
+bool CloseBrushSubFlyout() {
+    return CloseBrushSubFlyoutInternal();
 }
 
 void CloseBrushFlyout() {
