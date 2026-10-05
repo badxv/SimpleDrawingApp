@@ -16,7 +16,7 @@ void CreateAppToolbar(HWND hwnd) {
         SendMessageA(hwndTooltip, TTM_SETMAXTIPWIDTH, 0, 240);
     }
 
-    hwndToolButtons[0] = CreateIconButton(hwnd, IDC_TOOL_PEN, "Pen\r\nShortcut: B", true);
+    hwndToolButtons[0] = CreateIconButton(hwnd, IDC_TOOL_PEN, "Brush / Pen\r\nShortcut: B\r\nClick for brush panel", true);
     hwndToolButtons[1] = CreateIconButton(hwnd, IDC_TOOL_ERASER, "Eraser\r\nShortcut: E", true);
     hwndToolButtons[2] = CreateIconButton(hwnd, IDC_TOOL_FILL, "Fill\r\nShortcut: G", true);
     hwndToolButtons[3] = CreateIconButton(hwnd, IDC_TOOL_SELECT, "Select\r\nShortcut: M", true);

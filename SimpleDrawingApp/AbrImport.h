@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-struct AbrSampledBrush {
+struct AbrBrush {
     std::string name;
     int spacing = 25;
     int width = 0;
@@ -13,4 +13,4 @@ struct AbrSampledBrush {
 };
 
 // Parses Photoshop .abr sampled and computed brushes (v1/v2 and v6/v10).
-bool LoadAbrSampledBrushes(const char* path, std::vector<AbrSampledBrush>& out, std::string& error);
+bool LoadAbrBrushes(const char* path, std::vector<AbrBrush>& out, std::string& error);

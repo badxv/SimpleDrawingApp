@@ -10,6 +10,7 @@
 #include "CaptionBar.h"
 #include "UiPaletteFloat.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "EventBus.h"
 #include "AtelierFonts.h"
 #include "AtelierControls.h"
@@ -74,6 +75,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 0;
     }
     if (!RegisterShapeFlyoutClass(hInstance)) {
+        AtelierArtwork_Shutdown();
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
+    if (!RegisterBrushFlyoutClass(hInstance)) {
         AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);

@@ -289,7 +289,7 @@ const DescNode* AsObject(const DescValue* v) {
     return v->object.get();
 }
 
-bool BrushFromComputedShape(const DescNode& shape, const std::string& brushName, AbrSampledBrush& out) {
+bool BrushFromComputedShape(const DescNode& shape, const std::string& brushName, AbrBrush& out) {
     if (shape.classId != "computedBrush") return false;
 
     AbrComputedParams params = {};
@@ -317,13 +317,13 @@ bool BrushFromComputedShape(const DescNode& shape, const std::string& brushName,
     return true;
 }
 
-bool AppendComputedFromBrushDesc(const DescNode& brushDesc, std::vector<AbrSampledBrush>& out) {
+bool AppendComputedFromBrushDesc(const DescNode& brushDesc, std::vector<AbrBrush>& out) {
     const DescNode* shape = AsObject(brushDesc.get("Brsh"));
     if (!shape) return false;
     if (shape->classId != "computedBrush") return false;
 
     std::string name = AsText(brushDesc.get("Nm  "));
-    AbrSampledBrush sample;
+    AbrBrush sample;
     if (!BrushFromComputedShape(*shape, name, sample)) return false;
     if (sample.spacing <= 0) {
         sample.spacing = static_cast<int>(ParsePercent(brushDesc.get("Spcn"), 0.25) * 100.0 + 0.5);
@@ -334,7 +334,7 @@ bool AppendComputedFromBrushDesc(const DescNode& brushDesc, std::vector<AbrSampl
 
 } // namespace
 
-bool ParseDescComputedBrushes(const std::uint8_t* data, size_t len, std::vector<AbrSampledBrush>& out) {
+bool ParseDescComputedBrushes(const std::uint8_t* data, size_t len, std::vector<AbrBrush>& out) {
     if (!data || len < 8) return false;
     DescReader reader(data, len);
     std::int32_t version = 0;
