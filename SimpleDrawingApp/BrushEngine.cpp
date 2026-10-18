@@ -97,12 +97,19 @@ void DrawRoundLine(Graphics* target, int x0, int y0, int x1, int y1, COLORREF co
 }
 
 void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent,
-    float pressure = 1.0f) {
+    float pressure = 1.0f, float angleDeg = 0.0f) {
     if (!target || !tip || size < 1) return;
 
     const REAL half = static_cast<REAL>(size) * 0.5f;
-    const RectF dest(static_cast<REAL>(cx) - half, static_cast<REAL>(cy) - half,
-        static_cast<REAL>(size), static_cast<REAL>(size));
+    const int w = static_cast<int>(tip->GetWidth());
+    const int h = static_cast<int>(tip->GetHeight());
+
+    GraphicsState state = target->Save();
+    target->TranslateTransform(static_cast<REAL>(cx), static_cast<REAL>(cy));
+    if (angleDeg != 0.0f) {
+        target->RotateTransform(angleDeg);
+    }
+    const RectF dest(-half, -half, static_cast<REAL>(size), static_cast<REAL>(size));
 
     if (eraseTransparent) {
         ColorMatrix matrix = {
@@ -114,10 +121,9 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
         };
         ImageAttributes attrs;
         attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
-        const int w = static_cast<int>(tip->GetWidth());
-        const int h = static_cast<int>(tip->GetHeight());
         target->SetCompositingMode(CompositingModeSourceOver);
         target->DrawImage(tip, dest, 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &attrs);
+        target->Restore(state);
         return;
     }
 
@@ -134,9 +140,8 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     };
     ImageAttributes attrs;
     attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
-    const int w = static_cast<int>(tip->GetWidth());
-    const int h = static_cast<int>(tip->GetHeight());
     target->DrawImage(tip, dest, 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &attrs);
+    target->Restore(state);
 }
 
 } // namespace
@@ -350,11 +355,27 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         outDy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
     };
 
+    auto AngleJitter = [](int x, int y, int salt, float baseDeg) -> float {
+        int jitter = brushAngleJitter;
+        if (jitter < 1) return baseDeg;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 83492791u)
+            ^ (static_cast<unsigned>(y) * 2654435761u)
+            ^ (static_cast<unsigned>(salt) * 2246822519u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        return baseDeg + u * 180.0f * (static_cast<float>(jitter) / 100.0f);
+    };
+
+    const float strokeAngleDeg = (segLen >= 0.001f)
+        ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
+        : 0.0f;
+
     if (segLen < 0.001f) {
         const int stampW = PenPressureWidth(width, pressure1);
         int ox = 0, oy = 0;
         ScatterOffset(x1, y1, stampW, 0, ox, oy);
-        DrawStamp(target, preset->tip.get(), x1 + ox, y1 + oy, color, stampW, eraseTransparent, pressure1);
+        const float ang = AngleJitter(x1, y1, 0, strokeAngleDeg);
+        DrawStamp(target, preset->tip.get(), x1 + ox, y1 + oy, color, stampW, eraseTransparent, pressure1, ang);
         return;
     }
 
@@ -368,7 +389,8 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
         int ox = 0, oy = 0;
         ScatterOffset(sx, sy, stampW, stampIndex, ox, oy);
-        DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, pressure);
+        const float ang = AngleJitter(sx, sy, stampIndex, strokeAngleDeg);
+        DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, pressure, ang);
         dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, stampW)));
         ++stampIndex;
     }
@@ -385,6 +407,10 @@ int GetBrushHardness() {
 
 int GetBrushScatter() {
     return brushScatter;
+}
+
+int GetBrushAngleJitter() {
+    return brushAngleJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -407,6 +433,14 @@ void SetBrushScatter(int scatter) {
     if (scatter < 0) scatter = 0;
     if (scatter > 100) scatter = 100;
     brushScatter = scatter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushAngleJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushAngleJitter = jitter;
     SaveBrushSettings();
     SyncBrushFlyoutChecks();
 }
@@ -443,6 +477,7 @@ void LoadBrushSettings() {
     brushFlow = GetPrivateProfileIntA("Features", "BrushFlow", 100, iniPath);
     brushHardness = GetPrivateProfileIntA("Features", "BrushHardness", 100, iniPath);
     brushScatter = GetPrivateProfileIntA("Features", "BrushScatter", 0, iniPath);
+    brushAngleJitter = GetPrivateProfileIntA("Features", "BrushAngleJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -450,6 +485,8 @@ void LoadBrushSettings() {
     if (brushHardness > 100) brushHardness = 100;
     if (brushScatter < 0) brushScatter = 0;
     if (brushScatter > 100) brushScatter = 100;
+    if (brushAngleJitter < 0) brushAngleJitter = 0;
+    if (brushAngleJitter > 100) brushAngleJitter = 100;
 }
 
 void SaveBrushSettings() {
@@ -465,6 +502,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushHardness", buf, iniPath);
     sprintf_s(buf, "%d", brushScatter);
     WritePrivateProfileStringA("Features", "BrushScatter", buf, iniPath);
+    sprintf_s(buf, "%d", brushAngleJitter);
+    WritePrivateProfileStringA("Features", "BrushAngleJitter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
