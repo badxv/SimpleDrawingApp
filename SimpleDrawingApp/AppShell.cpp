@@ -6,6 +6,7 @@
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "LayerStack.h"
 #include <commctrl.h>
 #include <cstdio>
@@ -43,13 +44,18 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[64] = "";
+    char extras[192] = "";
     if (currentTool == DrawTool::Pen) {
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%  P:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
-                static_cast<int>(lastPenPressure * 100.0f + 0.5f));
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d Rd:%d%%  P:%d%%",
+                GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
+                brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount,
+                brushRoundness, static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%", GetActiveBrushName(), brushFlow, brushHardness);
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d Rd:%d%%",
+                GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
+                brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount,
+                brushRoundness);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
@@ -88,6 +94,10 @@ void ApplyPenWidth(HWND hwnd, int width) {
     UpdateStatusBar(hwnd);
     SaveFeatureFlags();
     SyncFeatureFlagMenuItems();
+    if (IsActiveBrushCustom()) {
+        PersistActiveBrushDefaultSize(penWidth);
+    }
+    SyncBrushFlyoutChecks();
 }
 
 void UpdateOpacityDisplay() {
@@ -121,7 +131,7 @@ void UpdateStatusBar(HWND hwnd) {
 
     const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
 
-    char part0[160];
+    char part0[256];
     char part1[96];
     char part2[80];
     BuildStatusTip(part0, sizeof(part0));
@@ -176,6 +186,9 @@ void SetActiveTool(DrawTool tool) {
         if (tool != DrawTool::Shape) {
             CloseShapeFlyout();
         }
+        if (tool != DrawTool::Pen) {
+            CloseBrushFlyout();
+        }
     }
     for (int i = 0; i < kToolButtonCount; ++i) {
         if (!hwndToolButtons[i]) continue;
@@ -185,6 +198,7 @@ void SetActiveTool(DrawTool tool) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
     SyncShapeFlyoutChecks();
+    SyncBrushFlyoutChecks();
     if (changed) {
         EventPayload payload{};
         payload.type = AtelierEvent::ActiveToolChanged;
