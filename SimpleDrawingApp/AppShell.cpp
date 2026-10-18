@@ -44,15 +44,15 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[64] = "";
+    char extras[96] = "";
     if (currentTool == DrawTool::Pen) {
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%%  P:%d%%", GetActiveBrushName(), brushFlow,
-                brushHardness, brushScatter, brushAngleJitter,
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% Z:%d%%  P:%d%%", GetActiveBrushName(),
+                brushFlow, brushHardness, brushScatter, brushAngleJitter, brushSizeJitter,
                 static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
-                brushScatter, brushAngleJitter);
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% Z:%d%%", GetActiveBrushName(), brushFlow,
+                brushHardness, brushScatter, brushAngleJitter, brushSizeJitter);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {

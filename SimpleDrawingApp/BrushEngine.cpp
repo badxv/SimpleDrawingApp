@@ -366,12 +366,26 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         return baseDeg + u * 180.0f * (static_cast<float>(jitter) / 100.0f);
     };
 
+    auto SizeJitter = [](int x, int y, int salt, int baseW) -> int {
+        int jitter = brushSizeJitter;
+        if (jitter < 1) return baseW;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 374761393u)
+            ^ (static_cast<unsigned>(y) * 668265263u)
+            ^ (static_cast<unsigned>(salt) * 2147483647u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        const float factor = 1.0f + u * (static_cast<float>(jitter) / 100.0f);
+        int w = static_cast<int>(static_cast<float>(baseW) * factor + 0.5f);
+        if (w < 1) w = 1;
+        return w;
+    };
+
     const float strokeAngleDeg = (segLen >= 0.001f)
         ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
         : 0.0f;
 
     if (segLen < 0.001f) {
-        const int stampW = PenPressureWidth(width, pressure1);
+        const int stampW = SizeJitter(x1, y1, 0, PenPressureWidth(width, pressure1));
         int ox = 0, oy = 0;
         ScatterOffset(x1, y1, stampW, 0, ox, oy);
         const float ang = AngleJitter(x1, y1, 0, strokeAngleDeg);
@@ -384,9 +398,9 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
     while (dist <= segLen) {
         const float t = dist / segLen;
         const float pressure = pressure0 + (pressure1 - pressure0) * t;
-        const int stampW = PenPressureWidth(width, pressure);
         int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
         int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
+        const int stampW = SizeJitter(sx, sy, stampIndex, PenPressureWidth(width, pressure));
         int ox = 0, oy = 0;
         ScatterOffset(sx, sy, stampW, stampIndex, ox, oy);
         const float ang = AngleJitter(sx, sy, stampIndex, strokeAngleDeg);
@@ -411,6 +425,10 @@ int GetBrushScatter() {
 
 int GetBrushAngleJitter() {
     return brushAngleJitter;
+}
+
+int GetBrushSizeJitter() {
+    return brushSizeJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -441,6 +459,14 @@ void SetBrushAngleJitter(int jitter) {
     if (jitter < 0) jitter = 0;
     if (jitter > 100) jitter = 100;
     brushAngleJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushSizeJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushSizeJitter = jitter;
     SaveBrushSettings();
     SyncBrushFlyoutChecks();
 }
@@ -478,6 +504,7 @@ void LoadBrushSettings() {
     brushHardness = GetPrivateProfileIntA("Features", "BrushHardness", 100, iniPath);
     brushScatter = GetPrivateProfileIntA("Features", "BrushScatter", 0, iniPath);
     brushAngleJitter = GetPrivateProfileIntA("Features", "BrushAngleJitter", 0, iniPath);
+    brushSizeJitter = GetPrivateProfileIntA("Features", "BrushSizeJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -487,6 +514,8 @@ void LoadBrushSettings() {
     if (brushScatter > 100) brushScatter = 100;
     if (brushAngleJitter < 0) brushAngleJitter = 0;
     if (brushAngleJitter > 100) brushAngleJitter = 100;
+    if (brushSizeJitter < 0) brushSizeJitter = 0;
+    if (brushSizeJitter > 100) brushSizeJitter = 100;
 }
 
 void SaveBrushSettings() {
@@ -504,6 +533,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushScatter", buf, iniPath);
     sprintf_s(buf, "%d", brushAngleJitter);
     WritePrivateProfileStringA("Features", "BrushAngleJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushSizeJitter);
+    WritePrivateProfileStringA("Features", "BrushSizeJitter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
