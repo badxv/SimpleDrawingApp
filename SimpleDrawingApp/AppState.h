@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[9];
+extern HWND hwndBrushRowButtons[10];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -137,6 +137,7 @@ extern int brushFlow;
 extern int brushHardness;
 extern int brushScatter; // 0..100 — stamp position jitter
 extern int brushAngleJitter; // 0..100 — stamp rotation jitter
+extern int brushTipAngle;    // 0..180 — fixed tip orientation offset (degrees)
 extern int brushSizeJitter;  // 0..100 — stamp diameter jitter
 extern int brushOpacityJitter; // 0..100 — stamp opacity jitter
 extern bool penPressureEnabled;

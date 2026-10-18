@@ -46,12 +46,14 @@ int GetBrushFlow();
 int GetBrushHardness();
 int GetBrushScatter();
 int GetBrushAngleJitter();
+int GetBrushTipAngle();
 int GetBrushSizeJitter();
 int GetBrushOpacityJitter();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
 void SetBrushAngleJitter(int jitter); // 0..100
+void SetBrushTipAngle(int degrees); // 0..180
 void SetBrushSizeJitter(int jitter); // 0..100
 void SetBrushOpacityJitter(int jitter); // 0..100
 
