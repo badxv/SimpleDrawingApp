@@ -7,6 +7,7 @@
 #include "AtelierPalette.h"
 #include "UiPaletteFloat.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include <commctrl.h>
 
 namespace {
@@ -237,6 +238,9 @@ void SetRailOpen(HWND hwnd, bool open) {
     gRailOpen = open;
     if (!gRailOpen && hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
         CloseShapeFlyout();
+    }
+    if (!gRailOpen && hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
+        CloseBrushFlyout();
     }
     if (gRailOpen) {
         DockPaletteInstruments(hwnd);

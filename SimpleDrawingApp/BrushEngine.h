@@ -23,6 +23,8 @@ const BrushPreset* GetBrushPreset(int index);
 int GetActiveBrushIndex();
 void SetActiveBrushIndex(int index);
 const char* GetActiveBrushName();
+bool IsActiveBrushCustom();
+bool DeleteBrushPreset(int index); // built-ins cannot be deleted
 
 void ResetBrushStrokeState();
 void DrawBrushStrokeSegment(Gdiplus::Graphics* target, int x0, int y0, int x1, int y1,
@@ -43,6 +45,10 @@ int GetBrushFlow();
 int GetBrushHardness();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
+
+// Stamp spacing as percent of tip size (5..100 → 0.05..1.0).
+int GetBrushSpacingPercent();
+void SetBrushSpacingPercent(int percent);
 
 void LoadBrushSettings();
 void SaveBrushSettings();
