@@ -28,6 +28,79 @@ float gSmoothX = 0.0f;
 float gSmoothY = 0.0f;
 bool gSmoothInit = false;
 
+// Cached wet-edges remapped tip (invalidated when tip/wet% change).
+Bitmap* gWetTipCache = nullptr;
+Bitmap* gWetTipSource = nullptr;
+int gWetTipPct = -1;
+
+void InvalidateWetTipCache() {
+    delete gWetTipCache;
+    gWetTipCache = nullptr;
+    gWetTipSource = nullptr;
+    gWetTipPct = -1;
+}
+
+Bitmap* BuildWetEdgesTip(Bitmap* src, int wetPct) {
+    if (!src || wetPct < 1) return nullptr;
+    const int w = static_cast<int>(src->GetWidth());
+    const int h = static_cast<int>(src->GetHeight());
+    if (w < 1 || h < 1) return nullptr;
+    Bitmap* dst = new Bitmap(w, h, PixelFormat32bppARGB);
+    if (!dst || dst->GetLastStatus() != Ok) {
+        delete dst;
+        return nullptr;
+    }
+    const float amount = static_cast<float>(wetPct) / 100.0f;
+    const float cx = (static_cast<float>(w) - 1.0f) * 0.5f;
+    const float cy = (static_cast<float>(h) - 1.0f) * 0.5f;
+    const float invR = 1.0f / MaxFloat(1.0f, MaxFloat(cx, cy));
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            Color c;
+            src->GetPixel(x, y, &c);
+            const float a = static_cast<float>(c.GetA()) / 255.0f;
+            if (a <= 0.0f) {
+                dst->SetPixel(x, y, Color(0, 255, 255, 255));
+                continue;
+            }
+            const float dx = (static_cast<float>(x) - cx) * invR;
+            const float dy = (static_cast<float>(y) - cy) * invR;
+            float r = sqrtf(dx * dx + dy * dy);
+            if (r > 1.0f) r = 1.0f;
+            // Soft-tip ring (peaks at mid-alpha) + outer radial gate (hollow center).
+            const float softRing = 4.0f * a * (1.0f - a);
+            float edgeGate = 0.0f;
+            if (r > 0.42f) {
+                edgeGate = (r - 0.42f) / 0.58f;
+                edgeGate = edgeGate * edgeGate; // bias paint toward the rim
+            }
+            float target = a * edgeGate;
+            if (softRing > target) target = softRing;
+            float out = a * (1.0f - amount) + target * amount;
+            if (out < 0.0f) out = 0.0f;
+            if (out > 1.0f) out = 1.0f;
+            const BYTE ba = static_cast<BYTE>(out * 255.0f + 0.5f);
+            dst->SetPixel(x, y, Color(ba, 255, 255, 255));
+        }
+    }
+    return dst;
+}
+
+Bitmap* TipWithWetEdges(Bitmap* tip) {
+    int wet = brushWetEdges;
+    if (wet < 1 || !tip) return tip;
+    if (wet > 100) wet = 100;
+    if (gWetTipCache && gWetTipSource == tip && gWetTipPct == wet) {
+        return gWetTipCache;
+    }
+    InvalidateWetTipCache();
+    gWetTipCache = BuildWetEdgesTip(tip, wet);
+    if (!gWetTipCache) return tip;
+    gWetTipSource = tip;
+    gWetTipPct = wet;
+    return gWetTipCache;
+}
+
 BrushPreset* ActivePresetMutable() {
     if (gActiveBrush < 0 || gActiveBrush >= static_cast<int>(gPresets.size())) return nullptr;
     return &gPresets[static_cast<size_t>(gActiveBrush)];
@@ -102,6 +175,9 @@ void DrawRoundLine(Graphics* target, int x0, int y0, int x1, int y1, COLORREF co
 void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent,
     float pressure = 1.0f, float angleDeg = 0.0f) {
     if (!target || !tip || size < 1) return;
+
+    tip = TipWithWetEdges(tip);
+    if (!tip) return;
 
     const REAL half = static_cast<REAL>(size) * 0.5f;
     const int w = static_cast<int>(tip->GetWidth());
@@ -224,6 +300,7 @@ bool BrushPresetsSetDefaultSize(int index, int size, bool persist) {
 
 void BrushPresetsSetActive(int index) {
     if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
+    if (gActiveBrush != index) InvalidateWetTipCache();
     gActiveBrush = index;
 }
 
@@ -254,6 +331,7 @@ void InitBrushEngine() {
 
 void ShutdownBrushEngine() {
     SaveCustomBrushesToDisk();
+    InvalidateWetTipCache();
     gPresets.clear();
     gActiveBrush = 0;
     gStampCarry = 0.0f;
@@ -274,9 +352,14 @@ int GetActiveBrushIndex() {
 
 void SetActiveBrushIndex(int index) {
     if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
+    if (gActiveBrush != index) InvalidateWetTipCache();
     gActiveBrush = index;
     SaveBrushSettings();
     SyncBrushMenuItems();
+}
+
+Bitmap* BrushTipForDraw(Bitmap* tip) {
+    return TipWithWetEdges(tip);
 }
 
 const char* GetActiveBrushName() {
@@ -543,6 +626,10 @@ int GetBrushMinDiameter() {
     return brushMinDiameter;
 }
 
+int GetBrushWetEdges() {
+    return brushWetEdges;
+}
+
 void SetBrushFlow(int flow) {
     if (flow < 1) flow = 1;
     if (flow > 100) flow = 100;
@@ -631,6 +718,15 @@ void SetBrushMinDiameter(int percent) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushWetEdges(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    if (brushWetEdges != percent) InvalidateWetTipCache();
+    brushWetEdges = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -671,7 +767,16 @@ void LoadBrushSettings() {
     brushStampCount = GetPrivateProfileIntA("Features", "BrushStampCount", 1, iniPath);
     brushRoundness = GetPrivateProfileIntA("Features", "BrushRoundness", 100, iniPath);
     brushMinDiameter = GetPrivateProfileIntA("Features", "BrushMinDiameter", 0, iniPath);
+    brushWetEdges = GetPrivateProfileIntA("Features", "BrushWetEdges", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
+    const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
+    if (spacingPct >= 5) {
+        if (BrushPreset* preset = ActivePresetMutable()) {
+            int pct = spacingPct;
+            if (pct > 100) pct = 100;
+            preset->spacing = static_cast<float>(pct) / 100.0f;
+        }
+    }
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
     if (brushHardness < 1) brushHardness = 1;
@@ -694,6 +799,8 @@ void LoadBrushSettings() {
     if (brushRoundness > 100) brushRoundness = 100;
     if (brushMinDiameter < 0) brushMinDiameter = 0;
     if (brushMinDiameter > 100) brushMinDiameter = 100;
+    if (brushWetEdges < 0) brushWetEdges = 0;
+    if (brushWetEdges > 100) brushWetEdges = 100;
 }
 
 void SaveBrushSettings() {
@@ -725,6 +832,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushRoundness", buf, iniPath);
     sprintf_s(buf, "%d", brushMinDiameter);
     WritePrivateProfileStringA("Features", "BrushMinDiameter", buf, iniPath);
+    sprintf_s(buf, "%d", brushWetEdges);
+    WritePrivateProfileStringA("Features", "BrushWetEdges", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
