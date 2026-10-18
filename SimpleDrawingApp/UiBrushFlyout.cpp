@@ -10,6 +10,7 @@
 #include "Resource.h"
 
 #include <commctrl.h>
+#include <windowsx.h>
 #include <gdiplus.h>
 #include <cmath>
 #include <cstdio>
@@ -20,7 +21,7 @@ using namespace Gdiplus;
 namespace {
 
 constexpr int kFlyoutW = 210;
-constexpr int kFlyoutH = 392;
+constexpr int kFlyoutH = 416;
 constexpr int kSubFlyoutW = 168;
 constexpr int kSubFlyoutH = 108;
 constexpr int kSubFlyoutSliderH = 88;
@@ -29,7 +30,8 @@ constexpr int kPresetCols = 3;
 constexpr int kMaxFlyoutPresets = 9;
 constexpr int kPreviewH = 44;
 
-enum class BrushSubPanel { None = 0, Flow, Hardness, Pressure, Size };
+enum class BrushSubPanel { None = 0, Flow, Hardness, Pressure, Size, Spacing };
+int gBrushCtxPreset = -1;
 
 BrushSubPanel gBrushSubPanel = BrushSubPanel::None;
 int gBrushSubAnchorY = 0;
@@ -51,7 +53,11 @@ void RefreshPresetGrid() {
             ShowWindow(btn, SW_SHOW);
             const BrushPreset* preset = GetBrushPreset(idx);
             char tip[96] = {};
-            if (preset) snprintf(tip, sizeof(tip), "%s\r\nClick to select", preset->name.c_str());
+            if (preset) {
+                snprintf(tip, sizeof(tip), "%s\r\nClick to select%s",
+                    preset->name.c_str(),
+                    preset->builtin ? "" : "\r\nRight-click to delete");
+            }
             InvalidateRect(btn, NULL, FALSE);
             (void)tip;
         } else {
@@ -167,8 +173,8 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, rc.left + 10, rc.top + 252, NULL);
     LineTo(hdc, rc.right - 10, rc.top + 252);
-    MoveToEx(hdc, rc.left + 10, rc.top + 356, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 356);
+    MoveToEx(hdc, rc.left + 10, rc.top + 380, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 380);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 }
@@ -244,13 +250,17 @@ void LayoutSubFlyoutOptions() {
 
     const bool useSlider = (gBrushSubPanel == BrushSubPanel::Flow
         || gBrushSubPanel == BrushSubPanel::Hardness
-        || gBrushSubPanel == BrushSubPanel::Size);
+        || gBrushSubPanel == BrushSubPanel::Size
+        || gBrushSubPanel == BrushSubPanel::Spacing);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
             if (gBrushSubPanel == BrushSubPanel::Size) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(kPenWidthMin, kPenWidthMax));
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, penWidth);
+            } else if (gBrushSubPanel == BrushSubPanel::Spacing) {
+                SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(5, 100));
+                SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, GetBrushSpacingPercent());
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
                 const int pos = (gBrushSubPanel == BrushSubPanel::Flow) ? brushFlow : brushHardness;
@@ -326,7 +336,7 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
     int subH = kSubFlyoutH;
     if (gBrushSubPanel == BrushSubPanel::Pressure) subH = 44;
     else if (gBrushSubPanel == BrushSubPanel::Flow || gBrushSubPanel == BrushSubPanel::Hardness
-        || gBrushSubPanel == BrushSubPanel::Size) {
+        || gBrushSubPanel == BrushSubPanel::Size || gBrushSubPanel == BrushSubPanel::Spacing) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -363,6 +373,8 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 HWND parent = GetWindow(hwnd, GW_OWNER);
                 if (!parent) parent = GetParent(hwndBrushFlyout);
                 if (parent) ApplyPenWidth(parent, pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Spacing) {
+                SetBrushSpacingPercent(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -436,21 +448,27 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             OpenBrushSubFlyoutInternal(BrushSubPanel::Size, rr.top - 4);
             return 0;
         }
-        if (id == IDC_BRUSH_ROW_FLOW) {
+        if (id == IDC_BRUSH_ROW_SPACING) {
             RECT rr = {};
             GetWindowRect(hwndBrushRowButtons[1], &rr);
+            OpenBrushSubFlyoutInternal(BrushSubPanel::Spacing, rr.top - 4);
+            return 0;
+        }
+        if (id == IDC_BRUSH_ROW_FLOW) {
+            RECT rr = {};
+            GetWindowRect(hwndBrushRowButtons[2], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Flow, rr.top - 4);
             return 0;
         }
         if (id == IDC_BRUSH_ROW_HARDNESS) {
             RECT rr = {};
-            GetWindowRect(hwndBrushRowButtons[2], &rr);
+            GetWindowRect(hwndBrushRowButtons[3], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Hardness, rr.top - 4);
             return 0;
         }
         if (id == IDC_BRUSH_ROW_PRESSURE) {
             RECT rr = {};
-            GetWindowRect(hwndBrushRowButtons[3], &rr);
+            GetWindowRect(hwndBrushRowButtons[4], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Pressure, rr.top - 4);
             return 0;
         }
@@ -481,6 +499,45 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             return TRUE;
         }
         break;
+    }
+    case WM_CONTEXTMENU: {
+        HWND child = reinterpret_cast<HWND>(wParam);
+        int presetIdx = -1;
+        for (int slot = 0; slot < kMaxFlyoutPresets; ++slot) {
+            if (hwndBrushPresetButtons[slot] && hwndBrushPresetButtons[slot] == child) {
+                presetIdx = gBrushPresetPage * kMaxFlyoutPresets + slot;
+                break;
+            }
+        }
+        if (presetIdx < 0 || presetIdx >= BrushPresetCount()) break;
+
+        gBrushCtxPreset = presetIdx;
+        const BrushPreset* preset = GetBrushPreset(presetIdx);
+        HMENU popup = CreatePopupMenu();
+        if (!popup) return 0;
+        AppendMenuA(popup, MF_STRING, IDM_BRUSH_CTX_SELECT, "Select");
+        if (preset && !preset->builtin) {
+            AppendMenuA(popup, MF_SEPARATOR, 0, nullptr);
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_CTX_DELETE, "Delete custom brush");
+        }
+        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        if (pt.x == -1 && pt.y == -1) {
+            RECT br = {};
+            GetWindowRect(child, &br);
+            pt.x = br.left;
+            pt.y = br.bottom;
+        }
+        const UINT pick = TrackPopupMenu(popup, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+            pt.x, pt.y, 0, hwnd, NULL);
+        DestroyMenu(popup);
+        if (pick == IDM_BRUSH_CTX_SELECT || pick == IDM_BRUSH_CTX_DELETE) {
+            HWND parent = GetWindow(hwnd, GW_OWNER);
+            if (!parent) parent = GetParent(hwnd);
+            if (parent) {
+                SendMessageA(parent, WM_COMMAND, MAKEWPARAM(pick, 0), 0);
+            }
+        }
+        return 0;
     }
     case WM_CTLCOLORBTN:
         return (LRESULT)(gChromeElevatedBrush ? gChromeElevatedBrush : gChromeBrush);
@@ -578,19 +635,21 @@ void EnsureBrushFlyout(HWND owner) {
         SetWindowLongPtrA(hwndBrushPreview, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(BrushPreviewProc));
     }
 
-    const int rowIds[4] = {
-        IDC_BRUSH_ROW_SIZE, IDC_BRUSH_ROW_FLOW, IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_PRESSURE
+    const int rowIds[5] = {
+        IDC_BRUSH_ROW_SIZE, IDC_BRUSH_ROW_SPACING, IDC_BRUSH_ROW_FLOW,
+        IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_PRESSURE
     };
-    const char* rowTips[4] = {
+    const char* rowTips[5] = {
         "Size — brush diameter in pixels",
+        "Spacing — distance between stamps",
         "Flow — paint opacity per stamp",
         "Hardness — edge falloff",
         "Pen pressure — tablet dynamics"
     };
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         hwndBrushRowButtons[i] = CreateWindowA("BUTTON", "",
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10, 264 + i * 24, kFlyoutW - 20, 22,
+            10, 264 + i * 22, kFlyoutW - 20, 20,
             hwndBrushFlyout, (HMENU)(INT_PTR)rowIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushRowButtons[i]);
         if (hwndTooltip && rowTips[i]) {
@@ -617,7 +676,7 @@ void EnsureBrushFlyout(HWND owner) {
     for (int i = 0; i < 3; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10 + i * (actionW + 4), 364, actionW, 22,
+            10 + i * (actionW + 4), 388, actionW, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)actionIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushActionButtons[i]);
         if (hwndTooltip) {
@@ -641,6 +700,10 @@ int BrushFlyoutPresetIndexFromCmd(int cmdId) {
     if (cmdId < IDC_BRUSH_PRESET_BASE || cmdId >= IDC_BRUSH_PRESET_BASE + kMaxFlyoutPresets) return -1;
     const int slot = cmdId - IDC_BRUSH_PRESET_BASE;
     return gBrushPresetPage * kMaxFlyoutPresets + slot;
+}
+
+int BrushFlyoutContextPresetIndex() {
+    return gBrushCtxPreset;
 }
 
 void RebuildBrushFlyoutPresets() {
@@ -669,18 +732,21 @@ void SyncBrushFlyoutChecks() {
     }
 
     char sizeLabel[48];
+    char spacingLabel[48];
     char flowLabel[48];
     char hardLabel[48];
     char pressLabel[48];
     sprintf_s(sizeLabel, "Size  \xE2\x80\xBA  %d px", penWidth);
+    sprintf_s(spacingLabel, "Spacing  \xE2\x80\xBA  %d%%", GetBrushSpacingPercent());
     sprintf_s(flowLabel, "Flow  \xE2\x80\xBA  %d%%", brushFlow);
     sprintf_s(hardLabel, "Hardness  \xE2\x80\xBA  %d%%", brushHardness);
     sprintf_s(pressLabel, "Pressure  \xE2\x80\xBA  %s", penPressureEnabled ? "On" : "Off");
 
     if (hwndBrushRowButtons[0]) SetWindowTextA(hwndBrushRowButtons[0], sizeLabel);
-    if (hwndBrushRowButtons[1]) SetWindowTextA(hwndBrushRowButtons[1], flowLabel);
-    if (hwndBrushRowButtons[2]) SetWindowTextA(hwndBrushRowButtons[2], hardLabel);
-    if (hwndBrushRowButtons[3]) SetWindowTextA(hwndBrushRowButtons[3], pressLabel);
+    if (hwndBrushRowButtons[1]) SetWindowTextA(hwndBrushRowButtons[1], spacingLabel);
+    if (hwndBrushRowButtons[2]) SetWindowTextA(hwndBrushRowButtons[2], flowLabel);
+    if (hwndBrushRowButtons[3]) SetWindowTextA(hwndBrushRowButtons[3], hardLabel);
+    if (hwndBrushRowButtons[4]) SetWindowTextA(hwndBrushRowButtons[4], pressLabel);
 
     if (hwndBrushActionButtons[2]) {
         EnableWindow(hwndBrushActionButtons[2], IsActiveBrushCustom() ? TRUE : FALSE);

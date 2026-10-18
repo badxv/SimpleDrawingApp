@@ -336,6 +336,27 @@ void SetBrushHardness(int hardness) {
     SyncBrushMenuItems();
 }
 
+int GetBrushSpacingPercent() {
+    const BrushPreset* preset = ActivePreset();
+    if (!preset) return 20;
+    int pct = static_cast<int>(preset->spacing * 100.0f + 0.5f);
+    if (pct < 5) pct = 5;
+    if (pct > 100) pct = 100;
+    return pct;
+}
+
+void SetBrushSpacingPercent(int percent) {
+    BrushPreset* preset = ActivePresetMutable();
+    if (!preset) return;
+    if (percent < 5) percent = 5;
+    if (percent > 100) percent = 100;
+    preset->spacing = static_cast<float>(percent) / 100.0f;
+    if (!preset->builtin) {
+        SaveCustomBrushesToDisk();
+    }
+    SyncBrushFlyoutChecks();
+}
+
 void LoadBrushSettings() {
     char iniPath[MAX_PATH] = {};
     GetFeaturesIniPath(iniPath, MAX_PATH);

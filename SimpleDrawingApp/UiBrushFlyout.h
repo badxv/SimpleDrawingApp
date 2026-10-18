@@ -8,3 +8,4 @@ void OpenBrushFlyout(HWND parent);
 void SyncBrushFlyoutChecks();
 int BrushFlyoutPresetIndexFromCmd(int cmdId);
 void RebuildBrushFlyoutPresets();
+int BrushFlyoutContextPresetIndex(); // last right-clicked preset, or -1

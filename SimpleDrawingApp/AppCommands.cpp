@@ -493,8 +493,24 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             }
             return true;
         }
+        case IDM_BRUSH_CTX_SELECT: {
+            const int idx = BrushFlyoutContextPresetIndex();
+            if (idx >= 0 && idx < BrushPresetCount()) {
+                SetActiveBrushIndex(idx);
+                if (const BrushPreset* preset = GetBrushPreset(idx)) {
+                    ApplyPenWidth(hwnd, preset->defaultSize);
+                }
+                SyncBrushFlyoutChecks();
+                UpdateStatusBar(hwnd);
+            }
+            return true;
+        }
+        case IDM_BRUSH_CTX_DELETE:
         case IDC_BRUSH_FLYOUT_DELETE: {
-            const int idx = GetActiveBrushIndex();
+            int idx = (cmdId == IDM_BRUSH_CTX_DELETE)
+                ? BrushFlyoutContextPresetIndex()
+                : GetActiveBrushIndex();
+            if (idx < 0) idx = GetActiveBrushIndex();
             const BrushPreset* preset = GetBrushPreset(idx);
             if (!preset || preset->builtin) {
                 MessageBoxA(hwnd, "Built-in brushes cannot be deleted.", "Delete Brush",

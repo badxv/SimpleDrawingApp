@@ -46,6 +46,10 @@ int GetBrushHardness();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 
+// Stamp spacing as percent of tip size (5..100 → 0.05..1.0).
+int GetBrushSpacingPercent();
+void SetBrushSpacingPercent(int percent);
+
 void LoadBrushSettings();
 void SaveBrushSettings();
 void SyncBrushMenuItems();
