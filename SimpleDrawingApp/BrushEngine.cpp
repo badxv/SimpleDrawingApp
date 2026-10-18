@@ -405,16 +405,27 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         return baseDeg + u * 180.0f * (static_cast<float>(jitter) / 100.0f);
     };
 
-    auto SizeJitter = [](int x, int y, int salt, int baseW) -> int {
+    // tipW = brush diameter before pressure; floor is % of tip (Photoshop-style Minimum Diameter).
+    auto SizeJitter = [](int x, int y, int salt, int baseW, int tipW) -> int {
         int jitter = brushSizeJitter;
-        if (jitter < 1) return baseW;
-        if (jitter > 100) jitter = 100;
-        const unsigned n = (static_cast<unsigned>(x) * 374761393u)
-            ^ (static_cast<unsigned>(y) * 668265263u)
-            ^ (static_cast<unsigned>(salt) * 2147483647u);
-        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
-        const float factor = 1.0f + u * (static_cast<float>(jitter) / 100.0f);
-        int w = static_cast<int>(static_cast<float>(baseW) * factor + 0.5f);
+        int w = baseW;
+        if (jitter >= 1) {
+            if (jitter > 100) jitter = 100;
+            const unsigned n = (static_cast<unsigned>(x) * 374761393u)
+                ^ (static_cast<unsigned>(y) * 668265263u)
+                ^ (static_cast<unsigned>(salt) * 2147483647u);
+            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+            const float factor = 1.0f + u * (static_cast<float>(jitter) / 100.0f);
+            w = static_cast<int>(static_cast<float>(baseW) * factor + 0.5f);
+        }
+        int minPct = brushMinDiameter;
+        if (minPct < 0) minPct = 0;
+        if (minPct > 100) minPct = 100;
+        if (minPct > 0) {
+            int floorW = static_cast<int>(static_cast<float>(tipW) * (static_cast<float>(minPct) / 100.0f) + 0.5f);
+            if (floorW < 1) floorW = 1;
+            if (w < floorW) w = floorW;
+        }
         if (w < 1) w = 1;
         return w;
     };
@@ -447,7 +458,7 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         int spacingW = baseW;
         for (int c = 0; c < count; ++c) {
             const int salt = baseSalt * 8 + c;
-            const int stampW = SizeJitter(sx, sy, salt, baseW);
+            const int stampW = SizeJitter(sx, sy, salt, baseW, width);
             if (c == 0) spacingW = stampW;
             const float stampP = OpacityJitter(sx, sy, salt, pressure);
             int ox = 0, oy = 0;
@@ -526,6 +537,10 @@ int GetBrushStampCount() {
 
 int GetBrushRoundness() {
     return brushRoundness;
+}
+
+int GetBrushMinDiameter() {
+    return brushMinDiameter;
 }
 
 void SetBrushFlow(int flow) {
@@ -608,6 +623,14 @@ void SetBrushRoundness(int percent) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushMinDiameter(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    brushMinDiameter = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -647,6 +670,7 @@ void LoadBrushSettings() {
     brushSmoothing = GetPrivateProfileIntA("Features", "BrushSmoothing", 0, iniPath);
     brushStampCount = GetPrivateProfileIntA("Features", "BrushStampCount", 1, iniPath);
     brushRoundness = GetPrivateProfileIntA("Features", "BrushRoundness", 100, iniPath);
+    brushMinDiameter = GetPrivateProfileIntA("Features", "BrushMinDiameter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -668,6 +692,8 @@ void LoadBrushSettings() {
     if (brushStampCount > 8) brushStampCount = 8;
     if (brushRoundness < 1) brushRoundness = 1;
     if (brushRoundness > 100) brushRoundness = 100;
+    if (brushMinDiameter < 0) brushMinDiameter = 0;
+    if (brushMinDiameter > 100) brushMinDiameter = 100;
 }
 
 void SaveBrushSettings() {
@@ -697,6 +723,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushStampCount", buf, iniPath);
     sprintf_s(buf, "%d", brushRoundness);
     WritePrivateProfileStringA("Features", "BrushRoundness", buf, iniPath);
+    sprintf_s(buf, "%d", brushMinDiameter);
+    WritePrivateProfileStringA("Features", "BrushMinDiameter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

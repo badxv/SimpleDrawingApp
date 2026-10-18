@@ -46,16 +46,18 @@ void BuildStatusTip(char* out, size_t outChars) {
 
     char extras[192] = "";
     if (currentTool == DrawTool::Pen) {
+        // Keep Z/Md adjacent and early so size-jitter + min-diameter stay visible in the tip pane.
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d Rd:%d%%  P:%d%%",
-                GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
-                brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount,
-                brushRoundness, static_cast<int>(lastPenPressure * 100.0f + 0.5f));
+            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%  P:%d%%",
+                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushScatter, brushAngleJitter,
+                brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
+                brushFlow, brushHardness, brushSmoothing,
+                static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d Rd:%d%%",
-                GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
-                brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount,
-                brushRoundness);
+            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%",
+                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushScatter, brushAngleJitter,
+                brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
+                brushFlow, brushHardness, brushSmoothing);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
@@ -265,10 +267,10 @@ void LayoutStatusParts(HWND hwnd) {
     RECT rc = {};
     GetClientRect(hwnd, &rc);
     const int width = rc.right - rc.left;
-    // Wider tip pane (left), then layer/coords, then brush/dirty.
+    // Wider tip pane (left) so brush dynamics (Z/Md/…) are not clipped.
     int parts[4] = {
-        (width * 48) / 100,
-        (width * 78) / 100,
+        (width * 62) / 100,
+        (width * 82) / 100,
         width - 1,
         -1
     };
