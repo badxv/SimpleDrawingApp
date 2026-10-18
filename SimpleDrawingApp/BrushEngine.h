@@ -23,6 +23,9 @@ const BrushPreset* GetBrushPreset(int index);
 int GetActiveBrushIndex();
 void SetActiveBrushIndex(int index);
 const char* GetActiveBrushName();
+bool IsActiveBrushCustom();
+bool DeleteBrushPreset(int index); // built-ins cannot be deleted
+bool RenameBrushPreset(int index, const char* name); // built-ins cannot be renamed
 
 void ResetBrushStrokeState();
 void DrawBrushStrokeSegment(Gdiplus::Graphics* target, int x0, int y0, int x1, int y1,
@@ -41,8 +44,21 @@ bool PromptImportAbrBrushes(HWND owner);
 
 int GetBrushFlow();
 int GetBrushHardness();
+int GetBrushScatter();
+int GetBrushAngleJitter();
+int GetBrushSizeJitter();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
+void SetBrushScatter(int scatter); // 0..100
+void SetBrushAngleJitter(int jitter); // 0..100
+void SetBrushSizeJitter(int jitter); // 0..100
+
+// Stamp spacing as percent of tip size (5..100 → 0.05..1.0).
+int GetBrushSpacingPercent();
+void SetBrushSpacingPercent(int percent);
+
+// Updates the active custom brush's defaultSize and persists to disk.
+void PersistActiveBrushDefaultSize(int size);
 
 void LoadBrushSettings();
 void SaveBrushSettings();
