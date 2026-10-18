@@ -173,7 +173,7 @@ void DrawRoundLine(Graphics* target, int x0, int y0, int x1, int y1, COLORREF co
 }
 
 void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent,
-    float pressure = 1.0f, float angleDeg = 0.0f) {
+    float pressure = 1.0f, float angleDeg = 0.0f, int roundnessOverride = -1) {
     if (!target || !tip || size < 1) return;
 
     tip = TipWithWetEdges(tip);
@@ -183,7 +183,7 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     const int w = static_cast<int>(tip->GetWidth());
     const int h = static_cast<int>(tip->GetHeight());
 
-    int roundness = brushRoundness;
+    int roundness = (roundnessOverride >= 0) ? roundnessOverride : brushRoundness;
     if (roundness < 1) roundness = 1;
     if (roundness > 100) roundness = 100;
     const REAL height = static_cast<REAL>(size) * (static_cast<REAL>(roundness) / 100.0f);
@@ -527,6 +527,23 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         return p;
     };
 
+    auto RoundnessJitter = [](int x, int y, int salt, int baseR) -> int {
+        int jitter = brushRoundnessJitter;
+        int r = baseR;
+        if (jitter >= 1) {
+            if (jitter > 100) jitter = 100;
+            const unsigned n = (static_cast<unsigned>(x) * 2654435761u)
+                ^ (static_cast<unsigned>(y) * 2246822519u)
+                ^ (static_cast<unsigned>(salt) * 3266489917u);
+            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+            const float factor = 1.0f + u * (static_cast<float>(jitter) / 100.0f);
+            r = static_cast<int>(static_cast<float>(baseR) * factor + 0.5f);
+        }
+        if (r < 1) r = 1;
+        if (r > 100) r = 100;
+        return r;
+    };
+
     const float strokeAngleDeg = (segLen >= 0.001f)
         ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
         : 0.0f;
@@ -558,7 +575,8 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
                 oy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
             }
             const float ang = AngleJitter(sx, sy, salt, baseTipAngleDeg);
-            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang);
+            const int stampRd = RoundnessJitter(sx, sy, salt, brushRoundness);
+            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang, stampRd);
         }
         return spacingW;
     };
@@ -628,6 +646,10 @@ int GetBrushMinDiameter() {
 
 int GetBrushWetEdges() {
     return brushWetEdges;
+}
+
+int GetBrushRoundnessJitter() {
+    return brushRoundnessJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -727,6 +749,14 @@ void SetBrushWetEdges(int percent) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushRoundnessJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushRoundnessJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -768,6 +798,7 @@ void LoadBrushSettings() {
     brushRoundness = GetPrivateProfileIntA("Features", "BrushRoundness", 100, iniPath);
     brushMinDiameter = GetPrivateProfileIntA("Features", "BrushMinDiameter", 0, iniPath);
     brushWetEdges = GetPrivateProfileIntA("Features", "BrushWetEdges", 0, iniPath);
+    brushRoundnessJitter = GetPrivateProfileIntA("Features", "BrushRoundnessJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -801,6 +832,8 @@ void LoadBrushSettings() {
     if (brushMinDiameter > 100) brushMinDiameter = 100;
     if (brushWetEdges < 0) brushWetEdges = 0;
     if (brushWetEdges > 100) brushWetEdges = 100;
+    if (brushRoundnessJitter < 0) brushRoundnessJitter = 0;
+    if (brushRoundnessJitter > 100) brushRoundnessJitter = 100;
 }
 
 void SaveBrushSettings() {
@@ -834,6 +867,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushMinDiameter", buf, iniPath);
     sprintf_s(buf, "%d", brushWetEdges);
     WritePrivateProfileStringA("Features", "BrushWetEdges", buf, iniPath);
+    sprintf_s(buf, "%d", brushRoundnessJitter);
+    WritePrivateProfileStringA("Features", "BrushRoundnessJitter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

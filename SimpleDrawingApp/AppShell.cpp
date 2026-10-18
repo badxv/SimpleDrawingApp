@@ -48,15 +48,15 @@ void BuildStatusTip(char* out, size_t outChars) {
     if (currentTool == DrawTool::Pen) {
         // Keep Z/Md/We early so size + wet-edges dynamics stay visible in the tip pane.
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% We:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%  P:%d%%",
-                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushWetEdges, brushScatter,
-                brushAngleJitter, brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
+            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% We:%d%% Rj:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%  P:%d%%",
+                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushWetEdges, brushRoundnessJitter,
+                brushScatter, brushAngleJitter, brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
                 brushFlow, brushHardness, brushSmoothing,
                 static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% We:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%",
-                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushWetEdges, brushScatter,
-                brushAngleJitter, brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
+            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% We:%d%% Rj:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%",
+                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushWetEdges, brushRoundnessJitter,
+                brushScatter, brushAngleJitter, brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
                 brushFlow, brushHardness, brushSmoothing);
         }
     }
