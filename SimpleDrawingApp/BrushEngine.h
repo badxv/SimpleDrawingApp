@@ -23,8 +23,14 @@ const BrushPreset* GetBrushPreset(int index);
 int GetActiveBrushIndex();
 void SetActiveBrushIndex(int index);
 const char* GetActiveBrushName();
+bool IsActiveBrushCustom();
+bool DeleteBrushPreset(int index); // built-ins cannot be deleted
+bool RenameBrushPreset(int index, const char* name); // built-ins cannot be renamed
 
 void ResetBrushStrokeState();
+void InitBrushStrokeSmoothing(int x, int y);
+// Pull freehand sample toward (rawX,rawY); returns false if no movement after smooth.
+bool SmoothBrushStrokePoint(int rawX, int rawY, int& outX, int& outY);
 void DrawBrushStrokeSegment(Gdiplus::Graphics* target, int x0, int y0, int x1, int y1,
     COLORREF color, int width, bool eraseTransparent, bool eraseOpaque,
     float pressure0 = 1.0f, float pressure1 = 1.0f);
@@ -41,8 +47,46 @@ bool PromptImportAbrBrushes(HWND owner);
 
 int GetBrushFlow();
 int GetBrushHardness();
+int GetBrushScatter();
+int GetBrushAngleJitter();
+int GetBrushTipAngle();
+int GetBrushSizeJitter();
+int GetBrushOpacityJitter();
+int GetBrushSmoothing();
+int GetBrushStampCount();
+int GetBrushRoundness();
+int GetBrushMinDiameter();
+int GetBrushWetEdges();
+int GetBrushRoundnessJitter();
+int GetBrushFlipX();
+int GetBrushFlipY();
+int GetBrushFlowJitter();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
+void SetBrushScatter(int scatter); // 0..100
+void SetBrushAngleJitter(int jitter); // 0..100
+void SetBrushTipAngle(int degrees); // 0..180
+void SetBrushSizeJitter(int jitter); // 0..100
+void SetBrushOpacityJitter(int jitter); // 0..100
+void SetBrushSmoothing(int amount); // 0..100
+void SetBrushStampCount(int count); // 1..8
+void SetBrushRoundness(int percent); // 1..100
+void SetBrushMinDiameter(int percent); // 0..100
+void SetBrushWetEdges(int percent); // 0..100
+void SetBrushRoundnessJitter(int jitter); // 0..100
+void SetBrushFlipX(int percent); // 0..100 chance
+void SetBrushFlipY(int percent); // 0..100 chance
+void SetBrushFlowJitter(int jitter); // 0..100
+
+// Tip used for painting/preview (applies wet-edges remap when enabled). Do not free.
+Gdiplus::Bitmap* BrushTipForDraw(Gdiplus::Bitmap* tip);
+
+// Stamp spacing as percent of tip size (5..100 → 0.05..1.0).
+int GetBrushSpacingPercent();
+void SetBrushSpacingPercent(int percent);
+
+// Updates the active custom brush's defaultSize and persists to disk.
+void PersistActiveBrushDefaultSize(int size);
 
 void LoadBrushSettings();
 void SaveBrushSettings();
