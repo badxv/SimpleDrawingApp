@@ -505,6 +505,28 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             }
             return true;
         }
+        case IDM_BRUSH_CTX_RENAME:
+        case IDC_BRUSH_FLYOUT_RENAME: {
+            int idx = (cmdId == IDM_BRUSH_CTX_RENAME)
+                ? BrushFlyoutContextPresetIndex()
+                : GetActiveBrushIndex();
+            if (idx < 0) idx = GetActiveBrushIndex();
+            const BrushPreset* preset = GetBrushPreset(idx);
+            if (!preset || preset->builtin) {
+                MessageBoxA(hwnd, "Built-in brushes cannot be renamed.", "Rename Brush",
+                    MB_OK | MB_ICONINFORMATION);
+                return true;
+            }
+            char newName[80] = {};
+            if (!PromptBrushRename(hwnd, preset->name.c_str(), newName, sizeof(newName))) {
+                return true;
+            }
+            if (RenameBrushPreset(idx, newName)) {
+                SyncBrushFlyoutChecks();
+                UpdateStatusBar(hwnd);
+            }
+            return true;
+        }
         case IDM_BRUSH_CTX_DELETE:
         case IDC_BRUSH_FLYOUT_DELETE: {
             int idx = (cmdId == IDM_BRUSH_CTX_DELETE)

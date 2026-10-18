@@ -170,6 +170,28 @@ bool BrushPresetsRemove(int index, bool persist) {
     return true;
 }
 
+bool BrushPresetsRename(int index, const char* name, bool persist) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return false;
+    BrushPreset& preset = gPresets[static_cast<size_t>(index)];
+    if (preset.builtin) return false;
+    if (!name) return false;
+    // Trim leading/trailing spaces
+    while (*name == ' ' || *name == '\t') ++name;
+    if (!name[0]) return false;
+    char cleaned[80] = {};
+    strncpy_s(cleaned, name, _TRUNCATE);
+    size_t len = strlen(cleaned);
+    while (len > 0 && (cleaned[len - 1] == ' ' || cleaned[len - 1] == '\t')) {
+        cleaned[--len] = '\0';
+    }
+    if (!cleaned[0]) return false;
+    preset.name = cleaned;
+    if (persist) SaveCustomBrushesToDisk();
+    RebuildBrushFlyoutPresets();
+    SyncBrushMenuItems();
+    return true;
+}
+
 void BrushPresetsSetActive(int index) {
     if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
     gActiveBrush = index;
@@ -238,6 +260,10 @@ bool IsActiveBrushCustom() {
 
 bool DeleteBrushPreset(int index) {
     return BrushPresetsRemove(index, true);
+}
+
+bool RenameBrushPreset(int index, const char* name) {
+    return BrushPresetsRename(index, name, true);
 }
 
 void ResetBrushStrokeState() {

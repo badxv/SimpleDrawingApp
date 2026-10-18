@@ -56,7 +56,7 @@ void RefreshPresetGrid() {
             if (preset) {
                 snprintf(tip, sizeof(tip), "%s\r\nClick to select%s",
                     preset->name.c_str(),
-                    preset->builtin ? "" : "\r\nRight-click to delete");
+                    preset->builtin ? "" : "\r\nRight-click to rename/delete");
             }
             InvalidateRect(btn, NULL, FALSE);
             (void)tip;
@@ -517,8 +517,9 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         if (!popup) return 0;
         AppendMenuA(popup, MF_STRING, IDM_BRUSH_CTX_SELECT, "Select");
         if (preset && !preset->builtin) {
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_CTX_RENAME, "Rename…");
             AppendMenuA(popup, MF_SEPARATOR, 0, nullptr);
-            AppendMenuA(popup, MF_STRING, IDM_BRUSH_CTX_DELETE, "Delete custom brush");
+            AppendMenuA(popup, MF_STRING, IDM_BRUSH_CTX_DELETE, "Delete");
         }
         POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
         if (pt.x == -1 && pt.y == -1) {
@@ -530,7 +531,8 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         const UINT pick = TrackPopupMenu(popup, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
             pt.x, pt.y, 0, hwnd, NULL);
         DestroyMenu(popup);
-        if (pick == IDM_BRUSH_CTX_SELECT || pick == IDM_BRUSH_CTX_DELETE) {
+        if (pick == IDM_BRUSH_CTX_SELECT || pick == IDM_BRUSH_CTX_DELETE
+            || pick == IDM_BRUSH_CTX_RENAME) {
             HWND parent = GetWindow(hwnd, GW_OWNER);
             if (!parent) parent = GetParent(hwnd);
             if (parent) {
