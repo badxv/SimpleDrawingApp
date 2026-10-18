@@ -38,7 +38,7 @@ enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
     FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter,
-    Experimental, EchoDelay, EchoFeedback
+    Experimental, EchoDelay, EchoFeedback, Ping, Biolum
 };
 
 struct BrushRowDef {
@@ -79,10 +79,14 @@ constexpr BrushRowDef kBrushRows[] = {
       "Echo delay — postponed ghost stamps (ms scaled). Requires Experimental On.", true },
     { IDC_BRUSH_ROW_ECHOFEEDBACK, BrushSubPanel::EchoFeedback,
       "Echo feedback — how many decaying repeats follow each stamp", true },
+    { IDC_BRUSH_ROW_PING, BrushSubPanel::Ping,
+      "Ping — sonar ring sediment on stroke start (expanding stamps)", true },
+    { IDC_BRUSH_ROW_BIOLUM, BrushSubPanel::Biolum,
+      "Biolum — canvas stays dark; paint glows near the cursor", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 26, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 28, "hwndBrushRowButtons size must match kBrushRows");
 
 bool RowVisible(const BrushRowDef& row) {
     return !row.experimental || brushExperimental;
@@ -506,7 +510,9 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::SatJitter
         || gBrushSubPanel == BrushSubPanel::BrightJitter
         || gBrushSubPanel == BrushSubPanel::EchoDelay
-        || gBrushSubPanel == BrushSubPanel::EchoFeedback);
+        || gBrushSubPanel == BrushSubPanel::EchoFeedback
+        || gBrushSubPanel == BrushSubPanel::Ping
+        || gBrushSubPanel == BrushSubPanel::Biolum);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -541,7 +547,9 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::SatJitter
                 || gBrushSubPanel == BrushSubPanel::BrightJitter
                 || gBrushSubPanel == BrushSubPanel::EchoDelay
-                || gBrushSubPanel == BrushSubPanel::EchoFeedback) {
+                || gBrushSubPanel == BrushSubPanel::EchoFeedback
+                || gBrushSubPanel == BrushSubPanel::Ping
+                || gBrushSubPanel == BrushSubPanel::Biolum) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -560,6 +568,8 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::BrightJitter) pos = GetBrushBrightJitter();
                 else if (gBrushSubPanel == BrushSubPanel::EchoDelay) pos = GetBrushEchoDelay();
                 else if (gBrushSubPanel == BrushSubPanel::EchoFeedback) pos = GetBrushEchoFeedback();
+                else if (gBrushSubPanel == BrushSubPanel::Ping) pos = GetBrushPing();
+                else if (gBrushSubPanel == BrushSubPanel::Biolum) pos = GetBrushBiolum();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -646,7 +656,8 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::FlipY || gBrushSubPanel == BrushSubPanel::FlowJitter
         || gBrushSubPanel == BrushSubPanel::ColorJitter || gBrushSubPanel == BrushSubPanel::HueJitter
         || gBrushSubPanel == BrushSubPanel::SatJitter || gBrushSubPanel == BrushSubPanel::BrightJitter
-        || gBrushSubPanel == BrushSubPanel::EchoDelay || gBrushSubPanel == BrushSubPanel::EchoFeedback) {
+        || gBrushSubPanel == BrushSubPanel::EchoDelay || gBrushSubPanel == BrushSubPanel::EchoFeedback
+        || gBrushSubPanel == BrushSubPanel::Ping || gBrushSubPanel == BrushSubPanel::Biolum) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -725,6 +736,10 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushEchoDelay(pos);
             } else if (gBrushSubPanel == BrushSubPanel::EchoFeedback) {
                 SetBrushEchoFeedback(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Ping) {
+                SetBrushPing(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Biolum) {
+                SetBrushBiolum(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -1062,6 +1077,8 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
         break;
     }
     case BrushSubPanel::EchoFeedback: sprintf_s(out, outChars, "Echo Fdbk%s%d%%", kSep, brushEchoFeedback); break;
+    case BrushSubPanel::Ping: sprintf_s(out, outChars, "Ping%s%d%%", kSep, brushPing); break;
+    case BrushSubPanel::Biolum: sprintf_s(out, outChars, "Biolum%s%d%%", kSep, brushBiolum); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;

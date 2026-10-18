@@ -407,6 +407,52 @@ void ClearBrushTemporalQueue() {
     gTemporalQueue.clear();
 }
 
+void FireBrushPing(int cx, int cy, COLORREF color, int tipSize, bool eraseTransparent) {
+    if (!brushExperimental || brushPing < 1) return;
+    if (tipSize < 1) tipSize = 1;
+
+    const int strength = ClampInt(brushPing, 0, 100);
+    const int rings = ClampInt(2 + strength / 25, 2, 6);
+    const int stampsPerRing = ClampInt(8 + strength / 15, 8, 16);
+    const int ringStep = MaxInt(6, tipSize / 2 + strength / 8);
+    const int delayMs = ClampInt(55 - strength / 4, 28, 55);
+    const int stampSize = MaxInt(2, tipSize * 2 / 3);
+
+    // Ghost-tint toward canvas so sediment reads as a scan wake.
+    const int pr = GetRValue(color), pg = GetGValue(color), pb = GetBValue(color);
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+
+    const DWORD now = GetTickCount();
+    for (int ring = 1; ring <= rings; ++ring) {
+        if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+        const float radius = static_cast<float>(ring * ringStep);
+        const float amp = 0.70f * (1.0f - static_cast<float>(ring - 1) / static_cast<float>(rings));
+        const float ghost = 0.40f + 0.45f * amp;
+        const COLORREF ringColor = RGB(
+            ClampInt(static_cast<int>(pr + (cr - pr) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pg + (cg - pg) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pb + (cb - pb) * (1.0f - ghost) + 0.5f), 0, 255));
+        const DWORD due = now + static_cast<DWORD>(ring * delayMs);
+        for (int s = 0; s < stampsPerRing; ++s) {
+            if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+            const float ang = (static_cast<float>(s) / static_cast<float>(stampsPerRing)) * 6.2831853f;
+            TemporalStampJob job;
+            job.dueMs = due;
+            job.x = cx + static_cast<int>(cosf(ang) * radius + (cosf(ang) >= 0 ? 0.5f : -0.5f));
+            job.y = cy + static_cast<int>(sinf(ang) * radius + (sinf(ang) >= 0 ? 0.5f : -0.5f));
+            job.color = ringColor;
+            job.size = MaxInt(1, stampSize - (ring - 1));
+            job.pressure = MaxFloat(0.12f, amp);
+            job.angleDeg = ang * (180.0f / 3.14159265f);
+            job.roundness = brushRoundness;
+            job.flipX = false;
+            job.flipY = false;
+            job.eraseTransparent = eraseTransparent;
+            gTemporalQueue.push_back(job);
+        }
+    }
+}
+
 bool ProcessBrushTemporalQueue() {
     if (gTemporalQueue.empty()) return false;
 
@@ -1123,6 +1169,26 @@ void SetBrushEchoFeedback(int feedback) {
     SyncBrushFlyoutChecks();
 }
 
+int GetBrushPing() {
+    return brushPing;
+}
+
+int GetBrushBiolum() {
+    return brushBiolum;
+}
+
+void SetBrushPing(int strength) {
+    brushPing = ClampInt(strength, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushBiolum(int amount) {
+    brushBiolum = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -1175,6 +1241,8 @@ void LoadBrushSettings() {
     brushExperimental = GetPrivateProfileIntA("Features", "BrushExperimental", 0, iniPath) != 0;
     brushEchoDelay = GetPrivateProfileIntA("Features", "BrushEchoDelay", 0, iniPath);
     brushEchoFeedback = GetPrivateProfileIntA("Features", "BrushEchoFeedback", 40, iniPath);
+    brushPing = GetPrivateProfileIntA("Features", "BrushPing", 0, iniPath);
+    brushBiolum = GetPrivateProfileIntA("Features", "BrushBiolum", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -1206,6 +1274,8 @@ void LoadBrushSettings() {
     brushBrightJitter = ClampInt(brushBrightJitter, 0, 100);
     brushEchoDelay = ClampInt(brushEchoDelay, 0, 100);
     brushEchoFeedback = ClampInt(brushEchoFeedback, 0, 100);
+    brushPing = ClampInt(brushPing, 0, 100);
+    brushBiolum = ClampInt(brushBiolum, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -1260,6 +1330,10 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushEchoDelay", buf, iniPath);
     sprintf_s(buf, "%d", brushEchoFeedback);
     WritePrivateProfileStringA("Features", "BrushEchoFeedback", buf, iniPath);
+    sprintf_s(buf, "%d", brushPing);
+    WritePrivateProfileStringA("Features", "BrushPing", buf, iniPath);
+    sprintf_s(buf, "%d", brushBiolum);
+    WritePrivateProfileStringA("Features", "BrushBiolum", buf, iniPath);
     sprintf_s(buf, "%d", GetBrushSpacingPercent());
     WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);

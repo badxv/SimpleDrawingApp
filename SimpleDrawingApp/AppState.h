@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[26];
+extern HWND hwndBrushRowButtons[28];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -157,6 +157,8 @@ extern int brushBrightJitter;    // 0..100 — brightness jitter per stamp
 extern bool brushExperimental;   // opt-in Atelier Experimental section (default off)
 extern int brushEchoDelay;       // 0..100 — echo delay (maps to ms); 0 = off
 extern int brushEchoFeedback;    // 0..100 — echo decay / hop count
+extern int brushPing;            // 0..100 — sonar ping ring on stroke start
+extern int brushBiolum;          // 0..100 — proximity reveal veil radius
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;

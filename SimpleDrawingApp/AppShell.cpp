@@ -87,6 +87,8 @@ void BuildStatusTip(char* out, size_t outChars) {
             if (brushEchoDelay > 0) {
                 AppendPct(extras, sizeof(extras), "Ef", brushEchoFeedback, 40);
             }
+            AppendPct(extras, sizeof(extras), "Pn", brushPing, 0);
+            AppendPct(extras, sizeof(extras), "Bl", brushBiolum, 0);
         }
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);

@@ -68,6 +68,8 @@ int GetBrushBrightJitter();
 bool IsBrushExperimental();
 int GetBrushEchoDelay();
 int GetBrushEchoFeedback();
+int GetBrushPing();
+int GetBrushBiolum();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -91,11 +93,16 @@ void SetBrushBrightJitter(int jitter); // 0..100
 void SetBrushExperimental(bool enabled); // opt-in experimental atelier
 void SetBrushEchoDelay(int delay); // 0..100
 void SetBrushEchoFeedback(int feedback); // 0..100
+void SetBrushPing(int strength); // 0..100
+void SetBrushBiolum(int amount); // 0..100
 
-// Deferred stamp queue (echo / future radar ping). Returns true if anything was drawn.
+// Deferred stamp queue (echo / radar ping). Returns true if anything was drawn.
 bool BrushTemporalPending();
 void ClearBrushTemporalQueue();
 bool ProcessBrushTemporalQueue();
+
+// Expanding sonar ring from (cx,cy); no-op unless Experimental + Ping > 0.
+void FireBrushPing(int cx, int cy, COLORREF color, int tipSize, bool eraseTransparent);
 
 // Tip used for painting/preview (applies wet-edges remap when enabled). Do not free.
 Gdiplus::Bitmap* BrushTipForDraw(Gdiplus::Bitmap* tip);
