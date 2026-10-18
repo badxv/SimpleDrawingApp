@@ -24,6 +24,9 @@ constexpr int kMaxTotalBrushes = 24;
 std::vector<BrushPreset> gPresets;
 int gActiveBrush = 0;
 float gStampCarry = 0.0f;
+float gSmoothX = 0.0f;
+float gSmoothY = 0.0f;
+bool gSmoothInit = false;
 
 BrushPreset* ActivePresetMutable() {
     if (gActiveBrush < 0 || gActiveBrush >= static_cast<int>(gPresets.size())) return nullptr;
@@ -293,6 +296,31 @@ void PersistActiveBrushDefaultSize(int size) {
 
 void ResetBrushStrokeState() {
     gStampCarry = 0.0f;
+    gSmoothInit = false;
+    gSmoothX = 0.0f;
+    gSmoothY = 0.0f;
+}
+
+void InitBrushStrokeSmoothing(int x, int y) {
+    gSmoothX = static_cast<float>(x);
+    gSmoothY = static_cast<float>(y);
+    gSmoothInit = true;
+}
+
+bool SmoothBrushStrokePoint(int rawX, int rawY, int& outX, int& outY) {
+    if (!gSmoothInit) {
+        InitBrushStrokeSmoothing(rawX, rawY);
+    }
+    int amount = brushSmoothing;
+    if (amount < 0) amount = 0;
+    if (amount > 100) amount = 100;
+    // 0% → follow cursor exactly; 100% → strong lag (~8% pull per sample).
+    const float pull = 1.0f - 0.92f * (static_cast<float>(amount) / 100.0f);
+    gSmoothX += (static_cast<float>(rawX) - gSmoothX) * pull;
+    gSmoothY += (static_cast<float>(rawY) - gSmoothY) * pull;
+    outX = static_cast<int>(gSmoothX + (gSmoothX >= 0.0f ? 0.5f : -0.5f));
+    outY = static_cast<int>(gSmoothY + (gSmoothY >= 0.0f ? 0.5f : -0.5f));
+    return true;
 }
 
 bool IsPenPressureEnabled() {
@@ -461,6 +489,10 @@ int GetBrushOpacityJitter() {
     return brushOpacityJitter;
 }
 
+int GetBrushSmoothing() {
+    return brushSmoothing;
+}
+
 void SetBrushFlow(int flow) {
     if (flow < 1) flow = 1;
     if (flow > 100) flow = 100;
@@ -517,6 +549,14 @@ void SetBrushOpacityJitter(int jitter) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushSmoothing(int amount) {
+    if (amount < 0) amount = 0;
+    if (amount > 100) amount = 100;
+    brushSmoothing = amount;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -553,6 +593,7 @@ void LoadBrushSettings() {
     brushTipAngle = GetPrivateProfileIntA("Features", "BrushTipAngle", 0, iniPath);
     brushSizeJitter = GetPrivateProfileIntA("Features", "BrushSizeJitter", 0, iniPath);
     brushOpacityJitter = GetPrivateProfileIntA("Features", "BrushOpacityJitter", 0, iniPath);
+    brushSmoothing = GetPrivateProfileIntA("Features", "BrushSmoothing", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -568,6 +609,8 @@ void LoadBrushSettings() {
     if (brushSizeJitter > 100) brushSizeJitter = 100;
     if (brushOpacityJitter < 0) brushOpacityJitter = 0;
     if (brushOpacityJitter > 100) brushOpacityJitter = 100;
+    if (brushSmoothing < 0) brushSmoothing = 0;
+    if (brushSmoothing > 100) brushSmoothing = 100;
 }
 
 void SaveBrushSettings() {
@@ -591,6 +634,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushSizeJitter", buf, iniPath);
     sprintf_s(buf, "%d", brushOpacityJitter);
     WritePrivateProfileStringA("Features", "BrushOpacityJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushSmoothing);
+    WritePrivateProfileStringA("Features", "BrushSmoothing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

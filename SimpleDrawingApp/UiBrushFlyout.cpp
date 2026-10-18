@@ -21,7 +21,7 @@ using namespace Gdiplus;
 namespace {
 
 constexpr int kFlyoutW = 210;
-constexpr int kFlyoutH = 526;
+constexpr int kFlyoutH = 548;
 constexpr int kSubFlyoutW = 168;
 constexpr int kSubFlyoutH = 108;
 constexpr int kSubFlyoutSliderH = 88;
@@ -31,7 +31,8 @@ constexpr int kMaxFlyoutPresets = 9;
 constexpr int kPreviewH = 44;
 
 enum class BrushSubPanel {
-    None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter, OpacityJitter
+    None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
+    OpacityJitter, Smooth
 };
 int gBrushCtxPreset = -1;
 
@@ -175,8 +176,8 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, rc.left + 10, rc.top + 252, NULL);
     LineTo(hdc, rc.right - 10, rc.top + 252);
-    MoveToEx(hdc, rc.left + 10, rc.top + 490, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 490);
+    MoveToEx(hdc, rc.left + 10, rc.top + 512, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 512);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 }
@@ -295,7 +296,8 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::Angle
         || gBrushSubPanel == BrushSubPanel::Orient
         || gBrushSubPanel == BrushSubPanel::SizeJitter
-        || gBrushSubPanel == BrushSubPanel::OpacityJitter);
+        || gBrushSubPanel == BrushSubPanel::OpacityJitter
+        || gBrushSubPanel == BrushSubPanel::Smooth);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -311,12 +313,14 @@ void LayoutSubFlyoutOptions() {
             } else if (gBrushSubPanel == BrushSubPanel::Scatter
                 || gBrushSubPanel == BrushSubPanel::Angle
                 || gBrushSubPanel == BrushSubPanel::SizeJitter
-                || gBrushSubPanel == BrushSubPanel::OpacityJitter) {
+                || gBrushSubPanel == BrushSubPanel::OpacityJitter
+                || gBrushSubPanel == BrushSubPanel::Smooth) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
                 else if (gBrushSubPanel == BrushSubPanel::SizeJitter) pos = GetBrushSizeJitter();
                 else if (gBrushSubPanel == BrushSubPanel::OpacityJitter) pos = GetBrushOpacityJitter();
+                else if (gBrushSubPanel == BrushSubPanel::Smooth) pos = GetBrushSmoothing();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -396,7 +400,7 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::Size || gBrushSubPanel == BrushSubPanel::Spacing
         || gBrushSubPanel == BrushSubPanel::Scatter || gBrushSubPanel == BrushSubPanel::Angle
         || gBrushSubPanel == BrushSubPanel::Orient || gBrushSubPanel == BrushSubPanel::SizeJitter
-        || gBrushSubPanel == BrushSubPanel::OpacityJitter) {
+        || gBrushSubPanel == BrushSubPanel::OpacityJitter || gBrushSubPanel == BrushSubPanel::Smooth) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -445,6 +449,8 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushSizeJitter(pos);
             } else if (gBrushSubPanel == BrushSubPanel::OpacityJitter) {
                 SetBrushOpacityJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Smooth) {
+                SetBrushSmoothing(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -566,9 +572,15 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             OpenBrushSubFlyoutInternal(BrushSubPanel::OpacityJitter, rr.top - 4);
             return 0;
         }
-        if (id == IDC_BRUSH_ROW_PRESSURE) {
+        if (id == IDC_BRUSH_ROW_SMOOTH) {
             RECT rr = {};
             GetWindowRect(hwndBrushRowButtons[9], &rr);
+            OpenBrushSubFlyoutInternal(BrushSubPanel::Smooth, rr.top - 4);
+            return 0;
+        }
+        if (id == IDC_BRUSH_ROW_PRESSURE) {
+            RECT rr = {};
+            GetWindowRect(hwndBrushRowButtons[10], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Pressure, rr.top - 4);
             return 0;
         }
@@ -737,13 +749,13 @@ void EnsureBrushFlyout(HWND owner) {
         SetWindowLongPtrA(hwndBrushPreview, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(BrushPreviewProc));
     }
 
-    const int rowIds[10] = {
+    const int rowIds[11] = {
         IDC_BRUSH_ROW_SIZE, IDC_BRUSH_ROW_SPACING, IDC_BRUSH_ROW_FLOW,
         IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_SCATTER, IDC_BRUSH_ROW_ANGLE,
         IDC_BRUSH_ROW_ORIENT, IDC_BRUSH_ROW_SIZEJITTER, IDC_BRUSH_ROW_OPJITTER,
-        IDC_BRUSH_ROW_PRESSURE
+        IDC_BRUSH_ROW_SMOOTH, IDC_BRUSH_ROW_PRESSURE
     };
-    const char* rowTips[10] = {
+    const char* rowTips[11] = {
         "Size — brush diameter in pixels",
         "Spacing — distance between stamps",
         "Flow — paint opacity per stamp",
@@ -753,9 +765,10 @@ void EnsureBrushFlyout(HWND owner) {
         "Orient — fixed tip angle offset in degrees",
         "Size jitter — random stamp diameter along stroke",
         "Opacity jitter — random stamp opacity along stroke",
+        "Smooth — stabilize freehand stroke path",
         "Pen pressure — tablet dynamics"
     };
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 11; ++i) {
         hwndBrushRowButtons[i] = CreateWindowA("BUTTON", "",
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
             10, 264 + i * 22, kFlyoutW - 20, 20,
@@ -785,7 +798,7 @@ void EnsureBrushFlyout(HWND owner) {
     for (int i = 0; i < 3; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10 + i * (actionW + 4), 498, actionW, 22,
+            10 + i * (actionW + 4), 520, actionW, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)actionIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushActionButtons[i]);
         if (hwndTooltip) {
@@ -849,6 +862,7 @@ void SyncBrushFlyoutChecks() {
     char orientLabel[48];
     char sizeJitterLabel[48];
     char opJitterLabel[48];
+    char smoothLabel[48];
     char pressLabel[48];
     sprintf_s(sizeLabel, "Size  \xE2\x80\xBA  %d px", penWidth);
     sprintf_s(spacingLabel, "Spacing  \xE2\x80\xBA  %d%%", GetBrushSpacingPercent());
@@ -859,6 +873,7 @@ void SyncBrushFlyoutChecks() {
     sprintf_s(orientLabel, "Orient  \xE2\x80\xBA  %d deg", brushTipAngle);
     sprintf_s(sizeJitterLabel, "Sz Jitter  \xE2\x80\xBA  %d%%", brushSizeJitter);
     sprintf_s(opJitterLabel, "Op Jitter  \xE2\x80\xBA  %d%%", brushOpacityJitter);
+    sprintf_s(smoothLabel, "Smooth  \xE2\x80\xBA  %d%%", brushSmoothing);
     sprintf_s(pressLabel, "Pressure  \xE2\x80\xBA  %s", penPressureEnabled ? "On" : "Off");
 
     if (hwndBrushRowButtons[0]) SetWindowTextA(hwndBrushRowButtons[0], sizeLabel);
@@ -870,7 +885,8 @@ void SyncBrushFlyoutChecks() {
     if (hwndBrushRowButtons[6]) SetWindowTextA(hwndBrushRowButtons[6], orientLabel);
     if (hwndBrushRowButtons[7]) SetWindowTextA(hwndBrushRowButtons[7], sizeJitterLabel);
     if (hwndBrushRowButtons[8]) SetWindowTextA(hwndBrushRowButtons[8], opJitterLabel);
-    if (hwndBrushRowButtons[9]) SetWindowTextA(hwndBrushRowButtons[9], pressLabel);
+    if (hwndBrushRowButtons[9]) SetWindowTextA(hwndBrushRowButtons[9], smoothLabel);
+    if (hwndBrushRowButtons[10]) SetWindowTextA(hwndBrushRowButtons[10], pressLabel);
 
     if (hwndBrushActionButtons[2]) {
         EnableWindow(hwndBrushActionButtons[2], IsActiveBrushCustom() ? TRUE : FALSE);
