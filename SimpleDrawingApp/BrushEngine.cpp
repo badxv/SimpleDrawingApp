@@ -608,7 +608,23 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
             const int stampRd = RoundnessJitter(sx, sy, salt, brushRoundness);
             const bool fx = FlipChance(sx, sy, salt, brushFlipX, 0x85ebca6bu);
             const bool fy = FlipChance(sx, sy, salt, brushFlipY, 0xc2b2ae35u);
-            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
+            COLORREF stampColor = color;
+            if (brushColorJitter > 0 && !eraseTransparent) {
+                int jitter = brushColorJitter;
+                if (jitter > 100) jitter = 100;
+                const unsigned n = (static_cast<unsigned>(sx) * 374761393u)
+                    ^ (static_cast<unsigned>(sy) * 668265263u)
+                    ^ (static_cast<unsigned>(salt) * 0x9e3779b9u);
+                const float u = static_cast<float>(n & 255u) / 255.0f; // 0..1 toward backColor
+                const float t = u * (static_cast<float>(jitter) / 100.0f);
+                const int ar = GetRValue(color), ag = GetGValue(color), ab = GetBValue(color);
+                const int br = GetRValue(backColor), bg = GetGValue(backColor), bb = GetBValue(backColor);
+                stampColor = RGB(
+                    static_cast<int>(ar + (br - ar) * t + 0.5f),
+                    static_cast<int>(ag + (bg - ag) * t + 0.5f),
+                    static_cast<int>(ab + (bb - ab) * t + 0.5f));
+            }
+            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, stampColor, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
         }
         return spacingW;
     };
@@ -694,6 +710,10 @@ int GetBrushFlipY() {
 
 int GetBrushFlowJitter() {
     return brushFlowJitter;
+}
+
+int GetBrushColorJitter() {
+    return brushColorJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -825,6 +845,14 @@ void SetBrushFlowJitter(int jitter) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushColorJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushColorJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -870,6 +898,7 @@ void LoadBrushSettings() {
     brushFlipX = GetPrivateProfileIntA("Features", "BrushFlipX", 0, iniPath);
     brushFlipY = GetPrivateProfileIntA("Features", "BrushFlipY", 0, iniPath);
     brushFlowJitter = GetPrivateProfileIntA("Features", "BrushFlowJitter", 0, iniPath);
+    brushColorJitter = GetPrivateProfileIntA("Features", "BrushColorJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -895,6 +924,7 @@ void LoadBrushSettings() {
     brushFlipX = ClampInt(brushFlipX, 0, 100);
     brushFlipY = ClampInt(brushFlipY, 0, 100);
     brushFlowJitter = ClampInt(brushFlowJitter, 0, 100);
+    brushColorJitter = ClampInt(brushColorJitter, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -936,6 +966,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlipY", buf, iniPath);
     sprintf_s(buf, "%d", brushFlowJitter);
     WritePrivateProfileStringA("Features", "BrushFlowJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushColorJitter);
+    WritePrivateProfileStringA("Features", "BrushColorJitter", buf, iniPath);
     sprintf_s(buf, "%d", GetBrushSpacingPercent());
     WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);

@@ -37,7 +37,7 @@ constexpr int kActionGap = 8;
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
-    FlowJitter
+    FlowJitter, ColorJitter
 };
 
 struct BrushRowDef {
@@ -66,11 +66,12 @@ constexpr BrushRowDef kBrushRows[] = {
     { IDC_BRUSH_ROW_FLIPX, BrushSubPanel::FlipX, "Flip X — chance to mirror tip horizontally" },
     { IDC_BRUSH_ROW_FLIPY, BrushSubPanel::FlipY, "Flip Y — chance to mirror tip vertically" },
     { IDC_BRUSH_ROW_FLOWJITTER, BrushSubPanel::FlowJitter, "Flow jitter — random stamp flow/alpha along stroke" },
+    { IDC_BRUSH_ROW_COLORJITTER, BrushSubPanel::ColorJitter, "Color jitter — blend toward background color per stamp" },
     { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure — tablet dynamics" },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 19, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 20, "hwndBrushRowButtons size must match kBrushRows");
 
 constexpr int kFlyoutH = kRowTop + kBrushRowCount * kRowStep + kActionGap + kActionH + 12;
 
@@ -308,12 +309,27 @@ void PaintStrokePreview(HDC hdc, const RECT& rc) {
                 if (alphaScale < 0.05f) alphaScale = 0.05f;
                 if (alphaScale > 1.0f) alphaScale = 1.0f;
             }
+            REAL cr = 0.18f, cg = 0.14f, cb = 0.10f;
+            if (brushColorJitter > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 374761393u) ^ 0x9e3779b9u;
+                const float u = static_cast<float>(n & 255u) / 255.0f;
+                const float mix = u * (static_cast<float>(brushColorJitter) / 100.0f);
+                const float fr = static_cast<float>(GetRValue(penColor)) / 255.0f;
+                const float fg = static_cast<float>(GetGValue(penColor)) / 255.0f;
+                const float fb = static_cast<float>(GetBValue(penColor)) / 255.0f;
+                const float br = static_cast<float>(GetRValue(backColor)) / 255.0f;
+                const float bg = static_cast<float>(GetGValue(backColor)) / 255.0f;
+                const float bb = static_cast<float>(GetBValue(backColor)) / 255.0f;
+                cr = fr + (br - fr) * mix;
+                cg = fg + (bg - fg) * mix;
+                cb = fb + (bb - fb) * mix;
+            }
             ColorMatrix matrix = {
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                 0.0f, 0.0f, 0.0f, alphaScale, 0.0f,
-                0.18f, 0.14f, 0.10f, 0.0f, 1.0f
+                cr, cg, cb, 0.0f, 1.0f
             };
             ImageAttributes attrs;
             attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
@@ -403,7 +419,8 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::RoundnessJitter
         || gBrushSubPanel == BrushSubPanel::FlipX
         || gBrushSubPanel == BrushSubPanel::FlipY
-        || gBrushSubPanel == BrushSubPanel::FlowJitter);
+        || gBrushSubPanel == BrushSubPanel::FlowJitter
+        || gBrushSubPanel == BrushSubPanel::ColorJitter);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -432,7 +449,8 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::RoundnessJitter
                 || gBrushSubPanel == BrushSubPanel::FlipX
                 || gBrushSubPanel == BrushSubPanel::FlipY
-                || gBrushSubPanel == BrushSubPanel::FlowJitter) {
+                || gBrushSubPanel == BrushSubPanel::FlowJitter
+                || gBrushSubPanel == BrushSubPanel::ColorJitter) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -445,6 +463,7 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::FlipX) pos = GetBrushFlipX();
                 else if (gBrushSubPanel == BrushSubPanel::FlipY) pos = GetBrushFlipY();
                 else if (gBrushSubPanel == BrushSubPanel::FlowJitter) pos = GetBrushFlowJitter();
+                else if (gBrushSubPanel == BrushSubPanel::ColorJitter) pos = GetBrushColorJitter();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -528,7 +547,8 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::Count || gBrushSubPanel == BrushSubPanel::Roundness
         || gBrushSubPanel == BrushSubPanel::MinDiameter || gBrushSubPanel == BrushSubPanel::WetEdges
         || gBrushSubPanel == BrushSubPanel::RoundnessJitter || gBrushSubPanel == BrushSubPanel::FlipX
-        || gBrushSubPanel == BrushSubPanel::FlipY || gBrushSubPanel == BrushSubPanel::FlowJitter) {
+        || gBrushSubPanel == BrushSubPanel::FlipY || gBrushSubPanel == BrushSubPanel::FlowJitter
+        || gBrushSubPanel == BrushSubPanel::ColorJitter) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -595,6 +615,8 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushFlipY(pos);
             } else if (gBrushSubPanel == BrushSubPanel::FlowJitter) {
                 SetBrushFlowJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::ColorJitter) {
+                SetBrushColorJitter(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -908,6 +930,7 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     case BrushSubPanel::FlipX: sprintf_s(out, outChars, "Flip X%s%d%%", kSep, brushFlipX); break;
     case BrushSubPanel::FlipY: sprintf_s(out, outChars, "Flip Y%s%d%%", kSep, brushFlipY); break;
     case BrushSubPanel::FlowJitter: sprintf_s(out, outChars, "Fl Jitter%s%d%%", kSep, brushFlowJitter); break;
+    case BrushSubPanel::ColorJitter: sprintf_s(out, outChars, "Color Jit%s%d%%", kSep, brushColorJitter); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;
