@@ -10,6 +10,7 @@ bool BrushPresetsAddCustom(const char* name, Gdiplus::Bitmap* tip, float spacing
     bool persist = true);
 bool BrushPresetsRemove(int index, bool persist = true);
 bool BrushPresetsRename(int index, const char* name, bool persist = true);
+bool BrushPresetsSetDefaultSize(int index, int size, bool persist = true);
 void BrushPresetsSetActive(int index);
 const char* BrushPresetsActiveName();
 void BrushPresetsSaveSettings();

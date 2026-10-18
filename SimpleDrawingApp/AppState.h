@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[5];
+extern HWND hwndBrushRowButtons[6];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -135,6 +135,7 @@ extern int penWidth;
 extern int penOpacity;
 extern int brushFlow;
 extern int brushHardness;
+extern int brushScatter; // 0..100 — stamp position jitter
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;

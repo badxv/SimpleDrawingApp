@@ -192,6 +192,17 @@ bool BrushPresetsRename(int index, const char* name, bool persist) {
     return true;
 }
 
+bool BrushPresetsSetDefaultSize(int index, int size, bool persist) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return false;
+    BrushPreset& preset = gPresets[static_cast<size_t>(index)];
+    if (size < kPenWidthMin) size = kPenWidthMin;
+    if (size > kPenWidthMax) size = kPenWidthMax;
+    if (preset.defaultSize == size) return true;
+    preset.defaultSize = size;
+    if (persist && !preset.builtin) SaveCustomBrushesToDisk();
+    return true;
+}
+
 void BrushPresetsSetActive(int index) {
     if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
     gActiveBrush = index;
@@ -266,6 +277,10 @@ bool RenameBrushPreset(int index, const char* name) {
     return BrushPresetsRename(index, name, true);
 }
 
+void PersistActiveBrushDefaultSize(int size) {
+    BrushPresetsSetDefaultSize(gActiveBrush, size, true);
+}
+
 void ResetBrushStrokeState() {
     gStampCarry = 0.0f;
 }
@@ -319,21 +334,43 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
     const float dy = static_cast<float>(y1 - y0);
     const float segLen = sqrtf(dx * dx + dy * dy);
 
+    auto ScatterOffset = [](int x, int y, int stampW, int salt, int& outDx, int& outDy) {
+        outDx = 0;
+        outDy = 0;
+        int scatter = brushScatter;
+        if (scatter < 1) return;
+        if (scatter > 100) scatter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 73856093u)
+            ^ (static_cast<unsigned>(y) * 19349663u)
+            ^ (static_cast<unsigned>(salt) * 83492791u);
+        const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
+        const float amp = static_cast<float>(stampW) * 0.55f * (static_cast<float>(scatter) / 100.0f);
+        outDx = static_cast<int>(rx * amp + (rx >= 0.0f ? 0.5f : -0.5f));
+        outDy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
+    };
+
     if (segLen < 0.001f) {
         const int stampW = PenPressureWidth(width, pressure1);
-        DrawStamp(target, preset->tip.get(), x1, y1, color, stampW, eraseTransparent, pressure1);
+        int ox = 0, oy = 0;
+        ScatterOffset(x1, y1, stampW, 0, ox, oy);
+        DrawStamp(target, preset->tip.get(), x1 + ox, y1 + oy, color, stampW, eraseTransparent, pressure1);
         return;
     }
 
     float dist = gStampCarry;
+    int stampIndex = 0;
     while (dist <= segLen) {
         const float t = dist / segLen;
         const float pressure = pressure0 + (pressure1 - pressure0) * t;
         const int stampW = PenPressureWidth(width, pressure);
-        const int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
-        const int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
-        DrawStamp(target, preset->tip.get(), sx, sy, color, stampW, eraseTransparent, pressure);
+        int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
+        int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
+        int ox = 0, oy = 0;
+        ScatterOffset(sx, sy, stampW, stampIndex, ox, oy);
+        DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, pressure);
         dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, stampW)));
+        ++stampIndex;
     }
     gStampCarry = dist - segLen;
 }
@@ -344,6 +381,10 @@ int GetBrushFlow() {
 
 int GetBrushHardness() {
     return brushHardness;
+}
+
+int GetBrushScatter() {
+    return brushScatter;
 }
 
 void SetBrushFlow(int flow) {
@@ -360,6 +401,14 @@ void SetBrushHardness(int hardness) {
     brushHardness = hardness;
     SaveBrushSettings();
     SyncBrushMenuItems();
+}
+
+void SetBrushScatter(int scatter) {
+    if (scatter < 0) scatter = 0;
+    if (scatter > 100) scatter = 100;
+    brushScatter = scatter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
 }
 
 int GetBrushSpacingPercent() {
@@ -393,11 +442,14 @@ void LoadBrushSettings() {
     }
     brushFlow = GetPrivateProfileIntA("Features", "BrushFlow", 100, iniPath);
     brushHardness = GetPrivateProfileIntA("Features", "BrushHardness", 100, iniPath);
+    brushScatter = GetPrivateProfileIntA("Features", "BrushScatter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
     if (brushHardness < 1) brushHardness = 1;
     if (brushHardness > 100) brushHardness = 100;
+    if (brushScatter < 0) brushScatter = 0;
+    if (brushScatter > 100) brushScatter = 100;
 }
 
 void SaveBrushSettings() {
@@ -411,6 +463,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlow", buf, iniPath);
     sprintf_s(buf, "%d", brushHardness);
     WritePrivateProfileStringA("Features", "BrushHardness", buf, iniPath);
+    sprintf_s(buf, "%d", brushScatter);
+    WritePrivateProfileStringA("Features", "BrushScatter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

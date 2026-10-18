@@ -44,12 +44,17 @@ bool PromptImportAbrBrushes(HWND owner);
 
 int GetBrushFlow();
 int GetBrushHardness();
+int GetBrushScatter();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
+void SetBrushScatter(int scatter); // 0..100
 
 // Stamp spacing as percent of tip size (5..100 → 0.05..1.0).
 int GetBrushSpacingPercent();
 void SetBrushSpacingPercent(int percent);
+
+// Updates the active custom brush's defaultSize and persists to disk.
+void PersistActiveBrushDefaultSize(int size);
 
 void LoadBrushSettings();
 void SaveBrushSettings();

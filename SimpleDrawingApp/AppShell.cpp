@@ -89,6 +89,9 @@ void ApplyPenWidth(HWND hwnd, int width) {
     UpdateStatusBar(hwnd);
     SaveFeatureFlags();
     SyncFeatureFlagMenuItems();
+    if (IsActiveBrushCustom()) {
+        PersistActiveBrushDefaultSize(penWidth);
+    }
     SyncBrushFlyoutChecks();
 }
 
