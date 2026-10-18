@@ -65,7 +65,13 @@ struct ChromeLayout {
 };
 
 inline int MaxInt(int a, int b) { return (a > b) ? a : b; }
+inline int MinInt(int a, int b) { return (a < b) ? a : b; }
 inline float MaxFloat(float a, float b) { return (a > b) ? a : b; }
+inline int ClampInt(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
 
 inline bool IsRunningUnderWine() {
     static int cached = -1;

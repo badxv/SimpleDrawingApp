@@ -32,6 +32,32 @@ const char* StatusToolName() {
     return "Pen";
 }
 
+void AppendExtras(char* dest, size_t destChars, const char* piece) {
+    if (!dest || !piece || !piece[0] || destChars == 0) return;
+    strcat_s(dest, destChars, piece);
+}
+
+void AppendPct(char* dest, size_t destChars, const char* key, int value, int hideIf) {
+    if (value == hideIf) return;
+    char buf[32];
+    sprintf_s(buf, " %s:%d%%", key, value);
+    AppendExtras(dest, destChars, buf);
+}
+
+void AppendIntKey(char* dest, size_t destChars, const char* key, int value, int hideIf) {
+    if (value == hideIf) return;
+    char buf[32];
+    sprintf_s(buf, " %s:%d", key, value);
+    AppendExtras(dest, destChars, buf);
+}
+
+void AppendDeg(char* dest, size_t destChars, const char* key, int value, int hideIf) {
+    if (value == hideIf) return;
+    char buf[32];
+    sprintf_s(buf, " %s:%ddeg", key, value);
+    AppendExtras(dest, destChars, buf);
+}
+
 void BuildStatusTip(char* out, size_t outChars) {
     if (!out || outChars == 0) return;
     out[0] = '\0';
@@ -44,27 +70,38 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[192] = "";
+    // Only emit non-default dynamics so the tip pane stays readable (avoids overflow/clip).
+    char extras[256] = "";
     if (currentTool == DrawTool::Pen) {
-        // Keep Z/Md/We early so size + wet-edges dynamics stay visible in the tip pane.
+        AppendExtras(extras, sizeof(extras), "  ");
+        AppendExtras(extras, sizeof(extras), GetActiveBrushName());
+        AppendPct(extras, sizeof(extras), "Fx", brushFlipX, 0);
+        AppendPct(extras, sizeof(extras), "Fy", brushFlipY, 0);
+        AppendPct(extras, sizeof(extras), "Fj", brushFlowJitter, 0);
+        AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
+        AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);
+        AppendPct(extras, sizeof(extras), "We", brushWetEdges, 0);
+        AppendPct(extras, sizeof(extras), "Rj", brushRoundnessJitter, 0);
+        AppendPct(extras, sizeof(extras), "S", brushScatter, 0);
+        AppendPct(extras, sizeof(extras), "A", brushAngleJitter, 0);
+        AppendDeg(extras, sizeof(extras), "T", brushTipAngle, 0);
+        AppendPct(extras, sizeof(extras), "O", brushOpacityJitter, 0);
+        AppendIntKey(extras, sizeof(extras), "C", brushStampCount, 1);
+        AppendPct(extras, sizeof(extras), "Rd", brushRoundness, 100);
+        AppendPct(extras, sizeof(extras), "F", brushFlow, 100);
+        AppendPct(extras, sizeof(extras), "H", brushHardness, 100);
+        AppendPct(extras, sizeof(extras), "M", brushSmoothing, 0);
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  Fx:%d%% Fy:%d%% Fj:%d%% Z:%d%% Md:%d%% We:%d%% Rj:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%  P:%d%%",
-                GetActiveBrushName(), brushFlipX, brushFlipY, brushFlowJitter, brushSizeJitter, brushMinDiameter,
-                brushWetEdges, brushRoundnessJitter, brushScatter, brushAngleJitter, brushTipAngle,
-                brushOpacityJitter, brushStampCount, brushRoundness, brushFlow, brushHardness, brushSmoothing,
-                static_cast<int>(lastPenPressure * 100.0f + 0.5f));
-        } else {
-            sprintf_s(extras, "  %s  Fx:%d%% Fy:%d%% Fj:%d%% Z:%d%% Md:%d%% We:%d%% Rj:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%",
-                GetActiveBrushName(), brushFlipX, brushFlipY, brushFlowJitter, brushSizeJitter, brushMinDiameter,
-                brushWetEdges, brushRoundnessJitter, brushScatter, brushAngleJitter, brushTipAngle,
-                brushOpacityJitter, brushStampCount, brushRoundness, brushFlow, brushHardness, brushSmoothing);
+            char buf[24];
+            sprintf_s(buf, "  P:%d%%", static_cast<int>(lastPenPressure * 100.0f + 0.5f));
+            AppendExtras(extras, sizeof(extras), buf);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
-        strcat_s(extras, "  Snap");
+        AppendExtras(extras, sizeof(extras), "  Snap");
     }
     if (IsFeatureEnabled(AppFeature::CanvasGrid)) {
-        strcat_s(extras, "  Grid");
+        AppendExtras(extras, sizeof(extras), "  Grid");
     }
 
     sprintf_s(out, outChars, "%s - %s%s", StatusToolName(), tip, extras);

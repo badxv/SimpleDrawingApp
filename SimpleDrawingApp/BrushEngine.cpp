@@ -837,12 +837,12 @@ int GetBrushSpacingPercent() {
 void SetBrushSpacingPercent(int percent) {
     BrushPreset* preset = ActivePresetMutable();
     if (!preset) return;
-    if (percent < 5) percent = 5;
-    if (percent > 100) percent = 100;
+    percent = ClampInt(percent, 5, 100);
     preset->spacing = static_cast<float>(percent) / 100.0f;
     if (!preset->builtin) {
         SaveCustomBrushesToDisk();
     }
+    SaveBrushSettings(); // persists BrushSpacing for active tip
     SyncBrushFlyoutChecks();
 }
 
@@ -879,38 +879,22 @@ void LoadBrushSettings() {
             preset->spacing = static_cast<float>(pct) / 100.0f;
         }
     }
-    if (brushFlow < 1) brushFlow = 1;
-    if (brushFlow > 100) brushFlow = 100;
-    if (brushHardness < 1) brushHardness = 1;
-    if (brushHardness > 100) brushHardness = 100;
-    if (brushScatter < 0) brushScatter = 0;
-    if (brushScatter > 100) brushScatter = 100;
-    if (brushAngleJitter < 0) brushAngleJitter = 0;
-    if (brushAngleJitter > 100) brushAngleJitter = 100;
-    if (brushTipAngle < 0) brushTipAngle = 0;
-    if (brushTipAngle > 180) brushTipAngle = 180;
-    if (brushSizeJitter < 0) brushSizeJitter = 0;
-    if (brushSizeJitter > 100) brushSizeJitter = 100;
-    if (brushOpacityJitter < 0) brushOpacityJitter = 0;
-    if (brushOpacityJitter > 100) brushOpacityJitter = 100;
-    if (brushSmoothing < 0) brushSmoothing = 0;
-    if (brushSmoothing > 100) brushSmoothing = 100;
-    if (brushStampCount < 1) brushStampCount = 1;
-    if (brushStampCount > 8) brushStampCount = 8;
-    if (brushRoundness < 1) brushRoundness = 1;
-    if (brushRoundness > 100) brushRoundness = 100;
-    if (brushMinDiameter < 0) brushMinDiameter = 0;
-    if (brushMinDiameter > 100) brushMinDiameter = 100;
-    if (brushWetEdges < 0) brushWetEdges = 0;
-    if (brushWetEdges > 100) brushWetEdges = 100;
-    if (brushRoundnessJitter < 0) brushRoundnessJitter = 0;
-    if (brushRoundnessJitter > 100) brushRoundnessJitter = 100;
-    if (brushFlipX < 0) brushFlipX = 0;
-    if (brushFlipX > 100) brushFlipX = 100;
-    if (brushFlipY < 0) brushFlipY = 0;
-    if (brushFlipY > 100) brushFlipY = 100;
-    if (brushFlowJitter < 0) brushFlowJitter = 0;
-    if (brushFlowJitter > 100) brushFlowJitter = 100;
+    brushFlow = ClampInt(brushFlow, 1, 100);
+    brushHardness = ClampInt(brushHardness, 1, 100);
+    brushScatter = ClampInt(brushScatter, 0, 100);
+    brushAngleJitter = ClampInt(brushAngleJitter, 0, 100);
+    brushTipAngle = ClampInt(brushTipAngle, 0, 180);
+    brushSizeJitter = ClampInt(brushSizeJitter, 0, 100);
+    brushOpacityJitter = ClampInt(brushOpacityJitter, 0, 100);
+    brushSmoothing = ClampInt(brushSmoothing, 0, 100);
+    brushStampCount = ClampInt(brushStampCount, 1, 8);
+    brushRoundness = ClampInt(brushRoundness, 1, 100);
+    brushMinDiameter = ClampInt(brushMinDiameter, 0, 100);
+    brushWetEdges = ClampInt(brushWetEdges, 0, 100);
+    brushRoundnessJitter = ClampInt(brushRoundnessJitter, 0, 100);
+    brushFlipX = ClampInt(brushFlipX, 0, 100);
+    brushFlipY = ClampInt(brushFlipY, 0, 100);
+    brushFlowJitter = ClampInt(brushFlowJitter, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -952,6 +936,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlipY", buf, iniPath);
     sprintf_s(buf, "%d", brushFlowJitter);
     WritePrivateProfileStringA("Features", "BrushFlowJitter", buf, iniPath);
+    sprintf_s(buf, "%d", GetBrushSpacingPercent());
+    WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
