@@ -21,7 +21,7 @@ using namespace Gdiplus;
 namespace {
 
 constexpr int kFlyoutW = 210;
-constexpr int kFlyoutH = 702;
+constexpr int kFlyoutH = 724;
 constexpr int kSubFlyoutW = 168;
 constexpr int kSubFlyoutH = 108;
 constexpr int kSubFlyoutSliderH = 88;
@@ -32,7 +32,8 @@ constexpr int kPreviewH = 44;
 
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
-    OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY
+    OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
+    FlowJitter
 };
 int gBrushCtxPreset = -1;
 
@@ -176,8 +177,8 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, rc.left + 10, rc.top + 252, NULL);
     LineTo(hdc, rc.right - 10, rc.top + 252);
-    MoveToEx(hdc, rc.left + 10, rc.top + 666, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 666);
+    MoveToEx(hdc, rc.left + 10, rc.top + 688, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 688);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 }
@@ -257,6 +258,13 @@ void PaintStrokePreview(HDC hdc, const RECT& rc) {
                 const unsigned n = (static_cast<unsigned>(salt) * 1103515245u) ^ 0xc2b2ae35u;
                 const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
                 alphaScale = baseAlpha * (1.0f + u * (static_cast<float>(brushOpacityJitter) / 100.0f));
+                if (alphaScale < 0.05f) alphaScale = 0.05f;
+                if (alphaScale > 1.0f) alphaScale = 1.0f;
+            }
+            if (brushFlowJitter > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 2246822519u) ^ 0x27d4eb2du;
+                const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                alphaScale *= (1.0f + u * (static_cast<float>(brushFlowJitter) / 100.0f));
                 if (alphaScale < 0.05f) alphaScale = 0.05f;
                 if (alphaScale > 1.0f) alphaScale = 1.0f;
             }
@@ -354,7 +362,8 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::WetEdges
         || gBrushSubPanel == BrushSubPanel::RoundnessJitter
         || gBrushSubPanel == BrushSubPanel::FlipX
-        || gBrushSubPanel == BrushSubPanel::FlipY);
+        || gBrushSubPanel == BrushSubPanel::FlipY
+        || gBrushSubPanel == BrushSubPanel::FlowJitter);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -382,7 +391,8 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::WetEdges
                 || gBrushSubPanel == BrushSubPanel::RoundnessJitter
                 || gBrushSubPanel == BrushSubPanel::FlipX
-                || gBrushSubPanel == BrushSubPanel::FlipY) {
+                || gBrushSubPanel == BrushSubPanel::FlipY
+                || gBrushSubPanel == BrushSubPanel::FlowJitter) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -394,6 +404,7 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::RoundnessJitter) pos = GetBrushRoundnessJitter();
                 else if (gBrushSubPanel == BrushSubPanel::FlipX) pos = GetBrushFlipX();
                 else if (gBrushSubPanel == BrushSubPanel::FlipY) pos = GetBrushFlipY();
+                else if (gBrushSubPanel == BrushSubPanel::FlowJitter) pos = GetBrushFlowJitter();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -477,7 +488,7 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::Count || gBrushSubPanel == BrushSubPanel::Roundness
         || gBrushSubPanel == BrushSubPanel::MinDiameter || gBrushSubPanel == BrushSubPanel::WetEdges
         || gBrushSubPanel == BrushSubPanel::RoundnessJitter || gBrushSubPanel == BrushSubPanel::FlipX
-        || gBrushSubPanel == BrushSubPanel::FlipY) {
+        || gBrushSubPanel == BrushSubPanel::FlipY || gBrushSubPanel == BrushSubPanel::FlowJitter) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -542,6 +553,8 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushFlipX(pos);
             } else if (gBrushSubPanel == BrushSubPanel::FlipY) {
                 SetBrushFlipY(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::FlowJitter) {
+                SetBrushFlowJitter(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -711,9 +724,15 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             OpenBrushSubFlyoutInternal(BrushSubPanel::FlipY, rr.top - 4);
             return 0;
         }
-        if (id == IDC_BRUSH_ROW_PRESSURE) {
+        if (id == IDC_BRUSH_ROW_FLOWJITTER) {
             RECT rr = {};
             GetWindowRect(hwndBrushRowButtons[17], &rr);
+            OpenBrushSubFlyoutInternal(BrushSubPanel::FlowJitter, rr.top - 4);
+            return 0;
+        }
+        if (id == IDC_BRUSH_ROW_PRESSURE) {
+            RECT rr = {};
+            GetWindowRect(hwndBrushRowButtons[18], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Pressure, rr.top - 4);
             return 0;
         }
@@ -882,15 +901,16 @@ void EnsureBrushFlyout(HWND owner) {
         SetWindowLongPtrA(hwndBrushPreview, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(BrushPreviewProc));
     }
 
-    const int rowIds[18] = {
+    const int rowIds[19] = {
         IDC_BRUSH_ROW_SIZE, IDC_BRUSH_ROW_SPACING, IDC_BRUSH_ROW_FLOW,
         IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_SCATTER, IDC_BRUSH_ROW_ANGLE,
         IDC_BRUSH_ROW_ORIENT, IDC_BRUSH_ROW_SIZEJITTER, IDC_BRUSH_ROW_OPJITTER,
         IDC_BRUSH_ROW_SMOOTH, IDC_BRUSH_ROW_COUNT, IDC_BRUSH_ROW_ROUNDNESS,
         IDC_BRUSH_ROW_MINDIAM, IDC_BRUSH_ROW_WETEDGES, IDC_BRUSH_ROW_RDJITTER,
-        IDC_BRUSH_ROW_FLIPX, IDC_BRUSH_ROW_FLIPY, IDC_BRUSH_ROW_PRESSURE
+        IDC_BRUSH_ROW_FLIPX, IDC_BRUSH_ROW_FLIPY, IDC_BRUSH_ROW_FLOWJITTER,
+        IDC_BRUSH_ROW_PRESSURE
     };
-    const char* rowTips[18] = {
+    const char* rowTips[19] = {
         "Size — brush diameter in pixels",
         "Spacing — distance between stamps",
         "Flow — paint opacity per stamp",
@@ -908,9 +928,10 @@ void EnsureBrushFlyout(HWND owner) {
         "Roundness jitter — random tip squash along stroke",
         "Flip X — chance to mirror tip horizontally",
         "Flip Y — chance to mirror tip vertically",
+        "Flow jitter — random stamp flow/alpha along stroke",
         "Pen pressure — tablet dynamics"
     };
-    for (int i = 0; i < 18; ++i) {
+    for (int i = 0; i < 19; ++i) {
         hwndBrushRowButtons[i] = CreateWindowA("BUTTON", "",
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
             10, 264 + i * 22, kFlyoutW - 20, 20,
@@ -940,7 +961,7 @@ void EnsureBrushFlyout(HWND owner) {
     for (int i = 0; i < 3; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10 + i * (actionW + 4), 674, actionW, 22,
+            10 + i * (actionW + 4), 696, actionW, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)actionIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushActionButtons[i]);
         if (hwndTooltip) {
@@ -1012,6 +1033,7 @@ void SyncBrushFlyoutChecks() {
     char rdJitterLabel[48];
     char flipXLabel[48];
     char flipYLabel[48];
+    char flowJitterLabel[48];
     char pressLabel[48];
     sprintf_s(sizeLabel, "Size  \xE2\x80\xBA  %d px", penWidth);
     sprintf_s(spacingLabel, "Spacing  \xE2\x80\xBA  %d%%", GetBrushSpacingPercent());
@@ -1030,6 +1052,7 @@ void SyncBrushFlyoutChecks() {
     sprintf_s(rdJitterLabel, "Rd Jitter  \xE2\x80\xBA  %d%%", brushRoundnessJitter);
     sprintf_s(flipXLabel, "Flip X  \xE2\x80\xBA  %d%%", brushFlipX);
     sprintf_s(flipYLabel, "Flip Y  \xE2\x80\xBA  %d%%", brushFlipY);
+    sprintf_s(flowJitterLabel, "Fl Jitter  \xE2\x80\xBA  %d%%", brushFlowJitter);
     sprintf_s(pressLabel, "Pressure  \xE2\x80\xBA  %s", penPressureEnabled ? "On" : "Off");
 
     if (hwndBrushRowButtons[0]) SetWindowTextA(hwndBrushRowButtons[0], sizeLabel);
@@ -1049,7 +1072,8 @@ void SyncBrushFlyoutChecks() {
     if (hwndBrushRowButtons[14]) SetWindowTextA(hwndBrushRowButtons[14], rdJitterLabel);
     if (hwndBrushRowButtons[15]) SetWindowTextA(hwndBrushRowButtons[15], flipXLabel);
     if (hwndBrushRowButtons[16]) SetWindowTextA(hwndBrushRowButtons[16], flipYLabel);
-    if (hwndBrushRowButtons[17]) SetWindowTextA(hwndBrushRowButtons[17], pressLabel);
+    if (hwndBrushRowButtons[17]) SetWindowTextA(hwndBrushRowButtons[17], flowJitterLabel);
+    if (hwndBrushRowButtons[18]) SetWindowTextA(hwndBrushRowButtons[18], pressLabel);
 
     if (hwndBrushActionButtons[2]) {
         EnableWindow(hwndBrushActionButtons[2], IsActiveBrushCustom() ? TRUE : FALSE);

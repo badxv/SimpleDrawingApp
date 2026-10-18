@@ -230,7 +230,18 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     if (press < 0.0f) press = 0.0f;
     if (press > 1.0f) press = 1.0f;
     const REAL pressScale = penPressureEnabled ? PenPressureFactor(press) : static_cast<REAL>(press);
-    const REAL alphaScale = StampAlphaScale() * pressScale;
+    REAL alphaScale = StampAlphaScale() * pressScale;
+    if (brushFlowJitter >= 1) {
+        int jitter = brushFlowJitter;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(cx) * 2246822519u)
+            ^ (static_cast<unsigned>(cy) * 3266489917u)
+            ^ (static_cast<unsigned>(size) * 668265263u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        alphaScale *= (1.0f + u * (static_cast<float>(jitter) / 100.0f));
+        if (alphaScale < 0.05f) alphaScale = 0.05f;
+        if (alphaScale > 1.0f) alphaScale = 1.0f;
+    }
     ColorMatrix matrix = {
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -681,6 +692,10 @@ int GetBrushFlipY() {
     return brushFlipY;
 }
 
+int GetBrushFlowJitter() {
+    return brushFlowJitter;
+}
+
 void SetBrushFlow(int flow) {
     if (flow < 1) flow = 1;
     if (flow > 100) flow = 100;
@@ -802,6 +817,14 @@ void SetBrushFlipY(int percent) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushFlowJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushFlowJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -846,6 +869,7 @@ void LoadBrushSettings() {
     brushRoundnessJitter = GetPrivateProfileIntA("Features", "BrushRoundnessJitter", 0, iniPath);
     brushFlipX = GetPrivateProfileIntA("Features", "BrushFlipX", 0, iniPath);
     brushFlipY = GetPrivateProfileIntA("Features", "BrushFlipY", 0, iniPath);
+    brushFlowJitter = GetPrivateProfileIntA("Features", "BrushFlowJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -885,6 +909,8 @@ void LoadBrushSettings() {
     if (brushFlipX > 100) brushFlipX = 100;
     if (brushFlipY < 0) brushFlipY = 0;
     if (brushFlipY > 100) brushFlipY = 100;
+    if (brushFlowJitter < 0) brushFlowJitter = 0;
+    if (brushFlowJitter > 100) brushFlowJitter = 100;
 }
 
 void SaveBrushSettings() {
@@ -924,6 +950,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlipX", buf, iniPath);
     sprintf_s(buf, "%d", brushFlipY);
     WritePrivateProfileStringA("Features", "BrushFlipY", buf, iniPath);
+    sprintf_s(buf, "%d", brushFlowJitter);
+    WritePrivateProfileStringA("Features", "BrushFlowJitter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
