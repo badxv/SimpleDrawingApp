@@ -493,6 +493,25 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
             }
             return true;
         }
+        case IDC_BRUSH_FLYOUT_DELETE: {
+            const int idx = GetActiveBrushIndex();
+            const BrushPreset* preset = GetBrushPreset(idx);
+            if (!preset || preset->builtin) {
+                MessageBoxA(hwnd, "Built-in brushes cannot be deleted.", "Delete Brush",
+                    MB_OK | MB_ICONINFORMATION);
+                return true;
+            }
+            char prompt[160];
+            sprintf_s(prompt, "Delete custom brush \"%s\"?", preset->name.c_str());
+            if (MessageBoxA(hwnd, prompt, "Delete Brush", MB_YESNO | MB_ICONQUESTION) != IDYES) {
+                return true;
+            }
+            if (DeleteBrushPreset(idx)) {
+                SyncBrushFlyoutChecks();
+                UpdateStatusBar(hwnd);
+            }
+            return true;
+        }
         case IDC_COLOR_BUTTON: {
         COLORREF newColor = ColorPicker::PickColor(hwnd, penColor);
         penColor = newColor;

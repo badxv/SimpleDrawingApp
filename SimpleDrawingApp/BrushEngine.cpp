@@ -152,6 +152,24 @@ bool BrushPresetsAddCustom(const char* name, Bitmap* tip, float spacing, int def
     return true;
 }
 
+bool BrushPresetsRemove(int index, bool persist) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return false;
+    if (gPresets[static_cast<size_t>(index)].builtin) return false;
+    gPresets.erase(gPresets.begin() + index);
+    if (gActiveBrush >= static_cast<int>(gPresets.size())) {
+        gActiveBrush = static_cast<int>(gPresets.size()) - 1;
+    }
+    if (gActiveBrush < 0) gActiveBrush = 0;
+    else if (gActiveBrush > index) {
+        --gActiveBrush;
+    }
+    if (persist) SaveCustomBrushesToDisk();
+    SaveBrushSettings();
+    RebuildBrushFlyoutPresets();
+    SyncBrushMenuItems();
+    return true;
+}
+
 void BrushPresetsSetActive(int index) {
     if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
     gActiveBrush = index;
@@ -211,6 +229,15 @@ void SetActiveBrushIndex(int index) {
 
 const char* GetActiveBrushName() {
     return BrushPresetsActiveName();
+}
+
+bool IsActiveBrushCustom() {
+    const BrushPreset* preset = ActivePreset();
+    return preset && !preset->builtin;
+}
+
+bool DeleteBrushPreset(int index) {
+    return BrushPresetsRemove(index, true);
 }
 
 void ResetBrushStrokeState() {

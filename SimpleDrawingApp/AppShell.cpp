@@ -89,6 +89,7 @@ void ApplyPenWidth(HWND hwnd, int width) {
     UpdateStatusBar(hwnd);
     SaveFeatureFlags();
     SyncFeatureFlagMenuItems();
+    SyncBrushFlyoutChecks();
 }
 
 void UpdateOpacityDisplay() {

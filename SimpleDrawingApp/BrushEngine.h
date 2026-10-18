@@ -23,6 +23,8 @@ const BrushPreset* GetBrushPreset(int index);
 int GetActiveBrushIndex();
 void SetActiveBrushIndex(int index);
 const char* GetActiveBrushName();
+bool IsActiveBrushCustom();
+bool DeleteBrushPreset(int index); // built-ins cannot be deleted
 
 void ResetBrushStrokeState();
 void DrawBrushStrokeSegment(Gdiplus::Graphics* target, int x0, int y0, int x1, int y1,
