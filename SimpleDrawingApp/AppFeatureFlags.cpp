@@ -1,5 +1,6 @@
 #include "AppFeatureFlags.h"
 #include "BrushEngine.h"
+#include "AppPaths.h"
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "Resource.h"
@@ -38,29 +39,6 @@ const FeatureMeta* MetaFor(AppFeature feature) {
         if (f.id == feature) return &f;
     }
     return nullptr;
-}
-
-void GetFeatureFlagsIniPath(char* path, size_t pathChars) {
-    if (!path || pathChars == 0) return;
-    path[0] = '\0';
-    DWORD len = GetModuleFileNameA(nullptr, path, static_cast<DWORD>(pathChars));
-    if (len == 0 || len >= pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    for (int i = static_cast<int>(len) - 1; i >= 0; --i) {
-        if (path[i] == '\\' || path[i] == '/') {
-            path[i + 1] = '\0';
-            break;
-        }
-    }
-    const size_t used = strlen(path);
-    const char suffix[] = "features.ini";
-    if (used + sizeof(suffix) > pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    strcat_s(path, pathChars, suffix);
 }
 
 void SetMenuCheck(HMENU menu, UINT id, bool checked) {
@@ -109,7 +87,7 @@ void LoadFeatureFlags() {
     penWidth = kDefaultPenWidth;
 
     char iniPath[MAX_PATH] = {};
-    GetFeatureFlagsIniPath(iniPath, MAX_PATH);
+    GetFeaturesIniPath(iniPath, MAX_PATH);
     if (!iniPath[0]) return;
 
     for (const FeatureMeta& f : kFeatures) {
@@ -125,7 +103,7 @@ void LoadFeatureFlags() {
 
 void SaveFeatureFlags() {
     char iniPath[MAX_PATH] = {};
-    GetFeatureFlagsIniPath(iniPath, MAX_PATH);
+    GetFeaturesIniPath(iniPath, MAX_PATH);
     if (!iniPath[0]) return;
 
     for (const FeatureMeta& f : kFeatures) {
