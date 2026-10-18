@@ -37,46 +37,70 @@ constexpr int kActionGap = 8;
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
-    FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter
+    FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter,
+    Experimental, EchoDelay, EchoFeedback
 };
 
 struct BrushRowDef {
     int id;
     BrushSubPanel panel;
     const char* tip;
+    bool experimental; // hidden unless brushExperimental (toggle row itself is always shown)
 };
 
 // Single source of truth for Atelier rows (order = button index).
 constexpr BrushRowDef kBrushRows[] = {
-    { IDC_BRUSH_ROW_SIZE, BrushSubPanel::Size, "Size — brush diameter in pixels" },
-    { IDC_BRUSH_ROW_SPACING, BrushSubPanel::Spacing, "Spacing — distance between stamps" },
-    { IDC_BRUSH_ROW_FLOW, BrushSubPanel::Flow, "Flow — paint opacity per stamp" },
-    { IDC_BRUSH_ROW_HARDNESS, BrushSubPanel::Hardness, "Hardness — edge falloff" },
-    { IDC_BRUSH_ROW_SCATTER, BrushSubPanel::Scatter, "Scatter — random stamp spread" },
-    { IDC_BRUSH_ROW_ANGLE, BrushSubPanel::Angle, "Angle — tip rotation jitter along stroke" },
-    { IDC_BRUSH_ROW_ORIENT, BrushSubPanel::Orient, "Orient — fixed tip angle offset in degrees" },
-    { IDC_BRUSH_ROW_SIZEJITTER, BrushSubPanel::SizeJitter, "Size jitter — random stamp diameter along stroke" },
-    { IDC_BRUSH_ROW_OPJITTER, BrushSubPanel::OpacityJitter, "Opacity jitter — random stamp opacity along stroke" },
-    { IDC_BRUSH_ROW_SMOOTH, BrushSubPanel::Smooth, "Smooth — stabilize freehand stroke path" },
-    { IDC_BRUSH_ROW_COUNT, BrushSubPanel::Count, "Count — stamps per spacing step (fans when Scatter is 0)" },
-    { IDC_BRUSH_ROW_ROUNDNESS, BrushSubPanel::Roundness, "Roundness — tip height as percent of width" },
-    { IDC_BRUSH_ROW_MINDIAM, BrushSubPanel::MinDiameter, "Min diameter — floor for size jitter as percent of size" },
-    { IDC_BRUSH_ROW_WETEDGES, BrushSubPanel::WetEdges, "Wet edges — watercolor buildup toward tip edges" },
-    { IDC_BRUSH_ROW_RDJITTER, BrushSubPanel::RoundnessJitter, "Roundness jitter — random tip squash along stroke" },
-    { IDC_BRUSH_ROW_FLIPX, BrushSubPanel::FlipX, "Flip X — chance to mirror tip horizontally" },
-    { IDC_BRUSH_ROW_FLIPY, BrushSubPanel::FlipY, "Flip Y — chance to mirror tip vertically" },
-    { IDC_BRUSH_ROW_FLOWJITTER, BrushSubPanel::FlowJitter, "Flow jitter — random stamp flow/alpha along stroke" },
-    { IDC_BRUSH_ROW_COLORJITTER, BrushSubPanel::ColorJitter, "Color jitter — blend toward background color per stamp" },
-    { IDC_BRUSH_ROW_HUEJITTER, BrushSubPanel::HueJitter, "Hue jitter — random hue shift per stamp" },
-    { IDC_BRUSH_ROW_SATJITTER, BrushSubPanel::SatJitter, "Sat jitter — random saturation per stamp" },
-    { IDC_BRUSH_ROW_BRIJITTER, BrushSubPanel::BrightJitter, "Bright jitter — random brightness per stamp" },
-    { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure — tablet dynamics" },
+    { IDC_BRUSH_ROW_SIZE, BrushSubPanel::Size, "Size — brush diameter in pixels", false },
+    { IDC_BRUSH_ROW_SPACING, BrushSubPanel::Spacing, "Spacing — distance between stamps", false },
+    { IDC_BRUSH_ROW_FLOW, BrushSubPanel::Flow, "Flow — paint opacity per stamp", false },
+    { IDC_BRUSH_ROW_HARDNESS, BrushSubPanel::Hardness, "Hardness — edge falloff", false },
+    { IDC_BRUSH_ROW_SCATTER, BrushSubPanel::Scatter, "Scatter — random stamp spread", false },
+    { IDC_BRUSH_ROW_ANGLE, BrushSubPanel::Angle, "Angle — tip rotation jitter along stroke", false },
+    { IDC_BRUSH_ROW_ORIENT, BrushSubPanel::Orient, "Orient — fixed tip angle offset in degrees", false },
+    { IDC_BRUSH_ROW_SIZEJITTER, BrushSubPanel::SizeJitter, "Size jitter — random stamp diameter along stroke", false },
+    { IDC_BRUSH_ROW_OPJITTER, BrushSubPanel::OpacityJitter, "Opacity jitter — random stamp opacity along stroke", false },
+    { IDC_BRUSH_ROW_SMOOTH, BrushSubPanel::Smooth, "Smooth — stabilize freehand stroke path", false },
+    { IDC_BRUSH_ROW_COUNT, BrushSubPanel::Count, "Count — stamps per spacing step (fans when Scatter is 0)", false },
+    { IDC_BRUSH_ROW_ROUNDNESS, BrushSubPanel::Roundness, "Roundness — tip height as percent of width", false },
+    { IDC_BRUSH_ROW_MINDIAM, BrushSubPanel::MinDiameter, "Min diameter — floor for size jitter as percent of size", false },
+    { IDC_BRUSH_ROW_WETEDGES, BrushSubPanel::WetEdges, "Wet edges — watercolor buildup toward tip edges", false },
+    { IDC_BRUSH_ROW_RDJITTER, BrushSubPanel::RoundnessJitter, "Roundness jitter — random tip squash along stroke", false },
+    { IDC_BRUSH_ROW_FLIPX, BrushSubPanel::FlipX, "Flip X — chance to mirror tip horizontally", false },
+    { IDC_BRUSH_ROW_FLIPY, BrushSubPanel::FlipY, "Flip Y — chance to mirror tip vertically", false },
+    { IDC_BRUSH_ROW_FLOWJITTER, BrushSubPanel::FlowJitter, "Flow jitter — random stamp flow/alpha along stroke", false },
+    { IDC_BRUSH_ROW_COLORJITTER, BrushSubPanel::ColorJitter, "Color jitter — blend toward background color per stamp", false },
+    { IDC_BRUSH_ROW_HUEJITTER, BrushSubPanel::HueJitter, "Hue jitter — random hue shift per stamp", false },
+    { IDC_BRUSH_ROW_SATJITTER, BrushSubPanel::SatJitter, "Sat jitter — random saturation per stamp", false },
+    { IDC_BRUSH_ROW_BRIJITTER, BrushSubPanel::BrightJitter, "Bright jitter — random brightness per stamp", false },
+    { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure — tablet dynamics", false },
+    { IDC_BRUSH_ROW_EXPERIMENTAL, BrushSubPanel::Experimental,
+      "Experimental — opt-in atelier lab (echo and future weird tools). Off by default.", false },
+    { IDC_BRUSH_ROW_ECHODELAY, BrushSubPanel::EchoDelay,
+      "Echo delay — postponed ghost stamps (ms scaled). Requires Experimental On.", true },
+    { IDC_BRUSH_ROW_ECHOFEEDBACK, BrushSubPanel::EchoFeedback,
+      "Echo feedback — how many decaying repeats follow each stamp", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 23, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 26, "hwndBrushRowButtons size must match kBrushRows");
 
-constexpr int kFlyoutH = kRowTop + kBrushRowCount * kRowStep + kActionGap + kActionH + 12;
+bool RowVisible(const BrushRowDef& row) {
+    return !row.experimental || brushExperimental;
+}
+
+void LayoutBrushFlyoutRows(); // defined below; used by flyout proc / ensure
+
+int VisibleBrushRowCount() {
+    int n = 0;
+    for (const BrushRowDef& row : kBrushRows) {
+        if (RowVisible(row)) ++n;
+    }
+    return n;
+}
+
+int FlyoutContentHeight() {
+    return kRowTop + VisibleBrushRowCount() * kRowStep + kActionGap + kActionH + 12;
+}
 
 int gBrushCtxPreset = -1;
 
@@ -220,7 +244,7 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, rc.left + 10, rc.top + 252, NULL);
     LineTo(hdc, rc.right - 10, rc.top + 252);
-    const int ruleY = kRowTop + kBrushRowCount * kRowStep + 2;
+    const int ruleY = kRowTop + VisibleBrushRowCount() * kRowStep + 2;
     MoveToEx(hdc, rc.left + 10, rc.top + ruleY, NULL);
     LineTo(hdc, rc.right - 10, rc.top + ruleY);
     SelectObject(hdc, oldPen);
@@ -480,7 +504,9 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::ColorJitter
         || gBrushSubPanel == BrushSubPanel::HueJitter
         || gBrushSubPanel == BrushSubPanel::SatJitter
-        || gBrushSubPanel == BrushSubPanel::BrightJitter);
+        || gBrushSubPanel == BrushSubPanel::BrightJitter
+        || gBrushSubPanel == BrushSubPanel::EchoDelay
+        || gBrushSubPanel == BrushSubPanel::EchoFeedback);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -513,7 +539,9 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::ColorJitter
                 || gBrushSubPanel == BrushSubPanel::HueJitter
                 || gBrushSubPanel == BrushSubPanel::SatJitter
-                || gBrushSubPanel == BrushSubPanel::BrightJitter) {
+                || gBrushSubPanel == BrushSubPanel::BrightJitter
+                || gBrushSubPanel == BrushSubPanel::EchoDelay
+                || gBrushSubPanel == BrushSubPanel::EchoFeedback) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -530,6 +558,8 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::HueJitter) pos = GetBrushHueJitter();
                 else if (gBrushSubPanel == BrushSubPanel::SatJitter) pos = GetBrushSatJitter();
                 else if (gBrushSubPanel == BrushSubPanel::BrightJitter) pos = GetBrushBrightJitter();
+                else if (gBrushSubPanel == BrushSubPanel::EchoDelay) pos = GetBrushEchoDelay();
+                else if (gBrushSubPanel == BrushSubPanel::EchoFeedback) pos = GetBrushEchoFeedback();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -615,7 +645,8 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::RoundnessJitter || gBrushSubPanel == BrushSubPanel::FlipX
         || gBrushSubPanel == BrushSubPanel::FlipY || gBrushSubPanel == BrushSubPanel::FlowJitter
         || gBrushSubPanel == BrushSubPanel::ColorJitter || gBrushSubPanel == BrushSubPanel::HueJitter
-        || gBrushSubPanel == BrushSubPanel::SatJitter || gBrushSubPanel == BrushSubPanel::BrightJitter) {
+        || gBrushSubPanel == BrushSubPanel::SatJitter || gBrushSubPanel == BrushSubPanel::BrightJitter
+        || gBrushSubPanel == BrushSubPanel::EchoDelay || gBrushSubPanel == BrushSubPanel::EchoFeedback) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -690,6 +721,10 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushSatJitter(pos);
             } else if (gBrushSubPanel == BrushSubPanel::BrightJitter) {
                 SetBrushBrightJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::EchoDelay) {
+                SetBrushEchoDelay(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::EchoFeedback) {
+                SetBrushEchoFeedback(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -759,6 +794,16 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         const int id = LOWORD(wParam);
         for (int i = 0; i < kBrushRowCount; ++i) {
             if (id == kBrushRows[i].id) {
+                if (kBrushRows[i].panel == BrushSubPanel::Experimental) {
+                    SetBrushExperimental(!IsBrushExperimental());
+                    LayoutBrushFlyoutRows();
+                    SyncBrushFlyoutChecks();
+                    HWND parent = GetWindow(hwnd, GW_OWNER);
+                    if (!parent) parent = GetParent(hwnd);
+                    if (parent) UpdateStatusBar(parent);
+                    return 0;
+                }
+                if (!RowVisible(kBrushRows[i])) return 0;
                 RECT rr = {};
                 if (hwndBrushRowButtons[i]) GetWindowRect(hwndBrushRowButtons[i], &rr);
                 OpenBrushSubFlyoutInternal(kBrushRows[i].panel, rr.top - 4);
@@ -893,7 +938,7 @@ void EnsureBrushFlyout(HWND owner) {
         "SimpleDrawingAppBrushFlyout",
         "",
         WS_POPUP | WS_CLIPCHILDREN,
-        0, 0, kFlyoutW, kFlyoutH,
+        0, 0, kFlyoutW, FlyoutContentHeight(),
         owner, NULL, GetModuleHandle(NULL), NULL);
     if (!hwndBrushFlyout) return;
 
@@ -957,7 +1002,7 @@ void EnsureBrushFlyout(HWND owner) {
         "Delete selected custom brush"
     };
     const int actionW = (kFlyoutW - 28) / 3;
-    const int actionY = kRowTop + kBrushRowCount * kRowStep + kActionGap;
+    const int actionY = kRowTop + VisibleBrushRowCount() * kRowStep + kActionGap;
     for (int i = 0; i < 3; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
@@ -975,6 +1020,7 @@ void EnsureBrushFlyout(HWND owner) {
         }
     }
 
+    LayoutBrushFlyoutRows();
     RefreshPresetGrid();
     SyncBrushFlyoutChecks();
 }
@@ -1007,11 +1053,47 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     case BrushSubPanel::HueJitter: sprintf_s(out, outChars, "Hue Jit%s%d%%", kSep, brushHueJitter); break;
     case BrushSubPanel::SatJitter: sprintf_s(out, outChars, "Sat Jit%s%d%%", kSep, brushSatJitter); break;
     case BrushSubPanel::BrightJitter: sprintf_s(out, outChars, "Bri Jit%s%d%%", kSep, brushBrightJitter); break;
+    case BrushSubPanel::Experimental:
+        sprintf_s(out, outChars, "Experimental%s%s", kSep, brushExperimental ? "On" : "Off");
+        break;
+    case BrushSubPanel::EchoDelay: {
+        const int ms = brushEchoDelay * 8;
+        sprintf_s(out, outChars, "Echo Delay%s%d ms", kSep, ms);
+        break;
+    }
+    case BrushSubPanel::EchoFeedback: sprintf_s(out, outChars, "Echo Fdbk%s%d%%", kSep, brushEchoFeedback); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;
     default: break;
     }
+}
+
+void LayoutBrushFlyoutRows() {
+    if (!hwndBrushFlyout) return;
+    int visible = 0;
+    for (int i = 0; i < kBrushRowCount; ++i) {
+        HWND btn = hwndBrushRowButtons[i];
+        if (!btn) continue;
+        if (RowVisible(kBrushRows[i])) {
+            ShowWindow(btn, SW_SHOW);
+            MoveWindow(btn, 10, kRowTop + visible * kRowStep, kFlyoutW - 20, kRowH, TRUE);
+            ++visible;
+        } else {
+            ShowWindow(btn, SW_HIDE);
+        }
+    }
+    const int actionY = kRowTop + visible * kRowStep + kActionGap;
+    const int actionW = (kFlyoutW - 28) / 3;
+    for (int i = 0; i < 3; ++i) {
+        if (!hwndBrushActionButtons[i]) continue;
+        MoveWindow(hwndBrushActionButtons[i], 10 + i * (actionW + 4), actionY, actionW, kActionH, TRUE);
+    }
+    const int h = FlyoutContentHeight();
+    RECT wr = {};
+    GetWindowRect(hwndBrushFlyout, &wr);
+    SetWindowPos(hwndBrushFlyout, nullptr, 0, 0, kFlyoutW, h,
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void SyncBrushRowButtonLabels() {
@@ -1060,6 +1142,7 @@ void SyncBrushFlyoutChecks() {
         else ShowWindow(btn, SW_SHOW);
     }
 
+    LayoutBrushFlyoutRows();
     SyncBrushRowButtonLabels();
 
     if (hwndBrushActionButtons[2]) {
@@ -1110,15 +1193,18 @@ void OpenBrushFlyout(HWND parent) {
     int x = br.right + 6;
     int y = br.top - 4;
 
+    LayoutBrushFlyoutRows();
+    const int flyoutH = FlyoutContentHeight();
+
     // Keep the tall dynamics list on-screen (Wine/Xvfb and short monitors).
     RECT work = {};
     SystemParametersInfoA(SPI_GETWORKAREA, 0, &work, 0);
-    if (y + kFlyoutH > work.bottom) y = work.bottom - kFlyoutH;
+    if (y + flyoutH > work.bottom) y = work.bottom - flyoutH;
     if (y < work.top) y = work.top;
     if (x + kFlyoutW > work.right) x = work.right - kFlyoutW;
     if (x < work.left) x = work.left;
 
-    SetWindowPos(hwndBrushFlyout, HWND_TOPMOST, x, y, kFlyoutW, kFlyoutH,
+    SetWindowPos(hwndBrushFlyout, HWND_TOPMOST, x, y, kFlyoutW, flyoutH,
         SWP_SHOWWINDOW | SWP_NOACTIVATE);
     SetForegroundWindow(hwndBrushFlyout);
     SyncBrushFlyoutChecks();

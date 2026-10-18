@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[23];
+extern HWND hwndBrushRowButtons[26];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -113,6 +113,7 @@ extern POINT gFloatDragHot;
 extern POINT lastPoint;
 extern POINT shapeStart;
 extern bool isDrawing;
+extern bool strokeAwaitingEcho; // hold strokeLayer until temporal echo queue drains
 extern bool suppressEditNotify;
 extern bool suppressLayerNotify;
 
@@ -153,6 +154,9 @@ extern int brushColorJitter;     // 0..100 — blend toward backColor per stamp
 extern int brushHueJitter;       // 0..100 — hue shift range per stamp
 extern int brushSatJitter;       // 0..100 — saturation jitter per stamp
 extern int brushBrightJitter;    // 0..100 — brightness jitter per stamp
+extern bool brushExperimental;   // opt-in Atelier Experimental section (default off)
+extern int brushEchoDelay;       // 0..100 — echo delay (maps to ms); 0 = off
+extern int brushEchoFeedback;    // 0..100 — echo decay / hop count
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;

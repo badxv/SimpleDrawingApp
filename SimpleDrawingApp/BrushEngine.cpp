@@ -5,9 +5,11 @@
 #include "UiBrushFlyout.h"
 #include "AppPaths.h"
 #include "AppMetrics.h"
+#include "AppCanvas.h"
 #include "DrawingTools.h"
 #include "Resource.h"
 #include "AppState.h"
+#include "LayerStack.h"
 
 #include <cmath>
 #include <cstdio>
@@ -27,6 +29,22 @@ float gStampCarry = 0.0f;
 float gSmoothX = 0.0f;
 float gSmoothY = 0.0f;
 bool gSmoothInit = false;
+
+struct TemporalStampJob {
+    DWORD dueMs = 0;
+    int x = 0;
+    int y = 0;
+    COLORREF color = 0;
+    int size = 1;
+    float pressure = 1.0f;
+    float angleDeg = 0.0f;
+    int roundness = 100;
+    bool flipX = false;
+    bool flipY = false;
+    bool eraseTransparent = false;
+};
+constexpr size_t kTemporalQueueCap = 2048;
+std::vector<TemporalStampJob> gTemporalQueue;
 
 // Cached wet-edges remapped tip (invalidated when tip/wet% change).
 Bitmap* gWetTipCache = nullptr;
@@ -330,7 +348,106 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     target->Restore(state);
 }
 
+void EnqueueEchoFromStamp(int x, int y, COLORREF color, int size, float pressure,
+    float angleDeg, int roundness, bool flipX, bool flipY, bool eraseTransparent) {
+    if (!brushExperimental || brushEchoDelay < 1) return;
+    if (size < 1) return;
+    const int delayMs = ClampInt(brushEchoDelay, 0, 100) * 8; // 0..800 ms
+    if (delayMs < 1) return;
+
+    const int feedback = ClampInt(brushEchoFeedback, 0, 100);
+    const float fade = (feedback < 1)
+        ? 0.45f
+        : (0.36f + 0.54f * (static_cast<float>(feedback) / 100.0f));
+    const int maxHops = (feedback < 1) ? 1 : ClampInt(1 + feedback / 20, 1, 5);
+
+    // Ghost look: lean color toward canvas so delayed stamps read as echoes,
+    // not buried under the already-opaque primary stamp.
+    const int pr = GetRValue(color), pg = GetGValue(color), pb = GetBValue(color);
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+
+    const DWORD now = GetTickCount();
+    float amp = fade;
+    for (int hop = 1; hop <= maxHops && amp >= 0.08f; ++hop) {
+        if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+        // Small perpendicular drift so echoes aren't 1:1 under the primary.
+        const float rad = (angleDeg + 90.0f) * (3.14159265f / 180.0f);
+        const int drift = hop * MaxInt(2, size / 6);
+        const int ox = static_cast<int>(cosf(rad) * static_cast<float>(drift) + (cosf(rad) >= 0 ? 0.5f : -0.5f));
+        const int oy = static_cast<int>(sinf(rad) * static_cast<float>(drift) + (sinf(rad) >= 0 ? 0.5f : -0.5f));
+        const float ghost = 0.35f + 0.45f * amp; // mix toward canvas
+        TemporalStampJob job;
+        job.dueMs = now + static_cast<DWORD>(hop * delayMs);
+        job.x = x + ox;
+        job.y = y + oy;
+        job.color = RGB(
+            ClampInt(static_cast<int>(pr + (cr - pr) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pg + (cg - pg) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pb + (cb - pb) * (1.0f - ghost) + 0.5f), 0, 255));
+        job.size = MaxInt(1, size - (hop - 1));
+        job.pressure = pressure * amp;
+        if (job.pressure < 0.12f) job.pressure = 0.12f;
+        job.angleDeg = angleDeg;
+        job.roundness = roundness;
+        job.flipX = flipX;
+        job.flipY = flipY;
+        job.eraseTransparent = eraseTransparent;
+        gTemporalQueue.push_back(job);
+        amp *= fade;
+    }
+}
+
 } // namespace
+
+bool BrushTemporalPending() {
+    return !gTemporalQueue.empty();
+}
+
+void ClearBrushTemporalQueue() {
+    gTemporalQueue.clear();
+}
+
+bool ProcessBrushTemporalQueue() {
+    if (gTemporalQueue.empty()) return false;
+
+    Graphics* target = strokeGraphics.get();
+    // Prefer live stroke layer; if somehow missing, paint into the active layer.
+    Gdiplus::Graphics* owned = nullptr;
+    if (!target) {
+        if (Bitmap* bmp = gLayers.ActiveBitmap()) {
+            owned = new Graphics(bmp);
+            target = owned;
+        }
+    }
+    if (!target) return false;
+
+    const BrushPreset* preset = ActivePreset();
+    if (!preset || !preset->tip) {
+        delete owned;
+        gTemporalQueue.clear();
+        return false;
+    }
+
+    const DWORD now = GetTickCount();
+    bool drew = false;
+    size_t write = 0;
+    for (size_t i = 0; i < gTemporalQueue.size(); ++i) {
+        TemporalStampJob& job = gTemporalQueue[i];
+        // Unsigned wrap-safe: due in the past or equal.
+        if (static_cast<int>(now - job.dueMs) >= 0) {
+            DrawStamp(target, preset->tip.get(), job.x, job.y, job.color, job.size,
+                job.eraseTransparent, job.pressure, job.angleDeg, job.roundness, job.flipX, job.flipY);
+            drew = true;
+        } else {
+            if (write != i) gTemporalQueue[write] = job;
+            ++write;
+        }
+    }
+    gTemporalQueue.resize(write);
+    delete owned;
+    if (drew) InvalidateComposite();
+    return drew;
+}
 
 bool BrushPresetsCanAddCustom() {
     return CustomBrushCount() < kMaxCustomBrushes && static_cast<int>(gPresets.size()) < kMaxTotalBrushes;
@@ -428,6 +545,7 @@ void InitBrushEngine() {
 void ShutdownBrushEngine() {
     SaveCustomBrushesToDisk();
     InvalidateWetTipCache();
+    ClearBrushTemporalQueue();
     gPresets.clear();
     gActiveBrush = 0;
     gStampCarry = 0.0f;
@@ -484,6 +602,7 @@ void ResetBrushStrokeState() {
     gSmoothInit = false;
     gSmoothX = 0.0f;
     gSmoothY = 0.0f;
+    ClearBrushTemporalQueue();
 }
 
 void InitBrushStrokeSmoothing(int x, int y) {
@@ -703,12 +822,16 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
                 stampColor = ApplyHsbJitter(stampColor, sx, sy, salt);
             }
             DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, stampColor, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
+            EnqueueEchoFromStamp(sx + ox, sy + oy, stampColor, stampW, stampP, ang, stampRd, fx, fy, eraseTransparent);
         }
         return spacingW;
     };
 
     if (segLen < 0.001f) {
         PlaceStamps(x1, y1, 0, pressure1);
+        if (brushExperimental && brushEchoDelay > 0 && BrushTemporalPending()) {
+            ProcessBrushTemporalQueue();
+        }
         return;
     }
 
@@ -724,6 +847,11 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         ++stampIndex;
     }
     gStampCarry = dist - segLen;
+
+    // Flush any echoes that became due during this segment (timer also drains the queue).
+    if (brushExperimental && brushEchoDelay > 0 && BrushTemporalPending()) {
+        ProcessBrushTemporalQueue();
+    }
 }
 
 int GetBrushFlow() {
@@ -961,6 +1089,40 @@ void SetBrushBrightJitter(int jitter) {
     SyncBrushFlyoutChecks();
 }
 
+bool IsBrushExperimental() {
+    return brushExperimental;
+}
+
+int GetBrushEchoDelay() {
+    return brushEchoDelay;
+}
+
+int GetBrushEchoFeedback() {
+    return brushEchoFeedback;
+}
+
+void SetBrushExperimental(bool enabled) {
+    brushExperimental = enabled;
+    if (!brushExperimental) {
+        ClearBrushTemporalQueue();
+    }
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushEchoDelay(int delay) {
+    brushEchoDelay = ClampInt(delay, 0, 100);
+    if (brushEchoDelay < 1) ClearBrushTemporalQueue();
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushEchoFeedback(int feedback) {
+    brushEchoFeedback = ClampInt(feedback, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -1010,6 +1172,9 @@ void LoadBrushSettings() {
     brushHueJitter = GetPrivateProfileIntA("Features", "BrushHueJitter", 0, iniPath);
     brushSatJitter = GetPrivateProfileIntA("Features", "BrushSatJitter", 0, iniPath);
     brushBrightJitter = GetPrivateProfileIntA("Features", "BrushBrightJitter", 0, iniPath);
+    brushExperimental = GetPrivateProfileIntA("Features", "BrushExperimental", 0, iniPath) != 0;
+    brushEchoDelay = GetPrivateProfileIntA("Features", "BrushEchoDelay", 0, iniPath);
+    brushEchoFeedback = GetPrivateProfileIntA("Features", "BrushEchoFeedback", 40, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -1039,6 +1204,8 @@ void LoadBrushSettings() {
     brushHueJitter = ClampInt(brushHueJitter, 0, 100);
     brushSatJitter = ClampInt(brushSatJitter, 0, 100);
     brushBrightJitter = ClampInt(brushBrightJitter, 0, 100);
+    brushEchoDelay = ClampInt(brushEchoDelay, 0, 100);
+    brushEchoFeedback = ClampInt(brushEchoFeedback, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -1088,6 +1255,11 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushSatJitter", buf, iniPath);
     sprintf_s(buf, "%d", brushBrightJitter);
     WritePrivateProfileStringA("Features", "BrushBrightJitter", buf, iniPath);
+    WritePrivateProfileStringA("Features", "BrushExperimental", brushExperimental ? "1" : "0", iniPath);
+    sprintf_s(buf, "%d", brushEchoDelay);
+    WritePrivateProfileStringA("Features", "BrushEchoDelay", buf, iniPath);
+    sprintf_s(buf, "%d", brushEchoFeedback);
+    WritePrivateProfileStringA("Features", "BrushEchoFeedback", buf, iniPath);
     sprintf_s(buf, "%d", GetBrushSpacingPercent());
     WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);

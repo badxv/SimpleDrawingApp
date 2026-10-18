@@ -269,7 +269,12 @@ static void ViewportOnCanvasUp(HWND hwnd) {
     if (isDrawing) {
         isDrawing = false;
         lastPenPressure = 1.0f;
-        CommitStrokeLayer();
+        if (BrushTemporalPending()) {
+            strokeAwaitingEcho = true;
+        } else {
+            strokeAwaitingEcho = false;
+            CommitStrokeLayer();
+        }
         if (GetCapture() == hwnd) {
             ReleaseCapture();
         }
@@ -404,7 +409,12 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         if (isDrawing) {
             isDrawing = false;
             lastPenPressure = 1.0f;
-            CommitStrokeLayer();
+            if (BrushTemporalPending()) {
+                strokeAwaitingEcho = true;
+            } else {
+                strokeAwaitingEcho = false;
+                CommitStrokeLayer();
+            }
             InvalidateCanvas();
         }
         break;
