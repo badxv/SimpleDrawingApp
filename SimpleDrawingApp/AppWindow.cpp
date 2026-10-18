@@ -15,7 +15,9 @@
 #include "UiControls.h"
 #include "UiPaletteFloat.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "UiToolbar.h"
+#include "BrushEngine.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "AtelierRaii.h"
@@ -155,6 +157,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         RequestChromeRebuild(hwnd, 1);
         SetTimer(hwnd, IDT_UI_IDLE, 100, NULL); // ~10fps overlay only
         SetTimer(hwnd, IDT_AUTOSAVE, kAutosaveIntervalMs, NULL);
+        SetTimer(hwnd, IDT_TEMPORAL, 33, NULL); // ~30fps deferred stamp queue
         if (OfferAutosaveRecovery(hwnd)) {
             break;
         }
@@ -193,6 +196,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         else if (wParam == IDT_AUTOSAVE) {
             AutosaveIfNeeded(hwnd);
+        }
+        else if (wParam == IDT_TEMPORAL) {
+            if (ProcessBrushTemporalQueue()) {
+                InvalidateCanvas();
+            }
+            if (strokeAwaitingEcho && !isDrawing && !BrushTemporalPending()) {
+                strokeAwaitingEcho = false;
+                CommitStrokeLayer();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
         }
         else if (wParam == IDT_CHROME_REBUILD) {
             KillTimer(hwnd, IDT_CHROME_REBUILD);
@@ -445,6 +460,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
         if (wParam == VK_ESCAPE) {
+            if (hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout)) {
+                CloseBrushFlyout();
+                break;
+            }
+            if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
+                CloseBrushFlyout();
+                break;
+            }
             if (hwndShapeFlyout && IsWindowVisible(hwndShapeFlyout)) {
                 CloseShapeFlyout();
                 break;
@@ -521,6 +544,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         KillTimer(hwnd, IDT_UI_ANIM);
         KillTimer(hwnd, IDT_UI_IDLE);
         KillTimer(hwnd, IDT_AUTOSAVE);
+        KillTimer(hwnd, IDT_TEMPORAL);
         KillTimer(hwnd, IDT_CHROME_REBUILD);
         if (GetCapture() == hwnd || (hwndViewport && GetCapture() == hwndViewport)) {
             ReleaseCapture();
@@ -536,6 +560,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DestroyWindow(hwndShapeFlyout);
         }
         hwndShapeFlyout = nullptr;
+        if (hwndBrushSubFlyout && IsWindow(hwndBrushSubFlyout)) {
+            DestroyWindow(hwndBrushSubFlyout);
+        }
+        hwndBrushSubFlyout = nullptr;
+        if (hwndBrushFlyout && IsWindow(hwndBrushFlyout)) {
+            DestroyWindow(hwndBrushFlyout);
+        }
+        hwndBrushFlyout = nullptr;
         if (hwndPalette && IsWindow(hwndPalette)) {
             AtelierPalette_Save(hwndPalette);
         }
