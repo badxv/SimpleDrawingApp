@@ -107,12 +107,18 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     const int w = static_cast<int>(tip->GetWidth());
     const int h = static_cast<int>(tip->GetHeight());
 
+    int roundness = brushRoundness;
+    if (roundness < 1) roundness = 1;
+    if (roundness > 100) roundness = 100;
+    const REAL height = static_cast<REAL>(size) * (static_cast<REAL>(roundness) / 100.0f);
+    const REAL halfH = height * 0.5f;
+
     GraphicsState state = target->Save();
     target->TranslateTransform(static_cast<REAL>(cx), static_cast<REAL>(cy));
     if (angleDeg != 0.0f) {
         target->RotateTransform(angleDeg);
     }
-    const RectF dest(-half, -half, static_cast<REAL>(size), static_cast<REAL>(size));
+    const RectF dest(-half, -halfH, static_cast<REAL>(size), height);
 
     if (eraseTransparent) {
         ColorMatrix matrix = {
@@ -518,6 +524,10 @@ int GetBrushStampCount() {
     return brushStampCount;
 }
 
+int GetBrushRoundness() {
+    return brushRoundness;
+}
+
 void SetBrushFlow(int flow) {
     if (flow < 1) flow = 1;
     if (flow > 100) flow = 100;
@@ -590,6 +600,14 @@ void SetBrushStampCount(int count) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushRoundness(int percent) {
+    if (percent < 1) percent = 1;
+    if (percent > 100) percent = 100;
+    brushRoundness = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -628,6 +646,7 @@ void LoadBrushSettings() {
     brushOpacityJitter = GetPrivateProfileIntA("Features", "BrushOpacityJitter", 0, iniPath);
     brushSmoothing = GetPrivateProfileIntA("Features", "BrushSmoothing", 0, iniPath);
     brushStampCount = GetPrivateProfileIntA("Features", "BrushStampCount", 1, iniPath);
+    brushRoundness = GetPrivateProfileIntA("Features", "BrushRoundness", 100, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -647,6 +666,8 @@ void LoadBrushSettings() {
     if (brushSmoothing > 100) brushSmoothing = 100;
     if (brushStampCount < 1) brushStampCount = 1;
     if (brushStampCount > 8) brushStampCount = 8;
+    if (brushRoundness < 1) brushRoundness = 1;
+    if (brushRoundness > 100) brushRoundness = 100;
 }
 
 void SaveBrushSettings() {
@@ -674,6 +695,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushSmoothing", buf, iniPath);
     sprintf_s(buf, "%d", brushStampCount);
     WritePrivateProfileStringA("Features", "BrushStampCount", buf, iniPath);
+    sprintf_s(buf, "%d", brushRoundness);
+    WritePrivateProfileStringA("Features", "BrushRoundness", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

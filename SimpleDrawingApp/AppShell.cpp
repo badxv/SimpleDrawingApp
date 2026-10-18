@@ -44,17 +44,18 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[160] = "";
+    char extras[192] = "";
     if (currentTool == DrawTool::Pen) {
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d  P:%d%%",
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d Rd:%d%%  P:%d%%",
                 GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
                 brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount,
-                static_cast<int>(lastPenPressure * 100.0f + 0.5f));
+                brushRoundness, static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d",
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% T:%ddeg Z:%d%% O:%d%% M:%d%% C:%d Rd:%d%%",
                 GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
-                brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount);
+                brushTipAngle, brushSizeJitter, brushOpacityJitter, brushSmoothing, brushStampCount,
+                brushRoundness);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
@@ -130,7 +131,7 @@ void UpdateStatusBar(HWND hwnd) {
 
     const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
 
-    char part0[160];
+    char part0[256];
     char part1[96];
     char part2[80];
     BuildStatusTip(part0, sizeof(part0));
