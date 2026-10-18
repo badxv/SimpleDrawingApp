@@ -6,6 +6,7 @@
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "LayerStack.h"
 #include <commctrl.h>
 #include <cstdio>
@@ -46,10 +47,12 @@ void BuildStatusTip(char* out, size_t outChars) {
     char extras[64] = "";
     if (currentTool == DrawTool::Pen) {
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%  P:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%%  P:%d%%", GetActiveBrushName(), brushFlow,
+                brushHardness, brushScatter, brushAngleJitter,
                 static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%", GetActiveBrushName(), brushFlow, brushHardness);
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
+                brushScatter, brushAngleJitter);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
@@ -88,6 +91,10 @@ void ApplyPenWidth(HWND hwnd, int width) {
     UpdateStatusBar(hwnd);
     SaveFeatureFlags();
     SyncFeatureFlagMenuItems();
+    if (IsActiveBrushCustom()) {
+        PersistActiveBrushDefaultSize(penWidth);
+    }
+    SyncBrushFlyoutChecks();
 }
 
 void UpdateOpacityDisplay() {
@@ -176,6 +183,9 @@ void SetActiveTool(DrawTool tool) {
         if (tool != DrawTool::Shape) {
             CloseShapeFlyout();
         }
+        if (tool != DrawTool::Pen) {
+            CloseBrushFlyout();
+        }
     }
     for (int i = 0; i < kToolButtonCount; ++i) {
         if (!hwndToolButtons[i]) continue;
@@ -185,6 +195,7 @@ void SetActiveTool(DrawTool tool) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
     SyncShapeFlyoutChecks();
+    SyncBrushFlyoutChecks();
     if (changed) {
         EventPayload payload{};
         payload.type = AtelierEvent::ActiveToolChanged;
