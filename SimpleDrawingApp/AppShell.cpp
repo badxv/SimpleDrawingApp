@@ -79,6 +79,9 @@ void BuildStatusTip(char* out, size_t outChars) {
         AppendPct(extras, sizeof(extras), "Fy", brushFlipY, 0);
         AppendPct(extras, sizeof(extras), "Fj", brushFlowJitter, 0);
         AppendPct(extras, sizeof(extras), "Cj", brushColorJitter, 0);
+        AppendPct(extras, sizeof(extras), "Hj", brushHueJitter, 0);
+        AppendPct(extras, sizeof(extras), "Sj", brushSatJitter, 0);
+        AppendPct(extras, sizeof(extras), "Bj", brushBrightJitter, 0);
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);
         AppendPct(extras, sizeof(extras), "We", brushWetEdges, 0);

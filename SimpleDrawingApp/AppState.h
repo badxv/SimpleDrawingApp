@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[20];
+extern HWND hwndBrushRowButtons[23];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -150,6 +150,9 @@ extern int brushFlipX;           // 0..100 — chance to mirror tip horizontally
 extern int brushFlipY;           // 0..100 — chance to mirror tip vertically
 extern int brushFlowJitter;      // 0..100 — stamp flow/alpha jitter
 extern int brushColorJitter;     // 0..100 — blend toward backColor per stamp
+extern int brushHueJitter;       // 0..100 — hue shift range per stamp
+extern int brushSatJitter;       // 0..100 — saturation jitter per stamp
+extern int brushBrightJitter;    // 0..100 — brightness jitter per stamp
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;

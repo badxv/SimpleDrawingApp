@@ -101,6 +101,81 @@ Bitmap* TipWithWetEdges(Bitmap* tip) {
     return gWetTipCache;
 }
 
+void RgbToHsvLocal(COLORREF c, float& h, float& s, float& v) {
+    const float r = GetRValue(c) / 255.0f;
+    const float g = GetGValue(c) / 255.0f;
+    const float b = GetBValue(c) / 255.0f;
+    const float maxc = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
+    const float minc = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
+    const float d = maxc - minc;
+    v = maxc;
+    s = (maxc <= 0.0001f) ? 0.0f : (d / maxc);
+    if (d <= 0.0001f) { h = 0.0f; return; }
+    if (maxc == r) h = 60.0f * fmodf((g - b) / d, 6.0f);
+    else if (maxc == g) h = 60.0f * ((b - r) / d + 2.0f);
+    else h = 60.0f * ((r - g) / d + 4.0f);
+    if (h < 0.0f) h += 360.0f;
+}
+
+COLORREF HsvToRgbLocal(float h, float s, float v) {
+    if (s < 0.0f) s = 0.0f;
+    if (s > 1.0f) s = 1.0f;
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    while (h < 0.0f) h += 360.0f;
+    while (h >= 360.0f) h -= 360.0f;
+    const float c = v * s;
+    const float hp = h / 60.0f;
+    const float x = c * (1.0f - fabsf(fmodf(hp, 2.0f) - 1.0f));
+    float r = 0, g = 0, b = 0;
+    if (hp < 1.0f) { r = c; g = x; }
+    else if (hp < 2.0f) { r = x; g = c; }
+    else if (hp < 3.0f) { g = c; b = x; }
+    else if (hp < 4.0f) { g = x; b = c; }
+    else if (hp < 5.0f) { r = x; b = c; }
+    else { r = c; b = x; }
+    const float m = v - c;
+    return RGB(
+        ClampInt(static_cast<int>((r + m) * 255.0f + 0.5f), 0, 255),
+        ClampInt(static_cast<int>((g + m) * 255.0f + 0.5f), 0, 255),
+        ClampInt(static_cast<int>((b + m) * 255.0f + 0.5f), 0, 255));
+}
+
+COLORREF ApplyHsbJitter(COLORREF color, int x, int y, int salt) {
+    if (brushHueJitter < 1 && brushSatJitter < 1 && brushBrightJitter < 1) return color;
+    float h = 0, s = 0, v = 0;
+    RgbToHsvLocal(color, h, s, v);
+    if (brushHueJitter > 0) {
+        const unsigned n = (static_cast<unsigned>(x) * 2246822519u)
+            ^ (static_cast<unsigned>(y) * 3266489917u)
+            ^ (static_cast<unsigned>(salt) * 0x85ebca6bu);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        // Full slider = ±180° hue swing.
+        h += u * 180.0f * (static_cast<float>(ClampInt(brushHueJitter, 0, 100)) / 100.0f);
+    }
+    if (brushSatJitter > 0) {
+        const unsigned n = (static_cast<unsigned>(x) * 374761393u)
+            ^ (static_cast<unsigned>(y) * 668265263u)
+            ^ (static_cast<unsigned>(salt) * 0xc2b2ae35u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        s *= (1.0f + u * (static_cast<float>(ClampInt(brushSatJitter, 0, 100)) / 100.0f));
+        if (s < 0.0f) s = 0.0f;
+        if (s > 1.0f) s = 1.0f;
+    }
+    if (brushBrightJitter > 0) {
+        const unsigned n = (static_cast<unsigned>(x) * 1597334677u)
+            ^ (static_cast<unsigned>(y) * 3812015801u)
+            ^ (static_cast<unsigned>(salt) * 0x27d4eb2du);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        v *= (1.0f + u * (static_cast<float>(ClampInt(brushBrightJitter, 0, 100)) / 100.0f));
+        if (v < 0.05f) v = 0.05f;
+        if (v > 1.0f) v = 1.0f;
+    }
+    // If source was near-gray, give hue jitter a usable saturation floor.
+    if (brushHueJitter > 0 && s < 0.15f) s = 0.55f;
+    return HsvToRgbLocal(h, s, v);
+}
+
 BrushPreset* ActivePresetMutable() {
     if (gActiveBrush < 0 || gActiveBrush >= static_cast<int>(gPresets.size())) return nullptr;
     return &gPresets[static_cast<size_t>(gActiveBrush)];
@@ -624,6 +699,9 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
                     static_cast<int>(ag + (bg - ag) * t + 0.5f),
                     static_cast<int>(ab + (bb - ab) * t + 0.5f));
             }
+            if (!eraseTransparent) {
+                stampColor = ApplyHsbJitter(stampColor, sx, sy, salt);
+            }
             DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, stampColor, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
         }
         return spacingW;
@@ -714,6 +792,18 @@ int GetBrushFlowJitter() {
 
 int GetBrushColorJitter() {
     return brushColorJitter;
+}
+
+int GetBrushHueJitter() {
+    return brushHueJitter;
+}
+
+int GetBrushSatJitter() {
+    return brushSatJitter;
+}
+
+int GetBrushBrightJitter() {
+    return brushBrightJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -853,6 +943,24 @@ void SetBrushColorJitter(int jitter) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushHueJitter(int jitter) {
+    brushHueJitter = ClampInt(jitter, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushSatJitter(int jitter) {
+    brushSatJitter = ClampInt(jitter, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushBrightJitter(int jitter) {
+    brushBrightJitter = ClampInt(jitter, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -899,6 +1007,9 @@ void LoadBrushSettings() {
     brushFlipY = GetPrivateProfileIntA("Features", "BrushFlipY", 0, iniPath);
     brushFlowJitter = GetPrivateProfileIntA("Features", "BrushFlowJitter", 0, iniPath);
     brushColorJitter = GetPrivateProfileIntA("Features", "BrushColorJitter", 0, iniPath);
+    brushHueJitter = GetPrivateProfileIntA("Features", "BrushHueJitter", 0, iniPath);
+    brushSatJitter = GetPrivateProfileIntA("Features", "BrushSatJitter", 0, iniPath);
+    brushBrightJitter = GetPrivateProfileIntA("Features", "BrushBrightJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -925,6 +1036,9 @@ void LoadBrushSettings() {
     brushFlipY = ClampInt(brushFlipY, 0, 100);
     brushFlowJitter = ClampInt(brushFlowJitter, 0, 100);
     brushColorJitter = ClampInt(brushColorJitter, 0, 100);
+    brushHueJitter = ClampInt(brushHueJitter, 0, 100);
+    brushSatJitter = ClampInt(brushSatJitter, 0, 100);
+    brushBrightJitter = ClampInt(brushBrightJitter, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -968,6 +1082,12 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlowJitter", buf, iniPath);
     sprintf_s(buf, "%d", brushColorJitter);
     WritePrivateProfileStringA("Features", "BrushColorJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushHueJitter);
+    WritePrivateProfileStringA("Features", "BrushHueJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushSatJitter);
+    WritePrivateProfileStringA("Features", "BrushSatJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushBrightJitter);
+    WritePrivateProfileStringA("Features", "BrushBrightJitter", buf, iniPath);
     sprintf_s(buf, "%d", GetBrushSpacingPercent());
     WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);

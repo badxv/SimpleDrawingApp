@@ -37,7 +37,7 @@ constexpr int kActionGap = 8;
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
-    FlowJitter, ColorJitter
+    FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter
 };
 
 struct BrushRowDef {
@@ -67,11 +67,14 @@ constexpr BrushRowDef kBrushRows[] = {
     { IDC_BRUSH_ROW_FLIPY, BrushSubPanel::FlipY, "Flip Y — chance to mirror tip vertically" },
     { IDC_BRUSH_ROW_FLOWJITTER, BrushSubPanel::FlowJitter, "Flow jitter — random stamp flow/alpha along stroke" },
     { IDC_BRUSH_ROW_COLORJITTER, BrushSubPanel::ColorJitter, "Color jitter — blend toward background color per stamp" },
+    { IDC_BRUSH_ROW_HUEJITTER, BrushSubPanel::HueJitter, "Hue jitter — random hue shift per stamp" },
+    { IDC_BRUSH_ROW_SATJITTER, BrushSubPanel::SatJitter, "Sat jitter — random saturation per stamp" },
+    { IDC_BRUSH_ROW_BRIJITTER, BrushSubPanel::BrightJitter, "Bright jitter — random brightness per stamp" },
     { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure — tablet dynamics" },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 20, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 23, "hwndBrushRowButtons size must match kBrushRows");
 
 constexpr int kFlyoutH = kRowTop + kBrushRowCount * kRowStep + kActionGap + kActionH + 12;
 
@@ -309,20 +312,74 @@ void PaintStrokePreview(HDC hdc, const RECT& rc) {
                 if (alphaScale < 0.05f) alphaScale = 0.05f;
                 if (alphaScale > 1.0f) alphaScale = 1.0f;
             }
-            REAL cr = 0.18f, cg = 0.14f, cb = 0.10f;
+            REAL cr = static_cast<float>(GetRValue(penColor)) / 255.0f;
+            REAL cg = static_cast<float>(GetGValue(penColor)) / 255.0f;
+            REAL cb = static_cast<float>(GetBValue(penColor)) / 255.0f;
             if (brushColorJitter > 0) {
                 const unsigned n = (static_cast<unsigned>(salt) * 374761393u) ^ 0x9e3779b9u;
                 const float u = static_cast<float>(n & 255u) / 255.0f;
                 const float mix = u * (static_cast<float>(brushColorJitter) / 100.0f);
-                const float fr = static_cast<float>(GetRValue(penColor)) / 255.0f;
-                const float fg = static_cast<float>(GetGValue(penColor)) / 255.0f;
-                const float fb = static_cast<float>(GetBValue(penColor)) / 255.0f;
                 const float br = static_cast<float>(GetRValue(backColor)) / 255.0f;
                 const float bg = static_cast<float>(GetGValue(backColor)) / 255.0f;
                 const float bb = static_cast<float>(GetBValue(backColor)) / 255.0f;
-                cr = fr + (br - fr) * mix;
-                cg = fg + (bg - fg) * mix;
-                cb = fb + (bb - fb) * mix;
+                cr = cr + (br - cr) * mix;
+                cg = cg + (bg - cg) * mix;
+                cb = cb + (bb - cb) * mix;
+            }
+            if (brushHueJitter > 0 || brushSatJitter > 0 || brushBrightJitter > 0) {
+                COLORREF rgb = RGB(
+                    ClampInt(static_cast<int>(cr * 255.0f + 0.5f), 0, 255),
+                    ClampInt(static_cast<int>(cg * 255.0f + 0.5f), 0, 255),
+                    ClampInt(static_cast<int>(cb * 255.0f + 0.5f), 0, 255));
+                const float r0 = GetRValue(rgb) / 255.0f;
+                const float g0 = GetGValue(rgb) / 255.0f;
+                const float b0 = GetBValue(rgb) / 255.0f;
+                const float maxc = (r0 > g0) ? ((r0 > b0) ? r0 : b0) : ((g0 > b0) ? g0 : b0);
+                const float minc = (r0 < g0) ? ((r0 < b0) ? r0 : b0) : ((g0 < b0) ? g0 : b0);
+                const float d = maxc - minc;
+                float h = 0.0f, s = (maxc <= 0.0001f) ? 0.0f : (d / maxc), v = maxc;
+                if (d > 0.0001f) {
+                    if (maxc == r0) h = 60.0f * fmodf((g0 - b0) / d, 6.0f);
+                    else if (maxc == g0) h = 60.0f * ((b0 - r0) / d + 2.0f);
+                    else h = 60.0f * ((r0 - g0) / d + 4.0f);
+                    if (h < 0.0f) h += 360.0f;
+                }
+                if (brushHueJitter > 0) {
+                    const unsigned n = (static_cast<unsigned>(salt) * 0x85ebca6bu) ^ 0x27d4eb2du;
+                    const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                    h += u * 180.0f * (static_cast<float>(brushHueJitter) / 100.0f);
+                }
+                if (brushSatJitter > 0) {
+                    const unsigned n = (static_cast<unsigned>(salt) * 0xc2b2ae35u) ^ 0x9e3779b9u;
+                    const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                    s *= (1.0f + u * (static_cast<float>(brushSatJitter) / 100.0f));
+                    if (s < 0.0f) s = 0.0f;
+                    if (s > 1.0f) s = 1.0f;
+                }
+                if (brushBrightJitter > 0) {
+                    const unsigned n = (static_cast<unsigned>(salt) * 0x27d4eb2du) ^ 0x85ebca6bu;
+                    const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                    v *= (1.0f + u * (static_cast<float>(brushBrightJitter) / 100.0f));
+                    if (v < 0.05f) v = 0.05f;
+                    if (v > 1.0f) v = 1.0f;
+                }
+                if (brushHueJitter > 0 && s < 0.15f) s = 0.55f;
+                while (h < 0.0f) h += 360.0f;
+                while (h >= 360.0f) h -= 360.0f;
+                const float c = v * s;
+                const float hp = h / 60.0f;
+                const float xh = c * (1.0f - fabsf(fmodf(hp, 2.0f) - 1.0f));
+                float rr = 0, gg = 0, bb = 0;
+                if (hp < 1.0f) { rr = c; gg = xh; }
+                else if (hp < 2.0f) { rr = xh; gg = c; }
+                else if (hp < 3.0f) { gg = c; bb = xh; }
+                else if (hp < 4.0f) { gg = xh; bb = c; }
+                else if (hp < 5.0f) { rr = xh; bb = c; }
+                else { rr = c; bb = xh; }
+                const float m = v - c;
+                cr = rr + m;
+                cg = gg + m;
+                cb = bb + m;
             }
             ColorMatrix matrix = {
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -420,7 +477,10 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::FlipX
         || gBrushSubPanel == BrushSubPanel::FlipY
         || gBrushSubPanel == BrushSubPanel::FlowJitter
-        || gBrushSubPanel == BrushSubPanel::ColorJitter);
+        || gBrushSubPanel == BrushSubPanel::ColorJitter
+        || gBrushSubPanel == BrushSubPanel::HueJitter
+        || gBrushSubPanel == BrushSubPanel::SatJitter
+        || gBrushSubPanel == BrushSubPanel::BrightJitter);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -450,7 +510,10 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::FlipX
                 || gBrushSubPanel == BrushSubPanel::FlipY
                 || gBrushSubPanel == BrushSubPanel::FlowJitter
-                || gBrushSubPanel == BrushSubPanel::ColorJitter) {
+                || gBrushSubPanel == BrushSubPanel::ColorJitter
+                || gBrushSubPanel == BrushSubPanel::HueJitter
+                || gBrushSubPanel == BrushSubPanel::SatJitter
+                || gBrushSubPanel == BrushSubPanel::BrightJitter) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -464,6 +527,9 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::FlipY) pos = GetBrushFlipY();
                 else if (gBrushSubPanel == BrushSubPanel::FlowJitter) pos = GetBrushFlowJitter();
                 else if (gBrushSubPanel == BrushSubPanel::ColorJitter) pos = GetBrushColorJitter();
+                else if (gBrushSubPanel == BrushSubPanel::HueJitter) pos = GetBrushHueJitter();
+                else if (gBrushSubPanel == BrushSubPanel::SatJitter) pos = GetBrushSatJitter();
+                else if (gBrushSubPanel == BrushSubPanel::BrightJitter) pos = GetBrushBrightJitter();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -548,7 +614,8 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::MinDiameter || gBrushSubPanel == BrushSubPanel::WetEdges
         || gBrushSubPanel == BrushSubPanel::RoundnessJitter || gBrushSubPanel == BrushSubPanel::FlipX
         || gBrushSubPanel == BrushSubPanel::FlipY || gBrushSubPanel == BrushSubPanel::FlowJitter
-        || gBrushSubPanel == BrushSubPanel::ColorJitter) {
+        || gBrushSubPanel == BrushSubPanel::ColorJitter || gBrushSubPanel == BrushSubPanel::HueJitter
+        || gBrushSubPanel == BrushSubPanel::SatJitter || gBrushSubPanel == BrushSubPanel::BrightJitter) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -617,6 +684,12 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushFlowJitter(pos);
             } else if (gBrushSubPanel == BrushSubPanel::ColorJitter) {
                 SetBrushColorJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::HueJitter) {
+                SetBrushHueJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::SatJitter) {
+                SetBrushSatJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::BrightJitter) {
+                SetBrushBrightJitter(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -931,6 +1004,9 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     case BrushSubPanel::FlipY: sprintf_s(out, outChars, "Flip Y%s%d%%", kSep, brushFlipY); break;
     case BrushSubPanel::FlowJitter: sprintf_s(out, outChars, "Fl Jitter%s%d%%", kSep, brushFlowJitter); break;
     case BrushSubPanel::ColorJitter: sprintf_s(out, outChars, "Color Jit%s%d%%", kSep, brushColorJitter); break;
+    case BrushSubPanel::HueJitter: sprintf_s(out, outChars, "Hue Jit%s%d%%", kSep, brushHueJitter); break;
+    case BrushSubPanel::SatJitter: sprintf_s(out, outChars, "Sat Jit%s%d%%", kSep, brushSatJitter); break;
+    case BrushSubPanel::BrightJitter: sprintf_s(out, outChars, "Bri Jit%s%d%%", kSep, brushBrightJitter); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;
