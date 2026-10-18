@@ -58,6 +58,8 @@ int GetBrushRoundness();
 int GetBrushMinDiameter();
 int GetBrushWetEdges();
 int GetBrushRoundnessJitter();
+int GetBrushFlipX();
+int GetBrushFlipY();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -71,6 +73,8 @@ void SetBrushRoundness(int percent); // 1..100
 void SetBrushMinDiameter(int percent); // 0..100
 void SetBrushWetEdges(int percent); // 0..100
 void SetBrushRoundnessJitter(int jitter); // 0..100
+void SetBrushFlipX(int percent); // 0..100 chance
+void SetBrushFlipY(int percent); // 0..100 chance
 
 // Tip used for painting/preview (applies wet-edges remap when enabled). Do not free.
 Gdiplus::Bitmap* BrushTipForDraw(Gdiplus::Bitmap* tip);

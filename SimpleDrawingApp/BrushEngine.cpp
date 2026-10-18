@@ -173,7 +173,8 @@ void DrawRoundLine(Graphics* target, int x0, int y0, int x1, int y1, COLORREF co
 }
 
 void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent,
-    float pressure = 1.0f, float angleDeg = 0.0f, int roundnessOverride = -1) {
+    float pressure = 1.0f, float angleDeg = 0.0f, int roundnessOverride = -1,
+    bool flipX = false, bool flipY = false) {
     if (!target || !tip || size < 1) return;
 
     tip = TipWithWetEdges(tip);
@@ -189,12 +190,21 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     const REAL height = static_cast<REAL>(size) * (static_cast<REAL>(roundness) / 100.0f);
     const REAL halfH = height * 0.5f;
 
+    // Mirror oriented elliptical tips by reflecting angle; also mirror tip pixels via dest.
+    if (flipX) angleDeg = -angleDeg;
+    if (flipY) angleDeg = 180.0f - angleDeg;
+
     GraphicsState state = target->Save();
     target->TranslateTransform(static_cast<REAL>(cx), static_cast<REAL>(cy));
     if (angleDeg != 0.0f) {
         target->RotateTransform(angleDeg);
     }
-    const RectF dest(-half, -halfH, static_cast<REAL>(size), height);
+    // Negative dest width/height mirrors tip texture (Charcoal grain, etc.).
+    const REAL destX = flipX ? half : -half;
+    const REAL destY = flipY ? halfH : -halfH;
+    const REAL destW = flipX ? -static_cast<REAL>(size) : static_cast<REAL>(size);
+    const REAL destH = flipY ? -height : height;
+    const RectF dest(destX, destY, destW, destH);
 
     if (eraseTransparent) {
         ColorMatrix matrix = {
@@ -544,6 +554,15 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         return r;
     };
 
+    auto FlipChance = [](int x, int y, int salt, int chance, unsigned mix) -> bool {
+        if (chance < 1) return false;
+        if (chance > 100) chance = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 1597334677u)
+            ^ (static_cast<unsigned>(y) * 3812015801u)
+            ^ (static_cast<unsigned>(salt) * mix);
+        return static_cast<int>(n % 100u) < chance;
+    };
+
     const float strokeAngleDeg = (segLen >= 0.001f)
         ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
         : 0.0f;
@@ -576,7 +595,9 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
             }
             const float ang = AngleJitter(sx, sy, salt, baseTipAngleDeg);
             const int stampRd = RoundnessJitter(sx, sy, salt, brushRoundness);
-            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang, stampRd);
+            const bool fx = FlipChance(sx, sy, salt, brushFlipX, 0x85ebca6bu);
+            const bool fy = FlipChance(sx, sy, salt, brushFlipY, 0xc2b2ae35u);
+            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
         }
         return spacingW;
     };
@@ -650,6 +671,14 @@ int GetBrushWetEdges() {
 
 int GetBrushRoundnessJitter() {
     return brushRoundnessJitter;
+}
+
+int GetBrushFlipX() {
+    return brushFlipX;
+}
+
+int GetBrushFlipY() {
+    return brushFlipY;
 }
 
 void SetBrushFlow(int flow) {
@@ -757,6 +786,22 @@ void SetBrushRoundnessJitter(int jitter) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushFlipX(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    brushFlipX = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushFlipY(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    brushFlipY = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -799,6 +844,8 @@ void LoadBrushSettings() {
     brushMinDiameter = GetPrivateProfileIntA("Features", "BrushMinDiameter", 0, iniPath);
     brushWetEdges = GetPrivateProfileIntA("Features", "BrushWetEdges", 0, iniPath);
     brushRoundnessJitter = GetPrivateProfileIntA("Features", "BrushRoundnessJitter", 0, iniPath);
+    brushFlipX = GetPrivateProfileIntA("Features", "BrushFlipX", 0, iniPath);
+    brushFlipY = GetPrivateProfileIntA("Features", "BrushFlipY", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -834,6 +881,10 @@ void LoadBrushSettings() {
     if (brushWetEdges > 100) brushWetEdges = 100;
     if (brushRoundnessJitter < 0) brushRoundnessJitter = 0;
     if (brushRoundnessJitter > 100) brushRoundnessJitter = 100;
+    if (brushFlipX < 0) brushFlipX = 0;
+    if (brushFlipX > 100) brushFlipX = 100;
+    if (brushFlipY < 0) brushFlipY = 0;
+    if (brushFlipY > 100) brushFlipY = 100;
 }
 
 void SaveBrushSettings() {
@@ -869,6 +920,10 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushWetEdges", buf, iniPath);
     sprintf_s(buf, "%d", brushRoundnessJitter);
     WritePrivateProfileStringA("Features", "BrushRoundnessJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushFlipX);
+    WritePrivateProfileStringA("Features", "BrushFlipX", buf, iniPath);
+    sprintf_s(buf, "%d", brushFlipY);
+    WritePrivateProfileStringA("Features", "BrushFlipY", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

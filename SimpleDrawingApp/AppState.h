@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[16];
+extern HWND hwndBrushRowButtons[18];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -146,6 +146,8 @@ extern int brushRoundness;     // 1..100 — tip height/width (100 = round)
 extern int brushMinDiameter;   // 0..100 — floor for size jitter (% of tip)
 extern int brushWetEdges;      // 0..100 — watercolor edge buildup
 extern int brushRoundnessJitter; // 0..100 — tip roundness jitter per stamp
+extern int brushFlipX;           // 0..100 — chance to mirror tip horizontally
+extern int brushFlipY;           // 0..100 — chance to mirror tip vertically
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;
