@@ -5,6 +5,7 @@
 #include "AppMetrics.h"
 #include "AppSelection.h"
 #include "AppFeatureFlags.h"
+#include "BrushEngine.h"
 #include "PenInput.h"
 #include "SimpleDrawingApp.h"
 #include "DrawingTools.h"
@@ -192,8 +193,8 @@ static void ViewportOnCanvasDown(HWND hwnd, HWND parent, int localX, int localY,
     lastPoint.y = docY;
     shapeStart.x = docX;
     shapeStart.y = docY;
-
     if (IsFreehandTool(currentTool)) {
+        InitBrushStrokeSmoothing(docX, docY);
         DrawStrokeOnto(strokeGraphics.get(), docX, docY, docX, docY, pressure, pressure);
     } else if (IsShapeTool(currentTool)) {
         RedrawShapePreview(docX, docY, shiftDown);
@@ -230,10 +231,15 @@ static void ViewportOnCanvasMove(HWND hwnd, int localX, int localY, float pressu
     lastPenPressure = pressure;
 
     if (IsFreehandTool(currentTool)) {
-        DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, docX, docY, pressureStart, pressure);
-        lastPoint.x = docX;
-        lastPoint.y = docY;
-        InvalidateCanvas();
+        int sx = docX;
+        int sy = docY;
+        SmoothBrushStrokePoint(docX, docY, sx, sy);
+        if (sx != lastPoint.x || sy != lastPoint.y) {
+            DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, sx, sy, pressureStart, pressure);
+            lastPoint.x = sx;
+            lastPoint.y = sy;
+            InvalidateCanvas();
+        }
     } else if (IsShapeTool(currentTool)) {
         RedrawShapePreview(docX, docY, shiftDown);
         InvalidateCanvas();
