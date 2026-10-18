@@ -66,6 +66,15 @@ extern HWND hwndSwapColors;
 extern HWND hwndShapeFlyout;
 extern HWND hwndShapeButtons[6];
 extern HWND hwndShapeModeButtons[3];
+extern HWND hwndBrushFlyout;
+extern HWND hwndBrushSubFlyout;
+extern HWND hwndBrushPresetButtons[9];
+extern HWND hwndBrushRowButtons[18];
+extern HWND hwndBrushActionButtons[3];
+extern HWND hwndBrushSubButtons[3];
+extern HWND hwndBrushPageButtons[2];
+extern HWND hwndBrushSubSlider;
+extern HWND hwndBrushPreview;
 extern HWND hwndToggleRail;
 extern HWND hwndToggleLayers;
 extern HWND hwndPaletteFloat;
@@ -126,6 +135,19 @@ extern int penWidth;
 extern int penOpacity;
 extern int brushFlow;
 extern int brushHardness;
+extern int brushScatter; // 0..100 — stamp position jitter
+extern int brushAngleJitter; // 0..100 — stamp rotation jitter
+extern int brushTipAngle;    // 0..180 — fixed tip orientation offset (degrees)
+extern int brushSizeJitter;  // 0..100 — stamp diameter jitter
+extern int brushOpacityJitter; // 0..100 — stamp opacity jitter
+extern int brushSmoothing;     // 0..100 — freehand stroke stabilization
+extern int brushStampCount;    // 1..8 — stamps per spacing step
+extern int brushRoundness;     // 1..100 — tip height/width (100 = round)
+extern int brushMinDiameter;   // 0..100 — floor for size jitter (% of tip)
+extern int brushWetEdges;      // 0..100 — watercolor edge buildup
+extern int brushRoundnessJitter; // 0..100 — tip roundness jitter per stamp
+extern int brushFlipX;           // 0..100 — chance to mirror tip horizontally
+extern int brushFlipY;           // 0..100 — chance to mirror tip vertically
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;
