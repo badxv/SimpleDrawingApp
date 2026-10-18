@@ -44,15 +44,17 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[96] = "";
+    char extras[128] = "";
     if (currentTool == DrawTool::Pen) {
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% Z:%d%%  P:%d%%", GetActiveBrushName(),
-                brushFlow, brushHardness, brushScatter, brushAngleJitter, brushSizeJitter,
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% Z:%d%% O:%d%%  P:%d%%",
+                GetActiveBrushName(), brushFlow, brushHardness, brushScatter, brushAngleJitter,
+                brushSizeJitter, brushOpacityJitter,
                 static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% Z:%d%%", GetActiveBrushName(), brushFlow,
-                brushHardness, brushScatter, brushAngleJitter, brushSizeJitter);
+            sprintf_s(extras, "  %s  F:%d%% H:%d%% S:%d%% A:%d%% Z:%d%% O:%d%%", GetActiveBrushName(),
+                brushFlow, brushHardness, brushScatter, brushAngleJitter, brushSizeJitter,
+                brushOpacityJitter);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {

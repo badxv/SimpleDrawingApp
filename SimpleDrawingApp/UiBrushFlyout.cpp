@@ -21,7 +21,7 @@ using namespace Gdiplus;
 namespace {
 
 constexpr int kFlyoutW = 210;
-constexpr int kFlyoutH = 482;
+constexpr int kFlyoutH = 504;
 constexpr int kSubFlyoutW = 168;
 constexpr int kSubFlyoutH = 108;
 constexpr int kSubFlyoutSliderH = 88;
@@ -30,7 +30,9 @@ constexpr int kPresetCols = 3;
 constexpr int kMaxFlyoutPresets = 9;
 constexpr int kPreviewH = 44;
 
-enum class BrushSubPanel { None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, SizeJitter };
+enum class BrushSubPanel {
+    None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, SizeJitter, OpacityJitter
+};
 int gBrushCtxPreset = -1;
 
 BrushSubPanel gBrushSubPanel = BrushSubPanel::None;
@@ -173,8 +175,8 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, rc.left + 10, rc.top + 252, NULL);
     LineTo(hdc, rc.right - 10, rc.top + 252);
-    MoveToEx(hdc, rc.left + 10, rc.top + 446, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 446);
+    MoveToEx(hdc, rc.left + 10, rc.top + 468, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 468);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 }
@@ -191,17 +193,8 @@ void PaintStrokePreview(HDC hdc, const RECT& rc) {
 
     const int maxStamp = (rc.bottom - rc.top) - 8;
     const int stampSize = MaxInt(4, (penWidth < maxStamp) ? penWidth : maxStamp);
-    const REAL alphaScale = static_cast<REAL>(brushFlow) / 100.0f
+    const REAL baseAlpha = static_cast<REAL>(brushFlow) / 100.0f
         * (0.45f + 0.55f * static_cast<REAL>(brushHardness) / 100.0f);
-    ColorMatrix matrix = {
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, alphaScale, 0.0f,
-        0.18f, 0.14f, 0.10f, 0.0f, 1.0f
-    };
-    ImageAttributes attrs;
-    attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
 
     const int tw = static_cast<int>(preset->tip->GetWidth());
     const int th = static_cast<int>(preset->tip->GetHeight());
@@ -236,6 +229,23 @@ void PaintStrokePreview(HDC hdc, const RECT& rc) {
             stampDraw = static_cast<int>(static_cast<float>(stampSize) * factor + 0.5f);
             if (stampDraw < 1) stampDraw = 1;
         }
+        REAL alphaScale = baseAlpha;
+        if (brushOpacityJitter > 0) {
+            const unsigned n = (static_cast<unsigned>(stampIndex) * 1103515245u) ^ 0xc2b2ae35u;
+            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+            alphaScale = baseAlpha * (1.0f + u * (static_cast<float>(brushOpacityJitter) / 100.0f));
+            if (alphaScale < 0.05f) alphaScale = 0.05f;
+            if (alphaScale > 1.0f) alphaScale = 1.0f;
+        }
+        ColorMatrix matrix = {
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, alphaScale, 0.0f,
+            0.18f, 0.14f, 0.10f, 0.0f, 1.0f
+        };
+        ImageAttributes attrs;
+        attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
         const REAL half = static_cast<REAL>(stampDraw) * 0.5f;
         GraphicsState state = g.Save();
         g.TranslateTransform(sx, y);
@@ -283,7 +293,8 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::Spacing
         || gBrushSubPanel == BrushSubPanel::Scatter
         || gBrushSubPanel == BrushSubPanel::Angle
-        || gBrushSubPanel == BrushSubPanel::SizeJitter);
+        || gBrushSubPanel == BrushSubPanel::SizeJitter
+        || gBrushSubPanel == BrushSubPanel::OpacityJitter);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -295,11 +306,13 @@ void LayoutSubFlyoutOptions() {
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, GetBrushSpacingPercent());
             } else if (gBrushSubPanel == BrushSubPanel::Scatter
                 || gBrushSubPanel == BrushSubPanel::Angle
-                || gBrushSubPanel == BrushSubPanel::SizeJitter) {
+                || gBrushSubPanel == BrushSubPanel::SizeJitter
+                || gBrushSubPanel == BrushSubPanel::OpacityJitter) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
                 else if (gBrushSubPanel == BrushSubPanel::SizeJitter) pos = GetBrushSizeJitter();
+                else if (gBrushSubPanel == BrushSubPanel::OpacityJitter) pos = GetBrushOpacityJitter();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -378,7 +391,8 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
     else if (gBrushSubPanel == BrushSubPanel::Flow || gBrushSubPanel == BrushSubPanel::Hardness
         || gBrushSubPanel == BrushSubPanel::Size || gBrushSubPanel == BrushSubPanel::Spacing
         || gBrushSubPanel == BrushSubPanel::Scatter || gBrushSubPanel == BrushSubPanel::Angle
-        || gBrushSubPanel == BrushSubPanel::SizeJitter) {
+        || gBrushSubPanel == BrushSubPanel::SizeJitter
+        || gBrushSubPanel == BrushSubPanel::OpacityJitter) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -423,6 +437,8 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushAngleJitter(pos);
             } else if (gBrushSubPanel == BrushSubPanel::SizeJitter) {
                 SetBrushSizeJitter(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::OpacityJitter) {
+                SetBrushOpacityJitter(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -532,9 +548,15 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             OpenBrushSubFlyoutInternal(BrushSubPanel::SizeJitter, rr.top - 4);
             return 0;
         }
-        if (id == IDC_BRUSH_ROW_PRESSURE) {
+        if (id == IDC_BRUSH_ROW_OPJITTER) {
             RECT rr = {};
             GetWindowRect(hwndBrushRowButtons[7], &rr);
+            OpenBrushSubFlyoutInternal(BrushSubPanel::OpacityJitter, rr.top - 4);
+            return 0;
+        }
+        if (id == IDC_BRUSH_ROW_PRESSURE) {
+            RECT rr = {};
+            GetWindowRect(hwndBrushRowButtons[8], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Pressure, rr.top - 4);
             return 0;
         }
@@ -703,12 +725,12 @@ void EnsureBrushFlyout(HWND owner) {
         SetWindowLongPtrA(hwndBrushPreview, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(BrushPreviewProc));
     }
 
-    const int rowIds[8] = {
+    const int rowIds[9] = {
         IDC_BRUSH_ROW_SIZE, IDC_BRUSH_ROW_SPACING, IDC_BRUSH_ROW_FLOW,
         IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_SCATTER, IDC_BRUSH_ROW_ANGLE,
-        IDC_BRUSH_ROW_SIZEJITTER, IDC_BRUSH_ROW_PRESSURE
+        IDC_BRUSH_ROW_SIZEJITTER, IDC_BRUSH_ROW_OPJITTER, IDC_BRUSH_ROW_PRESSURE
     };
-    const char* rowTips[8] = {
+    const char* rowTips[9] = {
         "Size — brush diameter in pixels",
         "Spacing — distance between stamps",
         "Flow — paint opacity per stamp",
@@ -716,9 +738,10 @@ void EnsureBrushFlyout(HWND owner) {
         "Scatter — random stamp spread",
         "Angle — tip rotation jitter along stroke",
         "Size jitter — random stamp diameter along stroke",
+        "Opacity jitter — random stamp opacity along stroke",
         "Pen pressure — tablet dynamics"
     };
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 9; ++i) {
         hwndBrushRowButtons[i] = CreateWindowA("BUTTON", "",
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
             10, 264 + i * 22, kFlyoutW - 20, 20,
@@ -748,7 +771,7 @@ void EnsureBrushFlyout(HWND owner) {
     for (int i = 0; i < 3; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10 + i * (actionW + 4), 454, actionW, 22,
+            10 + i * (actionW + 4), 476, actionW, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)actionIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushActionButtons[i]);
         if (hwndTooltip) {
@@ -810,6 +833,7 @@ void SyncBrushFlyoutChecks() {
     char scatterLabel[48];
     char angleLabel[48];
     char sizeJitterLabel[48];
+    char opJitterLabel[48];
     char pressLabel[48];
     sprintf_s(sizeLabel, "Size  \xE2\x80\xBA  %d px", penWidth);
     sprintf_s(spacingLabel, "Spacing  \xE2\x80\xBA  %d%%", GetBrushSpacingPercent());
@@ -818,6 +842,7 @@ void SyncBrushFlyoutChecks() {
     sprintf_s(scatterLabel, "Scatter  \xE2\x80\xBA  %d%%", brushScatter);
     sprintf_s(angleLabel, "Angle  \xE2\x80\xBA  %d%%", brushAngleJitter);
     sprintf_s(sizeJitterLabel, "Sz Jitter  \xE2\x80\xBA  %d%%", brushSizeJitter);
+    sprintf_s(opJitterLabel, "Op Jitter  \xE2\x80\xBA  %d%%", brushOpacityJitter);
     sprintf_s(pressLabel, "Pressure  \xE2\x80\xBA  %s", penPressureEnabled ? "On" : "Off");
 
     if (hwndBrushRowButtons[0]) SetWindowTextA(hwndBrushRowButtons[0], sizeLabel);
@@ -827,7 +852,8 @@ void SyncBrushFlyoutChecks() {
     if (hwndBrushRowButtons[4]) SetWindowTextA(hwndBrushRowButtons[4], scatterLabel);
     if (hwndBrushRowButtons[5]) SetWindowTextA(hwndBrushRowButtons[5], angleLabel);
     if (hwndBrushRowButtons[6]) SetWindowTextA(hwndBrushRowButtons[6], sizeJitterLabel);
-    if (hwndBrushRowButtons[7]) SetWindowTextA(hwndBrushRowButtons[7], pressLabel);
+    if (hwndBrushRowButtons[7]) SetWindowTextA(hwndBrushRowButtons[7], opJitterLabel);
+    if (hwndBrushRowButtons[8]) SetWindowTextA(hwndBrushRowButtons[8], pressLabel);
 
     if (hwndBrushActionButtons[2]) {
         EnableWindow(hwndBrushActionButtons[2], IsActiveBrushCustom() ? TRUE : FALSE);

@@ -130,7 +130,12 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     const REAL r = static_cast<REAL>(GetRValue(color)) / 255.0f;
     const REAL g = static_cast<REAL>(GetGValue(color)) / 255.0f;
     const REAL b = static_cast<REAL>(GetBValue(color)) / 255.0f;
-    const REAL alphaScale = StampAlphaScale() * PenPressureFactor(pressure);
+    // When tablet pressure is off, still honor the pressure arg (opacity jitter uses it).
+    float press = pressure;
+    if (press < 0.0f) press = 0.0f;
+    if (press > 1.0f) press = 1.0f;
+    const REAL pressScale = penPressureEnabled ? PenPressureFactor(press) : static_cast<REAL>(press);
+    const REAL alphaScale = StampAlphaScale() * pressScale;
     ColorMatrix matrix = {
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -380,16 +385,31 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         return w;
     };
 
+    auto OpacityJitter = [](int x, int y, int salt, float basePressure) -> float {
+        int jitter = brushOpacityJitter;
+        if (jitter < 1) return basePressure;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 1103515245u)
+            ^ (static_cast<unsigned>(y) * 12345u)
+            ^ (static_cast<unsigned>(salt) * 1664525u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        float p = basePressure * (1.0f + u * (static_cast<float>(jitter) / 100.0f));
+        if (p < 0.05f) p = 0.05f;
+        if (p > 1.0f) p = 1.0f;
+        return p;
+    };
+
     const float strokeAngleDeg = (segLen >= 0.001f)
         ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
         : 0.0f;
 
     if (segLen < 0.001f) {
         const int stampW = SizeJitter(x1, y1, 0, PenPressureWidth(width, pressure1));
+        const float stampP = OpacityJitter(x1, y1, 0, pressure1);
         int ox = 0, oy = 0;
         ScatterOffset(x1, y1, stampW, 0, ox, oy);
         const float ang = AngleJitter(x1, y1, 0, strokeAngleDeg);
-        DrawStamp(target, preset->tip.get(), x1 + ox, y1 + oy, color, stampW, eraseTransparent, pressure1, ang);
+        DrawStamp(target, preset->tip.get(), x1 + ox, y1 + oy, color, stampW, eraseTransparent, stampP, ang);
         return;
     }
 
@@ -401,10 +421,11 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
         int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
         const int stampW = SizeJitter(sx, sy, stampIndex, PenPressureWidth(width, pressure));
+        const float stampP = OpacityJitter(sx, sy, stampIndex, pressure);
         int ox = 0, oy = 0;
         ScatterOffset(sx, sy, stampW, stampIndex, ox, oy);
         const float ang = AngleJitter(sx, sy, stampIndex, strokeAngleDeg);
-        DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, pressure, ang);
+        DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang);
         dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, stampW)));
         ++stampIndex;
     }
@@ -429,6 +450,10 @@ int GetBrushAngleJitter() {
 
 int GetBrushSizeJitter() {
     return brushSizeJitter;
+}
+
+int GetBrushOpacityJitter() {
+    return brushOpacityJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -471,6 +496,14 @@ void SetBrushSizeJitter(int jitter) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushOpacityJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushOpacityJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -505,6 +538,7 @@ void LoadBrushSettings() {
     brushScatter = GetPrivateProfileIntA("Features", "BrushScatter", 0, iniPath);
     brushAngleJitter = GetPrivateProfileIntA("Features", "BrushAngleJitter", 0, iniPath);
     brushSizeJitter = GetPrivateProfileIntA("Features", "BrushSizeJitter", 0, iniPath);
+    brushOpacityJitter = GetPrivateProfileIntA("Features", "BrushOpacityJitter", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -516,6 +550,8 @@ void LoadBrushSettings() {
     if (brushAngleJitter > 100) brushAngleJitter = 100;
     if (brushSizeJitter < 0) brushSizeJitter = 0;
     if (brushSizeJitter > 100) brushSizeJitter = 100;
+    if (brushOpacityJitter < 0) brushOpacityJitter = 0;
+    if (brushOpacityJitter > 100) brushOpacityJitter = 100;
 }
 
 void SaveBrushSettings() {
@@ -535,6 +571,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushAngleJitter", buf, iniPath);
     sprintf_s(buf, "%d", brushSizeJitter);
     WritePrivateProfileStringA("Features", "BrushSizeJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushOpacityJitter);
+    WritePrivateProfileStringA("Features", "BrushOpacityJitter", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
