@@ -8,4 +8,4 @@
 #include <vector>
 
 // Parses a Photoshop 'desc' block payload and appends computed brushes.
-bool ParseDescComputedBrushes(const std::uint8_t* data, size_t len, std::vector<AbrSampledBrush>& out);
+bool ParseDescComputedBrushes(const std::uint8_t* data, size_t len, std::vector<AbrBrush>& out);
