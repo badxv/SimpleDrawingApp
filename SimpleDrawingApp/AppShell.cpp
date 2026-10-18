@@ -6,6 +6,7 @@
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "LayerStack.h"
 #include <commctrl.h>
 #include <cstdio>
@@ -43,13 +44,20 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[64] = "";
+    char extras[192] = "";
     if (currentTool == DrawTool::Pen) {
+        // Keep Z/Md adjacent and early so size-jitter + min-diameter stay visible in the tip pane.
         if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%  P:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
+            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%  P:%d%%",
+                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushScatter, brushAngleJitter,
+                brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
+                brushFlow, brushHardness, brushSmoothing,
                 static_cast<int>(lastPenPressure * 100.0f + 0.5f));
         } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%", GetActiveBrushName(), brushFlow, brushHardness);
+            sprintf_s(extras, "  %s  Z:%d%% Md:%d%% S:%d%% A:%d%% T:%ddeg O:%d%% C:%d Rd:%d%% F:%d%% H:%d%% M:%d%%",
+                GetActiveBrushName(), brushSizeJitter, brushMinDiameter, brushScatter, brushAngleJitter,
+                brushTipAngle, brushOpacityJitter, brushStampCount, brushRoundness,
+                brushFlow, brushHardness, brushSmoothing);
         }
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
@@ -88,6 +96,10 @@ void ApplyPenWidth(HWND hwnd, int width) {
     UpdateStatusBar(hwnd);
     SaveFeatureFlags();
     SyncFeatureFlagMenuItems();
+    if (IsActiveBrushCustom()) {
+        PersistActiveBrushDefaultSize(penWidth);
+    }
+    SyncBrushFlyoutChecks();
 }
 
 void UpdateOpacityDisplay() {
@@ -121,7 +133,7 @@ void UpdateStatusBar(HWND hwnd) {
 
     const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
 
-    char part0[160];
+    char part0[256];
     char part1[96];
     char part2[80];
     BuildStatusTip(part0, sizeof(part0));
@@ -176,6 +188,9 @@ void SetActiveTool(DrawTool tool) {
         if (tool != DrawTool::Shape) {
             CloseShapeFlyout();
         }
+        if (tool != DrawTool::Pen) {
+            CloseBrushFlyout();
+        }
     }
     for (int i = 0; i < kToolButtonCount; ++i) {
         if (!hwndToolButtons[i]) continue;
@@ -185,6 +200,7 @@ void SetActiveTool(DrawTool tool) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
     SyncShapeFlyoutChecks();
+    SyncBrushFlyoutChecks();
     if (changed) {
         EventPayload payload{};
         payload.type = AtelierEvent::ActiveToolChanged;
@@ -251,10 +267,10 @@ void LayoutStatusParts(HWND hwnd) {
     RECT rc = {};
     GetClientRect(hwnd, &rc);
     const int width = rc.right - rc.left;
-    // Wider tip pane (left), then layer/coords, then brush/dirty.
+    // Wider tip pane (left) so brush dynamics (Z/Md/…) are not clipped.
     int parts[4] = {
-        (width * 48) / 100,
-        (width * 78) / 100,
+        (width * 62) / 100,
+        (width * 82) / 100,
         width - 1,
         -1
     };
