@@ -432,13 +432,39 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         : 0.0f;
     const float baseTipAngleDeg = strokeAngleDeg + static_cast<float>(brushTipAngle);
 
+    int count = brushStampCount;
+    if (count < 1) count = 1;
+    if (count > 8) count = 8;
+
+    auto PlaceStamps = [&](int sx, int sy, int baseSalt, float pressure) {
+        const int baseW = PenPressureWidth(width, pressure);
+        int spacingW = baseW;
+        for (int c = 0; c < count; ++c) {
+            const int salt = baseSalt * 8 + c;
+            const int stampW = SizeJitter(sx, sy, salt, baseW);
+            if (c == 0) spacingW = stampW;
+            const float stampP = OpacityJitter(sx, sy, salt, pressure);
+            int ox = 0, oy = 0;
+            ScatterOffset(sx, sy, stampW, salt, ox, oy);
+            // Count polish: if Scatter is off, fan secondary stamps so Count is visible.
+            if (brushScatter < 1 && count > 1 && c > 0) {
+                const unsigned n = (static_cast<unsigned>(sx) * 73856093u)
+                    ^ (static_cast<unsigned>(sy) * 19349663u)
+                    ^ (static_cast<unsigned>(salt) * 83492791u);
+                const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float amp = static_cast<float>(stampW) * 0.40f;
+                ox = static_cast<int>(rx * amp + (rx >= 0.0f ? 0.5f : -0.5f));
+                oy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
+            }
+            const float ang = AngleJitter(sx, sy, salt, baseTipAngleDeg);
+            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang);
+        }
+        return spacingW;
+    };
+
     if (segLen < 0.001f) {
-        const int stampW = SizeJitter(x1, y1, 0, PenPressureWidth(width, pressure1));
-        const float stampP = OpacityJitter(x1, y1, 0, pressure1);
-        int ox = 0, oy = 0;
-        ScatterOffset(x1, y1, stampW, 0, ox, oy);
-        const float ang = AngleJitter(x1, y1, 0, baseTipAngleDeg);
-        DrawStamp(target, preset->tip.get(), x1 + ox, y1 + oy, color, stampW, eraseTransparent, stampP, ang);
+        PlaceStamps(x1, y1, 0, pressure1);
         return;
     }
 
@@ -449,13 +475,8 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         const float pressure = pressure0 + (pressure1 - pressure0) * t;
         int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
         int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
-        const int stampW = SizeJitter(sx, sy, stampIndex, PenPressureWidth(width, pressure));
-        const float stampP = OpacityJitter(sx, sy, stampIndex, pressure);
-        int ox = 0, oy = 0;
-        ScatterOffset(sx, sy, stampW, stampIndex, ox, oy);
-        const float ang = AngleJitter(sx, sy, stampIndex, baseTipAngleDeg);
-        DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, color, stampW, eraseTransparent, stampP, ang);
-        dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, stampW)));
+        const int spacingW = PlaceStamps(sx, sy, stampIndex, pressure);
+        dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, spacingW)));
         ++stampIndex;
     }
     gStampCarry = dist - segLen;
@@ -491,6 +512,10 @@ int GetBrushOpacityJitter() {
 
 int GetBrushSmoothing() {
     return brushSmoothing;
+}
+
+int GetBrushStampCount() {
+    return brushStampCount;
 }
 
 void SetBrushFlow(int flow) {
@@ -557,6 +582,14 @@ void SetBrushSmoothing(int amount) {
     SyncBrushFlyoutChecks();
 }
 
+void SetBrushStampCount(int count) {
+    if (count < 1) count = 1;
+    if (count > 8) count = 8;
+    brushStampCount = count;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -594,6 +627,7 @@ void LoadBrushSettings() {
     brushSizeJitter = GetPrivateProfileIntA("Features", "BrushSizeJitter", 0, iniPath);
     brushOpacityJitter = GetPrivateProfileIntA("Features", "BrushOpacityJitter", 0, iniPath);
     brushSmoothing = GetPrivateProfileIntA("Features", "BrushSmoothing", 0, iniPath);
+    brushStampCount = GetPrivateProfileIntA("Features", "BrushStampCount", 1, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
@@ -611,6 +645,8 @@ void LoadBrushSettings() {
     if (brushOpacityJitter > 100) brushOpacityJitter = 100;
     if (brushSmoothing < 0) brushSmoothing = 0;
     if (brushSmoothing > 100) brushSmoothing = 100;
+    if (brushStampCount < 1) brushStampCount = 1;
+    if (brushStampCount > 8) brushStampCount = 8;
 }
 
 void SaveBrushSettings() {
@@ -636,6 +672,8 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushOpacityJitter", buf, iniPath);
     sprintf_s(buf, "%d", brushSmoothing);
     WritePrivateProfileStringA("Features", "BrushSmoothing", buf, iniPath);
+    sprintf_s(buf, "%d", brushStampCount);
+    WritePrivateProfileStringA("Features", "BrushStampCount", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 

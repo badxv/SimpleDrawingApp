@@ -21,7 +21,7 @@ using namespace Gdiplus;
 namespace {
 
 constexpr int kFlyoutW = 210;
-constexpr int kFlyoutH = 548;
+constexpr int kFlyoutH = 570;
 constexpr int kSubFlyoutW = 168;
 constexpr int kSubFlyoutH = 108;
 constexpr int kSubFlyoutSliderH = 88;
@@ -32,7 +32,7 @@ constexpr int kPreviewH = 44;
 
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
-    OpacityJitter, Smooth
+    OpacityJitter, Smooth, Count
 };
 int gBrushCtxPreset = -1;
 
@@ -176,8 +176,8 @@ void PaintFlyoutChrome(HDC hdc, const RECT& rc, const char* title) {
     HGDIOBJ oldPen = SelectObject(hdc, pen);
     MoveToEx(hdc, rc.left + 10, rc.top + 252, NULL);
     LineTo(hdc, rc.right - 10, rc.top + 252);
-    MoveToEx(hdc, rc.left + 10, rc.top + 512, NULL);
-    LineTo(hdc, rc.right - 10, rc.top + 512);
+    MoveToEx(hdc, rc.left + 10, rc.top + 534, NULL);
+    LineTo(hdc, rc.right - 10, rc.top + 534);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 }
@@ -208,53 +208,68 @@ void PaintStrokePreview(HDC hdc, const RECT& rc) {
         const float t = (x - left) / MaxFloat(1.0f, right - left);
         float y = midY + sinf(t * 6.28318f) * 6.0f;
         float sx = x;
-        if (brushScatter > 0) {
-            const unsigned n = (static_cast<unsigned>(stampIndex) * 2654435761u) ^ 0x9e3779b9u;
-            const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
-            const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
-            const float amp = static_cast<float>(stampSize) * 0.45f * (static_cast<float>(brushScatter) / 100.0f);
-            sx += rx * amp;
-            y += ry * amp;
+        int count = brushStampCount;
+        if (count < 1) count = 1;
+        if (count > 8) count = 8;
+        for (int c = 0; c < count; ++c) {
+            float px = sx;
+            float py = y;
+            const int salt = stampIndex * 8 + c;
+            if (brushScatter > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 2654435761u) ^ 0x9e3779b9u;
+                const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float amp = static_cast<float>(stampSize) * 0.45f * (static_cast<float>(brushScatter) / 100.0f);
+                px += rx * amp;
+                py += ry * amp;
+            } else if (count > 1 && c > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 73856093u) ^ 0x85ebca6bu;
+                const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float amp = static_cast<float>(stampSize) * 0.40f;
+                px += rx * amp;
+                py += ry * amp;
+            }
+            float angleDeg = static_cast<float>(brushTipAngle);
+            if (brushAngleJitter > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 2246822519u) ^ 0x85ebca6bu;
+                const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                angleDeg += u * 180.0f * (static_cast<float>(brushAngleJitter) / 100.0f);
+            }
+            int stampDraw = stampSize;
+            if (brushSizeJitter > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 374761393u) ^ 0x27d4eb2du;
+                const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float factor = 1.0f + u * (static_cast<float>(brushSizeJitter) / 100.0f);
+                stampDraw = static_cast<int>(static_cast<float>(stampSize) * factor + 0.5f);
+                if (stampDraw < 1) stampDraw = 1;
+            }
+            REAL alphaScale = baseAlpha;
+            if (brushOpacityJitter > 0) {
+                const unsigned n = (static_cast<unsigned>(salt) * 1103515245u) ^ 0xc2b2ae35u;
+                const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                alphaScale = baseAlpha * (1.0f + u * (static_cast<float>(brushOpacityJitter) / 100.0f));
+                if (alphaScale < 0.05f) alphaScale = 0.05f;
+                if (alphaScale > 1.0f) alphaScale = 1.0f;
+            }
+            ColorMatrix matrix = {
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, alphaScale, 0.0f,
+                0.18f, 0.14f, 0.10f, 0.0f, 1.0f
+            };
+            ImageAttributes attrs;
+            attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+            const REAL half = static_cast<REAL>(stampDraw) * 0.5f;
+            GraphicsState state = g.Save();
+            g.TranslateTransform(px, py);
+            if (angleDeg != 0.0f) g.RotateTransform(angleDeg);
+            RectF dest(-half, -half, static_cast<REAL>(stampDraw), static_cast<REAL>(stampDraw));
+            g.DrawImage(preset->tip.get(), dest, 0.0f, 0.0f, static_cast<REAL>(tw), static_cast<REAL>(th),
+                UnitPixel, &attrs);
+            g.Restore(state);
         }
-        float angleDeg = static_cast<float>(brushTipAngle);
-        if (brushAngleJitter > 0) {
-            const unsigned n = (static_cast<unsigned>(stampIndex) * 2246822519u) ^ 0x85ebca6bu;
-            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
-            angleDeg += u * 180.0f * (static_cast<float>(brushAngleJitter) / 100.0f);
-        }
-        int stampDraw = stampSize;
-        if (brushSizeJitter > 0) {
-            const unsigned n = (static_cast<unsigned>(stampIndex) * 374761393u) ^ 0x27d4eb2du;
-            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
-            const float factor = 1.0f + u * (static_cast<float>(brushSizeJitter) / 100.0f);
-            stampDraw = static_cast<int>(static_cast<float>(stampSize) * factor + 0.5f);
-            if (stampDraw < 1) stampDraw = 1;
-        }
-        REAL alphaScale = baseAlpha;
-        if (brushOpacityJitter > 0) {
-            const unsigned n = (static_cast<unsigned>(stampIndex) * 1103515245u) ^ 0xc2b2ae35u;
-            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
-            alphaScale = baseAlpha * (1.0f + u * (static_cast<float>(brushOpacityJitter) / 100.0f));
-            if (alphaScale < 0.05f) alphaScale = 0.05f;
-            if (alphaScale > 1.0f) alphaScale = 1.0f;
-        }
-        ColorMatrix matrix = {
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, alphaScale, 0.0f,
-            0.18f, 0.14f, 0.10f, 0.0f, 1.0f
-        };
-        ImageAttributes attrs;
-        attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
-        const REAL half = static_cast<REAL>(stampDraw) * 0.5f;
-        GraphicsState state = g.Save();
-        g.TranslateTransform(sx, y);
-        if (angleDeg != 0.0f) g.RotateTransform(angleDeg);
-        RectF dest(-half, -half, static_cast<REAL>(stampDraw), static_cast<REAL>(stampDraw));
-        g.DrawImage(preset->tip.get(), dest, 0.0f, 0.0f, static_cast<REAL>(tw), static_cast<REAL>(th),
-            UnitPixel, &attrs);
-        g.Restore(state);
         ++stampIndex;
     }
 
@@ -297,7 +312,8 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::Orient
         || gBrushSubPanel == BrushSubPanel::SizeJitter
         || gBrushSubPanel == BrushSubPanel::OpacityJitter
-        || gBrushSubPanel == BrushSubPanel::Smooth);
+        || gBrushSubPanel == BrushSubPanel::Smooth
+        || gBrushSubPanel == BrushSubPanel::Count);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -310,6 +326,9 @@ void LayoutSubFlyoutOptions() {
             } else if (gBrushSubPanel == BrushSubPanel::Orient) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 180));
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, GetBrushTipAngle());
+            } else if (gBrushSubPanel == BrushSubPanel::Count) {
+                SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 8));
+                SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, GetBrushStampCount());
             } else if (gBrushSubPanel == BrushSubPanel::Scatter
                 || gBrushSubPanel == BrushSubPanel::Angle
                 || gBrushSubPanel == BrushSubPanel::SizeJitter
@@ -400,7 +419,8 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::Size || gBrushSubPanel == BrushSubPanel::Spacing
         || gBrushSubPanel == BrushSubPanel::Scatter || gBrushSubPanel == BrushSubPanel::Angle
         || gBrushSubPanel == BrushSubPanel::Orient || gBrushSubPanel == BrushSubPanel::SizeJitter
-        || gBrushSubPanel == BrushSubPanel::OpacityJitter || gBrushSubPanel == BrushSubPanel::Smooth) {
+        || gBrushSubPanel == BrushSubPanel::OpacityJitter || gBrushSubPanel == BrushSubPanel::Smooth
+        || gBrushSubPanel == BrushSubPanel::Count) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -451,6 +471,8 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushOpacityJitter(pos);
             } else if (gBrushSubPanel == BrushSubPanel::Smooth) {
                 SetBrushSmoothing(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Count) {
+                SetBrushStampCount(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -578,9 +600,15 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             OpenBrushSubFlyoutInternal(BrushSubPanel::Smooth, rr.top - 4);
             return 0;
         }
-        if (id == IDC_BRUSH_ROW_PRESSURE) {
+        if (id == IDC_BRUSH_ROW_COUNT) {
             RECT rr = {};
             GetWindowRect(hwndBrushRowButtons[10], &rr);
+            OpenBrushSubFlyoutInternal(BrushSubPanel::Count, rr.top - 4);
+            return 0;
+        }
+        if (id == IDC_BRUSH_ROW_PRESSURE) {
+            RECT rr = {};
+            GetWindowRect(hwndBrushRowButtons[11], &rr);
             OpenBrushSubFlyoutInternal(BrushSubPanel::Pressure, rr.top - 4);
             return 0;
         }
@@ -749,13 +777,13 @@ void EnsureBrushFlyout(HWND owner) {
         SetWindowLongPtrA(hwndBrushPreview, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(BrushPreviewProc));
     }
 
-    const int rowIds[11] = {
+    const int rowIds[12] = {
         IDC_BRUSH_ROW_SIZE, IDC_BRUSH_ROW_SPACING, IDC_BRUSH_ROW_FLOW,
         IDC_BRUSH_ROW_HARDNESS, IDC_BRUSH_ROW_SCATTER, IDC_BRUSH_ROW_ANGLE,
         IDC_BRUSH_ROW_ORIENT, IDC_BRUSH_ROW_SIZEJITTER, IDC_BRUSH_ROW_OPJITTER,
-        IDC_BRUSH_ROW_SMOOTH, IDC_BRUSH_ROW_PRESSURE
+        IDC_BRUSH_ROW_SMOOTH, IDC_BRUSH_ROW_COUNT, IDC_BRUSH_ROW_PRESSURE
     };
-    const char* rowTips[11] = {
+    const char* rowTips[12] = {
         "Size — brush diameter in pixels",
         "Spacing — distance between stamps",
         "Flow — paint opacity per stamp",
@@ -766,9 +794,10 @@ void EnsureBrushFlyout(HWND owner) {
         "Size jitter — random stamp diameter along stroke",
         "Opacity jitter — random stamp opacity along stroke",
         "Smooth — stabilize freehand stroke path",
+        "Count — stamps per spacing step (fans when Scatter is 0)",
         "Pen pressure — tablet dynamics"
     };
-    for (int i = 0; i < 11; ++i) {
+    for (int i = 0; i < 12; ++i) {
         hwndBrushRowButtons[i] = CreateWindowA("BUTTON", "",
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
             10, 264 + i * 22, kFlyoutW - 20, 20,
@@ -798,7 +827,7 @@ void EnsureBrushFlyout(HWND owner) {
     for (int i = 0; i < 3; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            10 + i * (actionW + 4), 520, actionW, 22,
+            10 + i * (actionW + 4), 542, actionW, 22,
             hwndBrushFlyout, (HMENU)(INT_PTR)actionIds[i], GetModuleHandle(NULL), NULL);
         ApplyUiFont(hwndBrushActionButtons[i]);
         if (hwndTooltip) {
@@ -863,6 +892,7 @@ void SyncBrushFlyoutChecks() {
     char sizeJitterLabel[48];
     char opJitterLabel[48];
     char smoothLabel[48];
+    char countLabel[48];
     char pressLabel[48];
     sprintf_s(sizeLabel, "Size  \xE2\x80\xBA  %d px", penWidth);
     sprintf_s(spacingLabel, "Spacing  \xE2\x80\xBA  %d%%", GetBrushSpacingPercent());
@@ -874,6 +904,7 @@ void SyncBrushFlyoutChecks() {
     sprintf_s(sizeJitterLabel, "Sz Jitter  \xE2\x80\xBA  %d%%", brushSizeJitter);
     sprintf_s(opJitterLabel, "Op Jitter  \xE2\x80\xBA  %d%%", brushOpacityJitter);
     sprintf_s(smoothLabel, "Smooth  \xE2\x80\xBA  %d%%", brushSmoothing);
+    sprintf_s(countLabel, "Count  \xE2\x80\xBA  %d", brushStampCount);
     sprintf_s(pressLabel, "Pressure  \xE2\x80\xBA  %s", penPressureEnabled ? "On" : "Off");
 
     if (hwndBrushRowButtons[0]) SetWindowTextA(hwndBrushRowButtons[0], sizeLabel);
@@ -886,7 +917,8 @@ void SyncBrushFlyoutChecks() {
     if (hwndBrushRowButtons[7]) SetWindowTextA(hwndBrushRowButtons[7], sizeJitterLabel);
     if (hwndBrushRowButtons[8]) SetWindowTextA(hwndBrushRowButtons[8], opJitterLabel);
     if (hwndBrushRowButtons[9]) SetWindowTextA(hwndBrushRowButtons[9], smoothLabel);
-    if (hwndBrushRowButtons[10]) SetWindowTextA(hwndBrushRowButtons[10], pressLabel);
+    if (hwndBrushRowButtons[10]) SetWindowTextA(hwndBrushRowButtons[10], countLabel);
+    if (hwndBrushRowButtons[11]) SetWindowTextA(hwndBrushRowButtons[11], pressLabel);
 
     if (hwndBrushActionButtons[2]) {
         EnableWindow(hwndBrushActionButtons[2], IsActiveBrushCustom() ? TRUE : FALSE);

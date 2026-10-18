@@ -53,6 +53,7 @@ int GetBrushTipAngle();
 int GetBrushSizeJitter();
 int GetBrushOpacityJitter();
 int GetBrushSmoothing();
+int GetBrushStampCount();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -61,6 +62,7 @@ void SetBrushTipAngle(int degrees); // 0..180
 void SetBrushSizeJitter(int jitter); // 0..100
 void SetBrushOpacityJitter(int jitter); // 0..100
 void SetBrushSmoothing(int amount); // 0..100
+void SetBrushStampCount(int count); // 1..8
 
 // Stamp spacing as percent of tip size (5..100 → 0.05..1.0).
 int GetBrushSpacingPercent();

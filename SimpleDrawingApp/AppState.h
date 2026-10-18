@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[11];
+extern HWND hwndBrushRowButtons[12];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -141,6 +141,7 @@ extern int brushTipAngle;    // 0..180 — fixed tip orientation offset (degrees
 extern int brushSizeJitter;  // 0..100 — stamp diameter jitter
 extern int brushOpacityJitter; // 0..100 — stamp opacity jitter
 extern int brushSmoothing;     // 0..100 — freehand stroke stabilization
+extern int brushStampCount;    // 1..8 — stamps per spacing step
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;
