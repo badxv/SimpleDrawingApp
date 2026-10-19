@@ -45,6 +45,7 @@ constexpr UINT_PTR IDT_UI_ANIM = 42;
 constexpr UINT_PTR IDT_CHROME_REBUILD = 43;
 constexpr UINT_PTR IDT_UI_IDLE = 44;
 constexpr UINT_PTR IDT_AUTOSAVE = 45;
+constexpr UINT_PTR IDT_TEMPORAL = 46; // deferred stamp queue (echo / experimental)
 constexpr UINT kAutosaveIntervalMs = 30000;
 
 constexpr int DEFAULT_DOC_WIDTH = 1280;
@@ -65,7 +66,13 @@ struct ChromeLayout {
 };
 
 inline int MaxInt(int a, int b) { return (a > b) ? a : b; }
+inline int MinInt(int a, int b) { return (a < b) ? a : b; }
 inline float MaxFloat(float a, float b) { return (a > b) ? a : b; }
+inline int ClampInt(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
 
 inline bool IsRunningUnderWine() {
     static int cached = -1;
