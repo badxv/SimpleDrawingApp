@@ -2,6 +2,7 @@
 #include "framework.h"
 #include "SimpleDrawingApp.h"
 #include "AppFeatureFlags.h"
+#include "GraphicsBackend.h"
 #include "BrushEngine.h"
 #include "PenInput.h"
 #include "AppDocument.h"
@@ -10,6 +11,7 @@
 #include "CaptionBar.h"
 #include "UiPaletteFloat.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "EventBus.h"
 #include "AtelierFonts.h"
 #include "AtelierControls.h"
@@ -34,6 +36,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
     LoadFeatureFlags();
+    LoadGraphicsBackend();
     InitPenInput();
     InitBrushEngine();
     LoadBrushSettings();
@@ -74,6 +77,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 0;
     }
     if (!RegisterShapeFlyoutClass(hInstance)) {
+        AtelierArtwork_Shutdown();
+        AtelierFonts_Shutdown();
+        GdiplusShutdown(gdiplusToken);
+        return 0;
+    }
+    if (!RegisterBrushFlyoutClass(hInstance)) {
         AtelierArtwork_Shutdown();
         AtelierFonts_Shutdown();
         GdiplusShutdown(gdiplusToken);

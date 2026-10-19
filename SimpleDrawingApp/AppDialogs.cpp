@@ -87,19 +87,23 @@ static INT_PTR CALLBACK ShortcutsDlgProc(HWND hDlg, UINT message, WPARAM wParam,
     return FALSE;
 }
 
-struct LayerRenameState {
+struct NamePromptState {
     char out[80];
+    const char* initial = nullptr;
+    const char* caption = nullptr;
 };
 
-static INT_PTR CALLBACK LayerRenameDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
-    LayerRenameState* state = reinterpret_cast<LayerRenameState*>(GetWindowLongPtrA(hDlg, GWLP_USERDATA));
+static INT_PTR CALLBACK NamePromptDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    NamePromptState* state = reinterpret_cast<NamePromptState*>(GetWindowLongPtrA(hDlg, GWLP_USERDATA));
     switch (message) {
     case WM_INITDIALOG: {
-        state = reinterpret_cast<LayerRenameState*>(lParam);
+        state = reinterpret_cast<NamePromptState*>(lParam);
         SetWindowLongPtrA(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
-        const Layer* layer = gLayers.ActiveLayer();
-        if (layer) {
-            SetDlgItemTextA(hDlg, IDC_LAYER_NAME, layer->name.c_str());
+        if (state && state->caption && state->caption[0]) {
+            SetWindowTextA(hDlg, state->caption);
+        }
+        if (state && state->initial) {
+            SetDlgItemTextA(hDlg, IDC_LAYER_NAME, state->initial);
         }
         if (HWND edit = GetDlgItem(hDlg, IDC_LAYER_NAME)) {
             SendMessageA(edit, EM_SETSEL, 0, -1);
@@ -139,9 +143,26 @@ bool PromptLayerRename(HWND owner, char* outName, size_t outChars) {
     if (!outName || outChars == 0 || !gLayers.ActiveLayer()) return false;
     outName[0] = '\0';
 
-    LayerRenameState state = {};
+    NamePromptState state = {};
+    state.initial = gLayers.ActiveLayer()->name.c_str();
+    state.caption = "Rename Layer";
     if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_LAYER_RENAME), owner,
-            LayerRenameDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
+            NamePromptDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
+        return false;
+    }
+    strncpy_s(outName, outChars, state.out, _TRUNCATE);
+    return true;
+}
+
+bool PromptBrushRename(HWND owner, const char* currentName, char* outName, size_t outChars) {
+    if (!outName || outChars == 0) return false;
+    outName[0] = '\0';
+
+    NamePromptState state = {};
+    state.initial = currentName ? currentName : "";
+    state.caption = "Rename Brush";
+    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_LAYER_RENAME), owner,
+            NamePromptDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
         return false;
     }
     strncpy_s(outName, outChars, state.out, _TRUNCATE);

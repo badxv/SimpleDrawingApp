@@ -2,6 +2,7 @@
 #include "AppState.h"
 #include "AppSelection.h"
 #include "AppFeatureFlags.h"
+#include "BrushEngine.h"
 #include "SimpleDrawingApp.h"
 #include "FileManager.h"
 #include "Resource.h"
@@ -255,6 +256,7 @@ bool OpenDocumentFromPath(HWND hwnd, const char* filePath) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
+    ClearBrushHeatMap();
 
     Bitmap* loaded = nullptr;
     Graphics* loadedG = nullptr;
@@ -321,6 +323,7 @@ bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bo
         MessageBoxA(hwnd, "Could not resize the canvas (out of memory).", "Canvas Size", MB_OK | MB_ICONERROR);
         return false;
     }
+    ClearBrushHeatMap();
     docWidth = newWidth;
     docHeight = newHeight;
     scrollX = 0;
@@ -339,6 +342,7 @@ void ClearCanvas(HWND hwnd, bool pushHistory) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
+    ClearBrushHeatMap();
     if (pushHistory) {
         gHistory.Push(gLayers);
     }
@@ -880,6 +884,7 @@ void NewDocument(HWND hwnd) {
     DestroyStrokeLayer();
     isDrawing = false;
     ClearSelection(false);
+    ClearBrushHeatMap();
     // Keep current document size; reset to Background + Layer 1 (active).
     gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
     gHistory.Clear();

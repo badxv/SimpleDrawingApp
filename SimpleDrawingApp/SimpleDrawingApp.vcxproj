@@ -81,7 +81,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;d2d1.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -99,7 +99,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;d2d1.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -113,7 +113,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;d2d1.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -131,7 +131,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Comctl32.lib;Comdlg32.lib;gdiplus.lib;d2d1.lib;Dwmapi.lib;Msimg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -145,14 +145,22 @@
     <ClInclude Include="UiControls.h" />
     <ClInclude Include="UiPaletteFloat.h" />
     <ClInclude Include="UiShapeFlyout.h" />
+    <ClInclude Include="UiBrushFlyout.h" />
+    <ClInclude Include="UiExpLab.h" />
+    <ClInclude Include="GraphicsBackend.h" />
     <ClInclude Include="UiToolbar.h" />
     <ClInclude Include="AppCanvas.h" />
     <ClInclude Include="AbrImport.h" />
+    <ClInclude Include="AbrCommon.h" />
     <ClInclude Include="AbrComputed.h" />
     <ClInclude Include="AbrDescriptor.h" />
     <ClInclude Include="PenInput.h" />
     <ClInclude Include="BrushGallery.h" />
+    <ClInclude Include="BrushTips.h" />
+    <ClInclude Include="BrushPresets.h" />
+    <ClInclude Include="BrushPersistence.h" />
     <ClInclude Include="BrushEngine.h" />
+    <ClInclude Include="AppPaths.h" />
     <ClInclude Include="AppStroke.h" />
     <ClInclude Include="AppViewport.h" />
     <ClInclude Include="AppShell.h" />
@@ -187,14 +195,22 @@
     <ClCompile Include="UiControls.cpp" />
     <ClCompile Include="UiPaletteFloat.cpp" />
     <ClCompile Include="UiShapeFlyout.cpp" />
+    <ClCompile Include="UiBrushFlyout.cpp" />
+    <ClCompile Include="UiExpLab.cpp" />
+    <ClCompile Include="GraphicsBackend.cpp" />
     <ClCompile Include="UiToolbar.cpp" />
     <ClCompile Include="AppCanvas.cpp" />
+    <ClCompile Include="AbrCommon.cpp" />
     <ClCompile Include="AbrImport.cpp" />
     <ClCompile Include="AbrComputed.cpp" />
     <ClCompile Include="AbrDescriptor.cpp" />
     <ClCompile Include="PenInput.cpp" />
     <ClCompile Include="BrushGallery.cpp" />
+    <ClCompile Include="BrushTips.cpp" />
     <ClCompile Include="BrushEngine.cpp" />
+    <ClCompile Include="BrushImport.cpp" />
+    <ClCompile Include="BrushPersistence.cpp" />
+    <ClCompile Include="AppPaths.cpp" />
     <ClCompile Include="AppStroke.cpp" />
     <ClCompile Include="AppViewport.cpp" />
     <ClCompile Include="AppShell.cpp" />
