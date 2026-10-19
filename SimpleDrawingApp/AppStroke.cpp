@@ -40,7 +40,15 @@ void DestroyStrokeLayer() {
 }
 
 void BeginStrokeLayer() {
-    DestroyStrokeLayer();
+    // Finish any deferred echo commit before starting a new stroke.
+    if (strokeAwaitingEcho && strokeLayer) {
+        strokeAwaitingEcho = false;
+        ClearBrushTemporalQueue();
+        CommitStrokeLayer();
+    } else {
+        DestroyStrokeLayer();
+        strokeAwaitingEcho = false;
+    }
     ResetBrushStrokeState();
     if (!gLayers.ActiveBitmap()) return;
 

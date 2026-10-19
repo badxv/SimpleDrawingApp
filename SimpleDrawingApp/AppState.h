@@ -66,6 +66,15 @@ extern HWND hwndSwapColors;
 extern HWND hwndShapeFlyout;
 extern HWND hwndShapeButtons[6];
 extern HWND hwndShapeModeButtons[3];
+extern HWND hwndBrushFlyout;
+extern HWND hwndBrushSubFlyout;
+extern HWND hwndBrushPresetButtons[9];
+extern HWND hwndBrushRowButtons[34];
+extern HWND hwndBrushActionButtons[3];
+extern HWND hwndBrushSubButtons[3];
+extern HWND hwndBrushPageButtons[2];
+extern HWND hwndBrushSubSlider;
+extern HWND hwndBrushPreview;
 extern HWND hwndToggleRail;
 extern HWND hwndToggleLayers;
 extern HWND hwndPaletteFloat;
@@ -104,6 +113,7 @@ extern POINT gFloatDragHot;
 extern POINT lastPoint;
 extern POINT shapeStart;
 extern bool isDrawing;
+extern bool strokeAwaitingEcho; // hold strokeLayer until temporal echo queue drains
 extern bool suppressEditNotify;
 extern bool suppressLayerNotify;
 
@@ -126,6 +136,35 @@ extern int penWidth;
 extern int penOpacity;
 extern int brushFlow;
 extern int brushHardness;
+extern int brushScatter; // 0..100 — stamp position jitter
+extern int brushAngleJitter; // 0..100 — stamp rotation jitter
+extern int brushTipAngle;    // 0..180 — fixed tip orientation offset (degrees)
+extern int brushSizeJitter;  // 0..100 — stamp diameter jitter
+extern int brushOpacityJitter; // 0..100 — stamp opacity jitter
+extern int brushSmoothing;     // 0..100 — freehand stroke stabilization
+extern int brushStampCount;    // 1..8 — stamps per spacing step
+extern int brushRoundness;     // 1..100 — tip height/width (100 = round)
+extern int brushMinDiameter;   // 0..100 — floor for size jitter (% of tip)
+extern int brushWetEdges;      // 0..100 — watercolor edge buildup
+extern int brushRoundnessJitter; // 0..100 — tip roundness jitter per stamp
+extern int brushFlipX;           // 0..100 — chance to mirror tip horizontally
+extern int brushFlipY;           // 0..100 — chance to mirror tip vertically
+extern int brushFlowJitter;      // 0..100 — stamp flow/alpha jitter
+extern int brushColorJitter;     // 0..100 — blend toward backColor per stamp
+extern int brushHueJitter;       // 0..100 — hue shift range per stamp
+extern int brushSatJitter;       // 0..100 — saturation jitter per stamp
+extern int brushBrightJitter;    // 0..100 — brightness jitter per stamp
+extern bool brushExperimental;   // opt-in Atelier Experimental section (default off)
+extern int brushEchoDelay;       // 0..100 — echo delay (maps to ms); 0 = off
+extern int brushEchoFeedback;    // 0..100 — echo decay / hop count
+extern int brushPing;            // 0..100 — sonar ping ring on stroke start
+extern int brushBiolum;          // 0..100 — proximity reveal veil radius
+extern int brushHeat;            // 0..100 — visit heat ledger strength / overlay
+extern int brushClockPhase;      // 0..100 — tip angle driven by clock seconds
+extern int brushCompassLock;     // 0..100 — blend tip angle toward UI compass
+extern int brushAfterimage;      // 0..100 — inverted ghost stamps after erase
+extern int brushAging;           // 0..100 — wet→dry pigment over stroke duration
+extern int brushWind;            // 0..100 — scatter bias toward nearest canvas edge
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;
