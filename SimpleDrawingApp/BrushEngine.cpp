@@ -1,13 +1,18 @@
 #include "BrushEngine.h"
-#include "AbrImport.h"
+#include "BrushTips.h"
+#include "BrushPresets.h"
+#include "BrushPersistence.h"
+#include "UiBrushFlyout.h"
+#include "AppPaths.h"
 #include "AppMetrics.h"
+#include "AppCanvas.h"
 #include "DrawingTools.h"
 #include "Resource.h"
 #include "AppState.h"
+#include "LayerStack.h"
 
 #include <cmath>
-#include <cstdint>
-#include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -15,22 +20,266 @@ using namespace Gdiplus;
 
 namespace {
 
-constexpr int kTipSize = 64;
 constexpr int kMaxCustomBrushes = 8;
 constexpr int kMaxTotalBrushes = 24;
 
 std::vector<BrushPreset> gPresets;
 int gActiveBrush = 0;
 float gStampCarry = 0.0f;
+float gSmoothX = 0.0f;
+float gSmoothY = 0.0f;
+bool gSmoothInit = false;
 
-std::wstring PathToWide(const char* path) {
-    if (!path || !path[0]) return std::wstring();
-    int len = MultiByteToWideChar(CP_ACP, 0, path, -1, nullptr, 0);
-    if (len <= 0) return std::wstring();
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_ACP, 0, path, -1, &out[0], len);
-    if (!out.empty() && out.back() == L'\0') out.pop_back();
-    return out;
+struct TemporalStampJob {
+    DWORD dueMs = 0;
+    int x = 0;
+    int y = 0;
+    COLORREF color = 0;
+    int size = 1;
+    float pressure = 1.0f;
+    float angleDeg = 0.0f;
+    int roundness = 100;
+    bool flipX = false;
+    bool flipY = false;
+    bool eraseTransparent = false;
+    bool toActiveLayer = false; // afterimage ghosts paint into the layer, not the erase mask
+};
+constexpr size_t kTemporalQueueCap = 2048;
+std::vector<TemporalStampJob> gTemporalQueue;
+DWORD gStrokeStartMs = 0;
+float gStrokeDistPx = 0.0f; // accumulated path length for Tide breathe
+
+// Heat ledger field (visit map) + warm ARGB viz for overlay.
+std::vector<float> gHeatField;
+Bitmap* gHeatViz = nullptr;
+int gHeatW = 0;
+int gHeatH = 0;
+
+// Cached wet-edges remapped tip (invalidated when tip/wet% change).
+Bitmap* gWetTipCache = nullptr;
+Bitmap* gWetTipSource = nullptr;
+int gWetTipPct = -1;
+
+void InvalidateWetTipCache() {
+    delete gWetTipCache;
+    gWetTipCache = nullptr;
+    gWetTipSource = nullptr;
+    gWetTipPct = -1;
+}
+
+void ClearBrushHeatMapInternal() {
+    gHeatField.clear();
+    delete gHeatViz;
+    gHeatViz = nullptr;
+    gHeatW = 0;
+    gHeatH = 0;
+}
+
+void EnsureBrushHeatMapInternal(int width, int height) {
+    if (width < 1 || height < 1) return;
+    if (gHeatViz && gHeatW == width && gHeatH == height
+        && static_cast<int>(gHeatField.size()) == width * height) {
+        return;
+    }
+    ClearBrushHeatMapInternal();
+    gHeatW = width;
+    gHeatH = height;
+    gHeatField.assign(static_cast<size_t>(width) * static_cast<size_t>(height), 0.0f);
+    gHeatViz = new Bitmap(width, height, PixelFormat32bppARGB);
+    if (!gHeatViz || gHeatViz->GetLastStatus() != Ok) {
+        delete gHeatViz;
+        gHeatViz = nullptr;
+        gHeatField.clear();
+        gHeatW = 0;
+        gHeatH = 0;
+        return;
+    }
+    Graphics g(gHeatViz);
+    g.Clear(Color(0, 0, 0, 0));
+}
+
+void NoteHeatStamp(int cx, int cy, int size) {
+    if (!brushExperimental || brushHeat < 1) return;
+    if (docWidth < 1 || docHeight < 1) return;
+    EnsureBrushHeatMapInternal(docWidth, docHeight);
+    if (!gHeatViz || gHeatField.empty()) return;
+
+    const int r = MaxInt(1, size / 2);
+    const float add = 0.06f + 0.40f * (static_cast<float>(ClampInt(brushHeat, 0, 100)) / 100.0f);
+    const int x0 = MaxInt(0, cx - r);
+    const int y0 = MaxInt(0, cy - r);
+    const int x1 = MinInt(gHeatW - 1, cx + r);
+    const int y1 = MinInt(gHeatH - 1, cy + r);
+    const float r2 = static_cast<float>(r * r);
+
+    BitmapData data = {};
+    Rect lockRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    if (gHeatViz->LockBits(&lockRect, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
+        return;
+    }
+    auto* base = static_cast<BYTE*>(data.Scan0);
+    for (int y = y0; y <= y1; ++y) {
+        BYTE* row = base + (y - y0) * data.Stride;
+        for (int x = x0; x <= x1; ++x) {
+            const float dx = static_cast<float>(x - cx);
+            const float dy = static_cast<float>(y - cy);
+            const float d2 = dx * dx + dy * dy;
+            if (d2 > r2) continue;
+            const float fall = 1.0f - (d2 / r2);
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(gHeatW) + static_cast<size_t>(x);
+            float v = gHeatField[idx] + add * fall;
+            if (v > 1.0f) v = 1.0f;
+            gHeatField[idx] = v;
+            // Warm ember ramp: cool → amber → white-hot.
+            const BYTE a = static_cast<BYTE>(v * 200.0f + 0.5f);
+            const BYTE rr = static_cast<BYTE>(MinInt(255, static_cast<int>(80 + v * 175.0f)));
+            const BYTE gg = static_cast<BYTE>(MinInt(255, static_cast<int>(v * v * 160.0f)));
+            const BYTE bb = static_cast<BYTE>(MinInt(255, static_cast<int>(v * 40.0f)));
+            BYTE* px = row + (x - x0) * 4;
+            // BGRA
+            px[0] = bb;
+            px[1] = gg;
+            px[2] = rr;
+            px[3] = a;
+        }
+    }
+    gHeatViz->UnlockBits(&data);
+}
+
+Bitmap* BuildWetEdgesTip(Bitmap* src, int wetPct) {
+    if (!src || wetPct < 1) return nullptr;
+    const int w = static_cast<int>(src->GetWidth());
+    const int h = static_cast<int>(src->GetHeight());
+    if (w < 1 || h < 1) return nullptr;
+    Bitmap* dst = new Bitmap(w, h, PixelFormat32bppARGB);
+    if (!dst || dst->GetLastStatus() != Ok) {
+        delete dst;
+        return nullptr;
+    }
+    const float amount = static_cast<float>(wetPct) / 100.0f;
+    const float cx = (static_cast<float>(w) - 1.0f) * 0.5f;
+    const float cy = (static_cast<float>(h) - 1.0f) * 0.5f;
+    const float invR = 1.0f / MaxFloat(1.0f, MaxFloat(cx, cy));
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            Color c;
+            src->GetPixel(x, y, &c);
+            const float a = static_cast<float>(c.GetA()) / 255.0f;
+            if (a <= 0.0f) {
+                dst->SetPixel(x, y, Color(0, 255, 255, 255));
+                continue;
+            }
+            const float dx = (static_cast<float>(x) - cx) * invR;
+            const float dy = (static_cast<float>(y) - cy) * invR;
+            float r = sqrtf(dx * dx + dy * dy);
+            if (r > 1.0f) r = 1.0f;
+            // Soft-tip ring (peaks at mid-alpha) + outer radial gate (hollow center).
+            const float softRing = 4.0f * a * (1.0f - a);
+            float edgeGate = 0.0f;
+            if (r > 0.42f) {
+                edgeGate = (r - 0.42f) / 0.58f;
+                edgeGate = edgeGate * edgeGate; // bias paint toward the rim
+            }
+            float target = a * edgeGate;
+            if (softRing > target) target = softRing;
+            float out = a * (1.0f - amount) + target * amount;
+            if (out < 0.0f) out = 0.0f;
+            if (out > 1.0f) out = 1.0f;
+            const BYTE ba = static_cast<BYTE>(out * 255.0f + 0.5f);
+            dst->SetPixel(x, y, Color(ba, 255, 255, 255));
+        }
+    }
+    return dst;
+}
+
+Bitmap* TipWithWetEdges(Bitmap* tip) {
+    int wet = brushWetEdges;
+    if (wet < 1 || !tip) return tip;
+    if (wet > 100) wet = 100;
+    if (gWetTipCache && gWetTipSource == tip && gWetTipPct == wet) {
+        return gWetTipCache;
+    }
+    InvalidateWetTipCache();
+    gWetTipCache = BuildWetEdgesTip(tip, wet);
+    if (!gWetTipCache) return tip;
+    gWetTipSource = tip;
+    gWetTipPct = wet;
+    return gWetTipCache;
+}
+
+void RgbToHsvLocal(COLORREF c, float& h, float& s, float& v) {
+    const float r = GetRValue(c) / 255.0f;
+    const float g = GetGValue(c) / 255.0f;
+    const float b = GetBValue(c) / 255.0f;
+    const float maxc = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
+    const float minc = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
+    const float d = maxc - minc;
+    v = maxc;
+    s = (maxc <= 0.0001f) ? 0.0f : (d / maxc);
+    if (d <= 0.0001f) { h = 0.0f; return; }
+    if (maxc == r) h = 60.0f * fmodf((g - b) / d, 6.0f);
+    else if (maxc == g) h = 60.0f * ((b - r) / d + 2.0f);
+    else h = 60.0f * ((r - g) / d + 4.0f);
+    if (h < 0.0f) h += 360.0f;
+}
+
+COLORREF HsvToRgbLocal(float h, float s, float v) {
+    if (s < 0.0f) s = 0.0f;
+    if (s > 1.0f) s = 1.0f;
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    while (h < 0.0f) h += 360.0f;
+    while (h >= 360.0f) h -= 360.0f;
+    const float c = v * s;
+    const float hp = h / 60.0f;
+    const float x = c * (1.0f - fabsf(fmodf(hp, 2.0f) - 1.0f));
+    float r = 0, g = 0, b = 0;
+    if (hp < 1.0f) { r = c; g = x; }
+    else if (hp < 2.0f) { r = x; g = c; }
+    else if (hp < 3.0f) { g = c; b = x; }
+    else if (hp < 4.0f) { g = x; b = c; }
+    else if (hp < 5.0f) { r = x; b = c; }
+    else { r = c; b = x; }
+    const float m = v - c;
+    return RGB(
+        ClampInt(static_cast<int>((r + m) * 255.0f + 0.5f), 0, 255),
+        ClampInt(static_cast<int>((g + m) * 255.0f + 0.5f), 0, 255),
+        ClampInt(static_cast<int>((b + m) * 255.0f + 0.5f), 0, 255));
+}
+
+COLORREF ApplyHsbJitter(COLORREF color, int x, int y, int salt) {
+    if (brushHueJitter < 1 && brushSatJitter < 1 && brushBrightJitter < 1) return color;
+    float h = 0, s = 0, v = 0;
+    RgbToHsvLocal(color, h, s, v);
+    if (brushHueJitter > 0) {
+        const unsigned n = (static_cast<unsigned>(x) * 2246822519u)
+            ^ (static_cast<unsigned>(y) * 3266489917u)
+            ^ (static_cast<unsigned>(salt) * 0x85ebca6bu);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        // Full slider = ±180° hue swing.
+        h += u * 180.0f * (static_cast<float>(ClampInt(brushHueJitter, 0, 100)) / 100.0f);
+    }
+    if (brushSatJitter > 0) {
+        const unsigned n = (static_cast<unsigned>(x) * 374761393u)
+            ^ (static_cast<unsigned>(y) * 668265263u)
+            ^ (static_cast<unsigned>(salt) * 0xc2b2ae35u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        s *= (1.0f + u * (static_cast<float>(ClampInt(brushSatJitter, 0, 100)) / 100.0f));
+        if (s < 0.0f) s = 0.0f;
+        if (s > 1.0f) s = 1.0f;
+    }
+    if (brushBrightJitter > 0) {
+        const unsigned n = (static_cast<unsigned>(x) * 1597334677u)
+            ^ (static_cast<unsigned>(y) * 3812015801u)
+            ^ (static_cast<unsigned>(salt) * 0x27d4eb2du);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        v *= (1.0f + u * (static_cast<float>(ClampInt(brushBrightJitter, 0, 100)) / 100.0f));
+        if (v < 0.05f) v = 0.05f;
+        if (v > 1.0f) v = 1.0f;
+    }
+    // If source was near-gray, give hue jitter a usable saturation floor.
+    if (brushHueJitter > 0 && s < 0.15f) s = 0.55f;
+    return HsvToRgbLocal(h, s, v);
 }
 
 BrushPreset* ActivePresetMutable() {
@@ -42,116 +291,6 @@ const BrushPreset* ActivePreset() {
     return ActivePresetMutable();
 }
 
-void GetFeaturesIniPath(char* path, size_t pathChars) {
-    if (!path || pathChars == 0) return;
-    path[0] = '\0';
-    DWORD len = GetModuleFileNameA(nullptr, path, static_cast<DWORD>(pathChars));
-    if (len == 0 || len >= pathChars) return;
-    for (int i = static_cast<int>(len) - 1; i >= 0; --i) {
-        if (path[i] == '\\' || path[i] == '/') {
-            path[i + 1] = '\0';
-            break;
-        }
-    }
-    if (strlen(path) + 13 > pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    strcat_s(path, pathChars, "features.ini");
-}
-
-void SetTipPixel(Bitmap* bmp, int x, int y, BYTE alpha) {
-    if (!bmp || x < 0 || y < 0 || x >= static_cast<int>(bmp->GetWidth()) || y >= static_cast<int>(bmp->GetHeight())) {
-        return;
-    }
-    bmp->SetPixel(x, y, Color(alpha, 255, 255, 255));
-}
-
-float RadialAlpha(int x, int y, int cx, int cy, int rx, int ry, float hardness) {
-    const float dx = static_cast<float>(x - cx) / static_cast<float>(MaxInt(1, rx));
-    const float dy = static_cast<float>(y - cy) / static_cast<float>(MaxInt(1, ry));
-    const float d = sqrtf(dx * dx + dy * dy);
-    if (d >= 1.0f) return 0.0f;
-    const float h = hardness;
-    if (d <= h) return 1.0f;
-    return 1.0f - (d - h) / MaxFloat(0.001f, 1.0f - h);
-}
-
-Bitmap* CreateTipFromAlpha(const float* alpha, int size) {
-    Bitmap* bmp = new Bitmap(size, size, PixelFormat32bppARGB);
-    if (!bmp || bmp->GetLastStatus() != Ok) {
-        delete bmp;
-        return nullptr;
-    }
-    for (int y = 0; y < size; ++y) {
-        for (int x = 0; x < size; ++x) {
-            const float a = alpha[y * size + x];
-            const BYTE ba = static_cast<BYTE>(MaxInt(0, (a * 255.0f + 0.5f) > 255.0f ? 255 : static_cast<int>(a * 255.0f + 0.5f)));
-            SetTipPixel(bmp, x, y, ba);
-        }
-    }
-    return bmp;
-}
-
-Bitmap* MakeRoundTip(float hardness, float rxScale = 1.0f, float ryScale = 1.0f) {
-    float alpha[kTipSize * kTipSize];
-    const int cx = kTipSize / 2;
-    const int cy = kTipSize / 2;
-    const int rx = static_cast<int>((kTipSize / 2 - 1) * rxScale);
-    const int ry = static_cast<int>((kTipSize / 2 - 1) * ryScale);
-    for (int y = 0; y < kTipSize; ++y) {
-        for (int x = 0; x < kTipSize; ++x) {
-            alpha[y * kTipSize + x] = RadialAlpha(x, y, cx, cy, rx, ry, hardness);
-        }
-    }
-    return CreateTipFromAlpha(alpha, kTipSize);
-}
-
-Bitmap* MakeCharcoalTip() {
-    float alpha[kTipSize * kTipSize];
-    const int cx = kTipSize / 2;
-    const int cy = kTipSize / 2;
-    for (int y = 0; y < kTipSize; ++y) {
-        for (int x = 0; x < kTipSize; ++x) {
-            float base = RadialAlpha(x, y, cx, cy, kTipSize / 2 - 2, kTipSize / 2 - 2, 0.35f);
-            const unsigned noise = (static_cast<unsigned>(x) * 73856093u) ^ (static_cast<unsigned>(y) * 19349663u);
-            const float grain = 0.65f + 0.35f * (static_cast<float>(noise & 255) / 255.0f);
-            alpha[y * kTipSize + x] = base * grain;
-        }
-    }
-    return CreateTipFromAlpha(alpha, kTipSize);
-}
-
-Bitmap* MakeConceptTip() {
-    float alpha[kTipSize * kTipSize];
-    const int cx = kTipSize / 2;
-    const int cy = kTipSize / 2;
-    for (int y = 0; y < kTipSize; ++y) {
-        for (int x = 0; x < kTipSize; ++x) {
-            float base = RadialAlpha(x, y, cx, cy, kTipSize / 2 - 1, kTipSize / 2 - 1, 0.55f);
-            const unsigned n = ((static_cast<unsigned>(x + y * 3)) * 2654435761u) & 255u;
-            const float tex = 0.82f + 0.18f * (static_cast<float>(n) / 255.0f);
-            alpha[y * kTipSize + x] = base * tex;
-        }
-    }
-    return CreateTipFromAlpha(alpha, kTipSize);
-}
-
-Bitmap* MakePencilTip() {
-    float alpha[kTipSize * kTipSize];
-    const int cx = kTipSize / 2;
-    const int cy = kTipSize / 2;
-    for (int y = 0; y < kTipSize; ++y) {
-        for (int x = 0; x < kTipSize; ++x) {
-            float base = RadialAlpha(x, y, cx, cy, kTipSize / 4, kTipSize / 4, 0.75f);
-            const unsigned n = (static_cast<unsigned>(x) * 92837111u) ^ (static_cast<unsigned>(y) * 689287499u);
-            const float grain = 0.55f + 0.45f * (static_cast<float>(n & 255) / 255.0f);
-            alpha[y * kTipSize + x] = base * grain;
-        }
-    }
-    return CreateTipFromAlpha(alpha, kTipSize);
-}
-
 void AddBuiltinPreset(const char* name, Bitmap* tip, float spacing, int defaultSize) {
     if (!tip) return;
     BrushPreset preset;
@@ -161,80 +300,6 @@ void AddBuiltinPreset(const char* name, Bitmap* tip, float spacing, int defaultS
     preset.defaultSize = defaultSize;
     preset.builtin = true;
     gPresets.push_back(std::move(preset));
-}
-
-Bitmap* NormalizeImportedTip(Bitmap* source) {
-    if (!source) return nullptr;
-    const int w = static_cast<int>(source->GetWidth());
-    const int h = static_cast<int>(source->GetHeight());
-    if (w < 1 || h < 1) return nullptr;
-
-    Bitmap* out = new Bitmap(kTipSize, kTipSize, PixelFormat32bppARGB);
-    if (!out || out->GetLastStatus() != Ok) {
-        delete out;
-        return nullptr;
-    }
-    Graphics g(out);
-    g.Clear(Color(0, 0, 0, 0));
-    g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
-    g.DrawImage(source, Rect(0, 0, kTipSize, kTipSize));
-
-    BitmapData data = {};
-    Rect lock(0, 0, kTipSize, kTipSize);
-    if (out->LockBits(&lock, ImageLockModeRead | ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
-        delete out;
-        return nullptr;
-    }
-    auto* px = static_cast<BYTE*>(data.Scan0);
-    for (int y = 0; y < kTipSize; ++y) {
-        BYTE* row = px + y * data.Stride;
-        for (int x = 0; x < kTipSize; ++x) {
-            BYTE* p = row + x * 4;
-            const BYTE b = p[0];
-            const BYTE gch = p[1];
-            const BYTE r = p[2];
-            const BYTE a = p[3];
-            const int lum = (r * 77 + gch * 150 + b * 29) >> 8;
-            const BYTE alpha = static_cast<BYTE>((lum * a + 127) / 255);
-            p[0] = 255;
-            p[1] = 255;
-            p[2] = 255;
-            p[3] = alpha;
-        }
-    }
-    out->UnlockBits(&data);
-    return out;
-}
-
-Bitmap* TipFromSampleMask(const std::uint8_t* mask, int width, int height) {
-    if (!mask || width < 1 || height < 1) return nullptr;
-    Bitmap* bmp = new Bitmap(kTipSize, kTipSize, PixelFormat32bppARGB);
-    if (!bmp || bmp->GetLastStatus() != Ok) {
-        delete bmp;
-        return nullptr;
-    }
-    BitmapData data = {};
-    Rect lock(0, 0, kTipSize, kTipSize);
-    if (bmp->LockBits(&lock, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
-        delete bmp;
-        return nullptr;
-    }
-    auto* px = static_cast<BYTE*>(data.Scan0);
-    for (int y = 0; y < kTipSize; ++y) {
-        BYTE* row = px + y * data.Stride;
-        for (int x = 0; x < kTipSize; ++x) {
-            const int sx = x * width / kTipSize;
-            const int sy = y * height / kTipSize;
-            const BYTE lum = mask[sy * width + sx];
-            BYTE* p = row + x * 4;
-            p[0] = 255;
-            p[1] = 255;
-            p[2] = 255;
-            p[3] = lum;
-        }
-    }
-    bmp->UnlockBits(&data);
-    return bmp;
 }
 
 int CustomBrushCount() {
@@ -289,12 +354,38 @@ void DrawRoundLine(Graphics* target, int x0, int y0, int x1, int y1, COLORREF co
 }
 
 void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, int size, bool eraseTransparent,
-    float pressure = 1.0f) {
+    float pressure = 1.0f, float angleDeg = 0.0f, int roundnessOverride = -1,
+    bool flipX = false, bool flipY = false) {
     if (!target || !tip || size < 1) return;
 
+    tip = TipWithWetEdges(tip);
+    if (!tip) return;
+
     const REAL half = static_cast<REAL>(size) * 0.5f;
-    const RectF dest(static_cast<REAL>(cx) - half, static_cast<REAL>(cy) - half,
-        static_cast<REAL>(size), static_cast<REAL>(size));
+    const int w = static_cast<int>(tip->GetWidth());
+    const int h = static_cast<int>(tip->GetHeight());
+
+    int roundness = (roundnessOverride >= 0) ? roundnessOverride : brushRoundness;
+    if (roundness < 1) roundness = 1;
+    if (roundness > 100) roundness = 100;
+    const REAL height = static_cast<REAL>(size) * (static_cast<REAL>(roundness) / 100.0f);
+    const REAL halfH = height * 0.5f;
+
+    // Mirror oriented elliptical tips by reflecting angle; also mirror tip pixels via dest.
+    if (flipX) angleDeg = -angleDeg;
+    if (flipY) angleDeg = 180.0f - angleDeg;
+
+    GraphicsState state = target->Save();
+    target->TranslateTransform(static_cast<REAL>(cx), static_cast<REAL>(cy));
+    if (angleDeg != 0.0f) {
+        target->RotateTransform(angleDeg);
+    }
+    // Negative dest width/height mirrors tip texture (Charcoal grain, etc.).
+    const REAL destX = flipX ? half : -half;
+    const REAL destY = flipY ? halfH : -halfH;
+    const REAL destW = flipX ? -static_cast<REAL>(size) : static_cast<REAL>(size);
+    const REAL destH = flipY ? -height : height;
+    const RectF dest(destX, destY, destW, destH);
 
     if (eraseTransparent) {
         ColorMatrix matrix = {
@@ -306,17 +397,33 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
         };
         ImageAttributes attrs;
         attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
-        const int w = static_cast<int>(tip->GetWidth());
-        const int h = static_cast<int>(tip->GetHeight());
         target->SetCompositingMode(CompositingModeSourceOver);
         target->DrawImage(tip, dest, 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &attrs);
+        target->Restore(state);
+        NoteHeatStamp(cx, cy, size);
         return;
     }
 
     const REAL r = static_cast<REAL>(GetRValue(color)) / 255.0f;
     const REAL g = static_cast<REAL>(GetGValue(color)) / 255.0f;
     const REAL b = static_cast<REAL>(GetBValue(color)) / 255.0f;
-    const REAL alphaScale = StampAlphaScale() * PenPressureFactor(pressure);
+    // When tablet pressure is off, still honor the pressure arg (opacity jitter uses it).
+    float press = pressure;
+    if (press < 0.0f) press = 0.0f;
+    if (press > 1.0f) press = 1.0f;
+    const REAL pressScale = penPressureEnabled ? PenPressureFactor(press) : static_cast<REAL>(press);
+    REAL alphaScale = StampAlphaScale() * pressScale;
+    if (brushFlowJitter >= 1) {
+        int jitter = brushFlowJitter;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(cx) * 2246822519u)
+            ^ (static_cast<unsigned>(cy) * 3266489917u)
+            ^ (static_cast<unsigned>(size) * 668265263u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        alphaScale *= (1.0f + u * (static_cast<float>(jitter) / 100.0f));
+        if (alphaScale < 0.05f) alphaScale = 0.05f;
+        if (alphaScale > 1.0f) alphaScale = 1.0f;
+    }
     ColorMatrix matrix = {
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -326,12 +433,365 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     };
     ImageAttributes attrs;
     attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
-    const int w = static_cast<int>(tip->GetWidth());
-    const int h = static_cast<int>(tip->GetHeight());
     target->DrawImage(tip, dest, 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &attrs);
+    target->Restore(state);
+    NoteHeatStamp(cx, cy, size);
+}
+
+void EnqueueEchoFromStamp(int x, int y, COLORREF color, int size, float pressure,
+    float angleDeg, int roundness, bool flipX, bool flipY, bool eraseTransparent) {
+    if (!brushExperimental || brushEchoDelay < 1) return;
+    if (size < 1) return;
+    const int delayMs = ClampInt(brushEchoDelay, 0, 100) * 8; // 0..800 ms
+    if (delayMs < 1) return;
+
+    const int feedback = ClampInt(brushEchoFeedback, 0, 100);
+    const float fade = (feedback < 1)
+        ? 0.45f
+        : (0.36f + 0.54f * (static_cast<float>(feedback) / 100.0f));
+    const int maxHops = (feedback < 1) ? 1 : ClampInt(1 + feedback / 20, 1, 5);
+
+    // Ghost look: lean color toward canvas so delayed stamps read as echoes,
+    // not buried under the already-opaque primary stamp.
+    const int pr = GetRValue(color), pg = GetGValue(color), pb = GetBValue(color);
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+
+    const DWORD now = GetTickCount();
+    float amp = fade;
+    for (int hop = 1; hop <= maxHops && amp >= 0.08f; ++hop) {
+        if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+        // Small perpendicular drift so echoes aren't 1:1 under the primary.
+        const float rad = (angleDeg + 90.0f) * (3.14159265f / 180.0f);
+        const int drift = hop * MaxInt(2, size / 6);
+        const int ox = static_cast<int>(cosf(rad) * static_cast<float>(drift) + (cosf(rad) >= 0 ? 0.5f : -0.5f));
+        const int oy = static_cast<int>(sinf(rad) * static_cast<float>(drift) + (sinf(rad) >= 0 ? 0.5f : -0.5f));
+        const float ghost = 0.35f + 0.45f * amp; // mix toward canvas
+        TemporalStampJob job;
+        job.dueMs = now + static_cast<DWORD>(hop * delayMs);
+        job.x = x + ox;
+        job.y = y + oy;
+        job.color = RGB(
+            ClampInt(static_cast<int>(pr + (cr - pr) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pg + (cg - pg) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pb + (cb - pb) * (1.0f - ghost) + 0.5f), 0, 255));
+        job.size = MaxInt(1, size - (hop - 1));
+        job.pressure = pressure * amp;
+        if (job.pressure < 0.12f) job.pressure = 0.12f;
+        job.angleDeg = angleDeg;
+        job.roundness = roundness;
+        job.flipX = flipX;
+        job.flipY = flipY;
+        job.eraseTransparent = eraseTransparent;
+        job.toActiveLayer = false;
+        gTemporalQueue.push_back(job);
+        amp *= fade;
+    }
+}
+
+// Mirage: delayed mirror stamp across the document vertical midline.
+void EnqueueMirageFromStamp(int x, int y, COLORREF color, int size, float pressure,
+    float angleDeg, int roundness, bool flipX, bool flipY, bool eraseTransparent) {
+    if (!brushExperimental || brushMirage < 1) return;
+    if (size < 1 || docWidth < 2) return;
+    const int strength = ClampInt(brushMirage, 0, 100);
+    const int delayMs = ClampInt(95 - strength / 2, 35, 95);
+    const int mx = (docWidth - 1) - x;
+    if (abs(mx - x) < 2) return; // on the midline — nothing to mirror
+    const int pr = GetRValue(color), pg = GetGValue(color), pb = GetBValue(color);
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+    const float ghost = 0.42f + 0.40f * (static_cast<float>(strength) / 100.0f);
+    if (gTemporalQueue.size() >= kTemporalQueueCap) return;
+    TemporalStampJob job;
+    job.dueMs = GetTickCount() + static_cast<DWORD>(delayMs);
+    job.x = mx;
+    job.y = y;
+    job.color = RGB(
+        ClampInt(static_cast<int>(pr + (cr - pr) * (1.0f - ghost) + 0.5f), 0, 255),
+        ClampInt(static_cast<int>(pg + (cg - pg) * (1.0f - ghost) + 0.5f), 0, 255),
+        ClampInt(static_cast<int>(pb + (cb - pb) * (1.0f - ghost) + 0.5f), 0, 255));
+    job.size = MaxInt(1, size);
+    job.pressure = MaxFloat(0.14f, pressure * (0.35f + 0.45f * (static_cast<float>(strength) / 100.0f)));
+    job.angleDeg = -angleDeg; // reflect tip angle
+    job.roundness = roundness;
+    job.flipX = !flipX;
+    job.flipY = flipY;
+    job.eraseTransparent = eraseTransparent;
+    job.toActiveLayer = false;
+    gTemporalQueue.push_back(job);
+}
+
+// After erase: delayed inverted ghosts painted into the active layer (not the erase mask).
+void EnqueueAfterimageAt(int x, int y, int size) {
+    if (!brushExperimental || brushAfterimage < 1) return;
+    if (size < 1) return;
+    const int strength = ClampInt(brushAfterimage, 0, 100);
+    const int delayMs = ClampInt(70 - strength / 4, 28, 70);
+    const int hops = ClampInt(2 + strength / 40, 2, 4);
+    // Always use a vivid teal residual so ghosts read on white/parchment (black invert = white).
+    const int ir = 32, ig = 190, ib = 210;
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+    const DWORD now = GetTickCount();
+    float amp = 0.75f + 0.22f * (static_cast<float>(strength) / 100.0f);
+    for (int hop = 1; hop <= hops && amp >= 0.14f; ++hop) {
+        if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+        const float ghost = 0.72f + 0.22f * amp; // stay colorful; little canvas mix
+        TemporalStampJob job;
+        job.dueMs = now + static_cast<DWORD>(hop * delayMs);
+        job.x = x + (hop - 1) * ((hop & 1) ? 3 : -3);
+        job.y = y + (hop - 1) * ((hop & 1) ? -3 : 3);
+        job.color = RGB(
+            ClampInt(static_cast<int>(ir + (cr - ir) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(ig + (cg - ig) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(ib + (cb - ib) * (1.0f - ghost) + 0.5f), 0, 255));
+        job.size = MaxInt(2, size + 2 - (hop - 1));
+        job.pressure = MaxFloat(0.35f, amp);
+        job.angleDeg = static_cast<float>((hop * 37) % 180);
+        job.roundness = brushRoundness;
+        job.flipX = false;
+        job.flipY = false;
+        job.eraseTransparent = false;
+        job.toActiveLayer = true;
+        gTemporalQueue.push_back(job);
+        amp *= 0.58f;
+    }
+}
+
+void EnqueueAfterimageAlongSegment(int x0, int y0, int x1, int y1, int width) {
+    if (!brushExperimental || brushAfterimage < 1) return;
+    const float dx = static_cast<float>(x1 - x0);
+    const float dy = static_cast<float>(y1 - y0);
+    const float segLen = sqrtf(dx * dx + dy * dy);
+    const float step = MaxFloat(2.0f, static_cast<float>(MaxInt(1, width)) * 0.55f);
+    if (segLen < 0.001f) {
+        EnqueueAfterimageAt(x1, y1, width);
+        return;
+    }
+    for (float d = 0.0f; d <= segLen; d += step) {
+        const float t = d / segLen;
+        const int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
+        const int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
+        EnqueueAfterimageAt(sx, sy, width);
+    }
+}
+
+float StrokeAgingAmount() {
+    if (!brushExperimental || brushAging < 1) return 0.0f;
+    if (gStrokeStartMs == 0) return 0.0f;
+    const DWORD now = GetTickCount();
+    const float elapsed = static_cast<float>(now - gStrokeStartMs);
+    // Full dry-out window: 1.2s (strong aging) … 4.5s (gentle).
+    const float strength = static_cast<float>(ClampInt(brushAging, 0, 100)) / 100.0f;
+    const float windowMs = 4500.0f - 3300.0f * strength;
+    float age = elapsed / MaxFloat(400.0f, windowMs);
+    if (age > 1.0f) age = 1.0f;
+    if (age < 0.0f) age = 0.0f;
+    return age * strength;
+}
+
+COLORREF AgePigmentColor(COLORREF color, float age) {
+    if (age < 0.001f) return color;
+    // Wet → dry: lean toward a muted, slightly warmer gray of the same hue family.
+    const int r = GetRValue(color), g = GetGValue(color), b = GetBValue(color);
+    const int gray = (r * 30 + g * 59 + b * 11) / 100;
+    const int dryR = ClampInt(gray + 18, 0, 255);
+    const int dryG = ClampInt(gray + 8, 0, 255);
+    const int dryB = ClampInt(gray - 6, 0, 255);
+    return RGB(
+        ClampInt(static_cast<int>(r + (dryR - r) * age + 0.5f), 0, 255),
+        ClampInt(static_cast<int>(g + (dryG - g) * age + 0.5f), 0, 255),
+        ClampInt(static_cast<int>(b + (dryB - b) * age + 0.5f), 0, 255));
 }
 
 } // namespace
+
+bool BrushTemporalPending() {
+    return !gTemporalQueue.empty();
+}
+
+void ClearBrushTemporalQueue() {
+    gTemporalQueue.clear();
+}
+
+void FireBrushPing(int cx, int cy, COLORREF color, int tipSize, bool eraseTransparent) {
+    if (!brushExperimental || brushPing < 1) return;
+    if (tipSize < 1) tipSize = 1;
+
+    const int strength = ClampInt(brushPing, 0, 100);
+    const int rings = ClampInt(2 + strength / 25, 2, 6);
+    const int stampsPerRing = ClampInt(8 + strength / 15, 8, 16);
+    const int ringStep = MaxInt(6, tipSize / 2 + strength / 8);
+    const int delayMs = ClampInt(55 - strength / 4, 28, 55);
+    const int stampSize = MaxInt(2, tipSize * 2 / 3);
+
+    // Ghost-tint toward canvas so sediment reads as a scan wake.
+    const int pr = GetRValue(color), pg = GetGValue(color), pb = GetBValue(color);
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+
+    const DWORD now = GetTickCount();
+    for (int ring = 1; ring <= rings; ++ring) {
+        if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+        const float radius = static_cast<float>(ring * ringStep);
+        const float amp = 0.70f * (1.0f - static_cast<float>(ring - 1) / static_cast<float>(rings));
+        const float ghost = 0.40f + 0.45f * amp;
+        const COLORREF ringColor = RGB(
+            ClampInt(static_cast<int>(pr + (cr - pr) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pg + (cg - pg) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(pb + (cb - pb) * (1.0f - ghost) + 0.5f), 0, 255));
+        const DWORD due = now + static_cast<DWORD>(ring * delayMs);
+        for (int s = 0; s < stampsPerRing; ++s) {
+            if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+            const float ang = (static_cast<float>(s) / static_cast<float>(stampsPerRing)) * 6.2831853f;
+            TemporalStampJob job;
+            job.dueMs = due;
+            job.x = cx + static_cast<int>(cosf(ang) * radius + (cosf(ang) >= 0 ? 0.5f : -0.5f));
+            job.y = cy + static_cast<int>(sinf(ang) * radius + (sinf(ang) >= 0 ? 0.5f : -0.5f));
+            job.color = ringColor;
+            job.size = MaxInt(1, stampSize - (ring - 1));
+            job.pressure = MaxFloat(0.12f, amp);
+            job.angleDeg = ang * (180.0f / 3.14159265f);
+            job.roundness = brushRoundness;
+            job.flipX = false;
+            job.flipY = false;
+            job.eraseTransparent = eraseTransparent;
+            gTemporalQueue.push_back(job);
+        }
+    }
+}
+
+bool ProcessBrushTemporalQueue() {
+    if (gTemporalQueue.empty()) return false;
+
+    Graphics* strokeTarget = strokeGraphics.get();
+    // Prefer live stroke layer; if somehow missing, paint into the active layer.
+    Gdiplus::Graphics* strokeOwned = nullptr;
+    if (!strokeTarget) {
+        if (Bitmap* bmp = gLayers.ActiveBitmap()) {
+            strokeOwned = new Graphics(bmp);
+            strokeTarget = strokeOwned;
+        }
+    }
+
+    const BrushPreset* preset = ActivePreset();
+    if (!preset || !preset->tip) {
+        delete strokeOwned;
+        gTemporalQueue.clear();
+        return false;
+    }
+
+    const DWORD now = GetTickCount();
+    bool drew = false;
+    size_t write = 0;
+    for (size_t i = 0; i < gTemporalQueue.size(); ++i) {
+        TemporalStampJob& job = gTemporalQueue[i];
+        // Unsigned wrap-safe: due in the past or equal.
+        if (static_cast<int>(now - job.dueMs) >= 0) {
+            Graphics* target = strokeTarget;
+            Graphics* activeOwned = nullptr;
+            if (job.toActiveLayer) {
+                if (Bitmap* bmp = gLayers.ActiveBitmap()) {
+                    activeOwned = new Graphics(bmp);
+                    target = activeOwned;
+                } else {
+                    target = nullptr;
+                }
+            }
+            if (target) {
+                DrawStamp(target, preset->tip.get(), job.x, job.y, job.color, job.size,
+                    job.eraseTransparent, job.pressure, job.angleDeg, job.roundness, job.flipX, job.flipY);
+                drew = true;
+            }
+            delete activeOwned;
+        } else {
+            if (write != i) gTemporalQueue[write] = job;
+            ++write;
+        }
+    }
+    gTemporalQueue.resize(write);
+    delete strokeOwned;
+    if (drew) InvalidateComposite();
+    return drew;
+}
+
+bool BrushPresetsCanAddCustom() {
+    return CustomBrushCount() < kMaxCustomBrushes && static_cast<int>(gPresets.size()) < kMaxTotalBrushes;
+}
+
+bool BrushPresetsAddCustom(const char* name, Bitmap* tip, float spacing, int defaultSize, bool persist) {
+    if (!AddCustomPreset(name, tip, spacing, defaultSize)) return false;
+    if (persist) SaveCustomBrushesToDisk();
+    RebuildBrushFlyoutPresets();
+    return true;
+}
+
+bool BrushPresetsRemove(int index, bool persist) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return false;
+    if (gPresets[static_cast<size_t>(index)].builtin) return false;
+    gPresets.erase(gPresets.begin() + index);
+    if (gActiveBrush >= static_cast<int>(gPresets.size())) {
+        gActiveBrush = static_cast<int>(gPresets.size()) - 1;
+    }
+    if (gActiveBrush < 0) gActiveBrush = 0;
+    else if (gActiveBrush > index) {
+        --gActiveBrush;
+    }
+    if (persist) SaveCustomBrushesToDisk();
+    SaveBrushSettings();
+    RebuildBrushFlyoutPresets();
+    SyncBrushMenuItems();
+    return true;
+}
+
+bool BrushPresetsRename(int index, const char* name, bool persist) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return false;
+    BrushPreset& preset = gPresets[static_cast<size_t>(index)];
+    if (preset.builtin) return false;
+    if (!name) return false;
+    // Trim leading/trailing spaces
+    while (*name == ' ' || *name == '\t') ++name;
+    if (!name[0]) return false;
+    char cleaned[80] = {};
+    strncpy_s(cleaned, name, _TRUNCATE);
+    size_t len = strlen(cleaned);
+    while (len > 0 && (cleaned[len - 1] == ' ' || cleaned[len - 1] == '\t')) {
+        cleaned[--len] = '\0';
+    }
+    if (!cleaned[0]) return false;
+    preset.name = cleaned;
+    if (persist) SaveCustomBrushesToDisk();
+    RebuildBrushFlyoutPresets();
+    SyncBrushMenuItems();
+    return true;
+}
+
+bool BrushPresetsSetDefaultSize(int index, int size, bool persist) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return false;
+    BrushPreset& preset = gPresets[static_cast<size_t>(index)];
+    if (size < kPenWidthMin) size = kPenWidthMin;
+    if (size > kPenWidthMax) size = kPenWidthMax;
+    if (preset.defaultSize == size) return true;
+    preset.defaultSize = size;
+    if (persist && !preset.builtin) SaveCustomBrushesToDisk();
+    return true;
+}
+
+void BrushPresetsSetActive(int index) {
+    if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
+    if (gActiveBrush != index) InvalidateWetTipCache();
+    gActiveBrush = index;
+}
+
+const char* BrushPresetsActiveName() {
+    const BrushPreset* preset = ActivePreset();
+    return preset ? preset->name.c_str() : "Round Soft";
+}
+
+void BrushPresetsSaveSettings() {
+    SaveBrushSettings();
+}
+
+void BrushPresetsSyncMenu() {
+    SyncBrushMenuItems();
+}
 
 void InitBrushEngine() {
     if (!gPresets.empty()) return;
@@ -341,13 +801,31 @@ void InitBrushEngine() {
     AddBuiltinPreset("Flat Oil", MakeRoundTip(0.35f, 1.0f, 0.35f), 0.16f, 16);
     AddBuiltinPreset("Concept Soft", MakeConceptTip(), 0.20f, 20);
     AddBuiltinPreset("Pencil", MakePencilTip(), 0.08f, 4);
+    LoadCustomBrushesFromDisk();
     LoadBrushSettings();
 }
 
 void ShutdownBrushEngine() {
+    SaveCustomBrushesToDisk();
+    InvalidateWetTipCache();
+    ClearBrushTemporalQueue();
+    ClearBrushHeatMapInternal();
     gPresets.clear();
     gActiveBrush = 0;
     gStampCarry = 0.0f;
+}
+
+void ClearBrushHeatMap() {
+    ClearBrushHeatMapInternal();
+}
+
+void EnsureBrushHeatMap(int width, int height) {
+    EnsureBrushHeatMapInternal(width, height);
+}
+
+Bitmap* GetBrushHeatViz() {
+    if (!brushExperimental || brushHeat < 1) return nullptr;
+    return gHeatViz;
 }
 
 int BrushPresetCount() {
@@ -365,18 +843,69 @@ int GetActiveBrushIndex() {
 
 void SetActiveBrushIndex(int index) {
     if (index < 0 || index >= static_cast<int>(gPresets.size())) return;
+    if (gActiveBrush != index) InvalidateWetTipCache();
     gActiveBrush = index;
     SaveBrushSettings();
     SyncBrushMenuItems();
 }
 
+Bitmap* BrushTipForDraw(Bitmap* tip) {
+    return TipWithWetEdges(tip);
+}
+
 const char* GetActiveBrushName() {
+    return BrushPresetsActiveName();
+}
+
+bool IsActiveBrushCustom() {
     const BrushPreset* preset = ActivePreset();
-    return preset ? preset->name.c_str() : "Round Soft";
+    return preset && !preset->builtin;
+}
+
+bool DeleteBrushPreset(int index) {
+    return BrushPresetsRemove(index, true);
+}
+
+bool RenameBrushPreset(int index, const char* name) {
+    return BrushPresetsRename(index, name, true);
+}
+
+void PersistActiveBrushDefaultSize(int size) {
+    BrushPresetsSetDefaultSize(gActiveBrush, size, true);
 }
 
 void ResetBrushStrokeState() {
     gStampCarry = 0.0f;
+    gSmoothInit = false;
+    gSmoothX = 0.0f;
+    gSmoothY = 0.0f;
+    gStrokeStartMs = 0;
+    gStrokeDistPx = 0.0f;
+    ClearBrushTemporalQueue();
+}
+
+void InitBrushStrokeSmoothing(int x, int y) {
+    gSmoothX = static_cast<float>(x);
+    gSmoothY = static_cast<float>(y);
+    gSmoothInit = true;
+    gStrokeStartMs = GetTickCount();
+    gStrokeDistPx = 0.0f;
+}
+
+bool SmoothBrushStrokePoint(int rawX, int rawY, int& outX, int& outY) {
+    if (!gSmoothInit) {
+        InitBrushStrokeSmoothing(rawX, rawY);
+    }
+    int amount = brushSmoothing;
+    if (amount < 0) amount = 0;
+    if (amount > 100) amount = 100;
+    // 0% → follow cursor exactly; 100% → strong lag (~8% pull per sample).
+    const float pull = 1.0f - 0.92f * (static_cast<float>(amount) / 100.0f);
+    gSmoothX += (static_cast<float>(rawX) - gSmoothX) * pull;
+    gSmoothY += (static_cast<float>(rawY) - gSmoothY) * pull;
+    outX = static_cast<int>(gSmoothX + (gSmoothX >= 0.0f ? 0.5f : -0.5f));
+    outY = static_cast<int>(gSmoothY + (gSmoothY >= 0.0f ? 0.5f : -0.5f));
+    return true;
 }
 
 bool IsPenPressureEnabled() {
@@ -415,242 +944,268 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
 
     if (eraseOpaque) {
         DrawRoundLine(target, x0, y0, x1, y1, gTheme.canvasBg, effectiveWidth, false);
+        EnqueueAfterimageAlongSegment(x0, y0, x1, y1, effectiveWidth);
         return;
     }
 
     const BrushPreset* preset = ActivePreset();
     if (!preset || !preset->tip || currentTool != DrawTool::Pen) {
         DrawRoundLine(target, x0, y0, x1, y1, color, effectiveWidth, eraseTransparent);
+        if (eraseTransparent) {
+            EnqueueAfterimageAlongSegment(x0, y0, x1, y1, effectiveWidth);
+        }
         return;
     }
 
     const float dx = static_cast<float>(x1 - x0);
     const float dy = static_cast<float>(y1 - y0);
     const float segLen = sqrtf(dx * dx + dy * dy);
-    const float spacing = MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, effectiveWidth)));
+    const float aging = StrokeAgingAmount();
+
+    auto ScatterOffset = [](int x, int y, int stampW, int salt, int& outDx, int& outDy) {
+        outDx = 0;
+        outDy = 0;
+        int scatter = brushScatter;
+        // Wind alone can still push stamps toward the nearest canvas edge.
+        const bool windOn = brushExperimental && brushWind > 0;
+        if (scatter < 1 && !windOn) return;
+        if (scatter > 100) scatter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 73856093u)
+            ^ (static_cast<unsigned>(y) * 19349663u)
+            ^ (static_cast<unsigned>(salt) * 83492791u);
+        const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
+        const float scatterAmt = (scatter < 1) ? 0.0f : (static_cast<float>(scatter) / 100.0f);
+        const float amp = static_cast<float>(stampW) * 0.55f * MaxFloat(scatterAmt, windOn ? 0.20f : 0.0f);
+        outDx = static_cast<int>(rx * amp + (rx >= 0.0f ? 0.5f : -0.5f));
+        outDy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
+        if (windOn && docWidth > 1 && docHeight > 1) {
+            const float wind = static_cast<float>(ClampInt(brushWind, 0, 100)) / 100.0f;
+            const float nx = static_cast<float>(x) / static_cast<float>(docWidth - 1);
+            const float ny = static_cast<float>(y) / static_cast<float>(docHeight - 1);
+            // Push outward near edges (window-edge wind).
+            float wx = 0.0f, wy = 0.0f;
+            if (nx < 0.22f) wx = -(1.0f - nx / 0.22f);
+            else if (nx > 0.78f) wx = (nx - 0.78f) / 0.22f;
+            if (ny < 0.22f) wy = -(1.0f - ny / 0.22f);
+            else if (ny > 0.78f) wy = (ny - 0.78f) / 0.22f;
+            const float wamp = static_cast<float>(stampW) * 0.85f * wind;
+            outDx += static_cast<int>(wx * wamp + (wx >= 0.0f ? 0.5f : -0.5f));
+            outDy += static_cast<int>(wy * wamp + (wy >= 0.0f ? 0.5f : -0.5f));
+        }
+    };
+
+    auto AngleJitter = [](int x, int y, int salt, float baseDeg) -> float {
+        int jitter = brushAngleJitter;
+        if (jitter < 1) return baseDeg;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 83492791u)
+            ^ (static_cast<unsigned>(y) * 2654435761u)
+            ^ (static_cast<unsigned>(salt) * 2246822519u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        return baseDeg + u * 180.0f * (static_cast<float>(jitter) / 100.0f);
+    };
+
+    // tipW = brush diameter before pressure; floor is % of tip (Photoshop-style Minimum Diameter).
+    auto SizeJitter = [](int x, int y, int salt, int baseW, int tipW) -> int {
+        int jitter = brushSizeJitter;
+        int w = baseW;
+        if (jitter >= 1) {
+            if (jitter > 100) jitter = 100;
+            const unsigned n = (static_cast<unsigned>(x) * 374761393u)
+                ^ (static_cast<unsigned>(y) * 668265263u)
+                ^ (static_cast<unsigned>(salt) * 2147483647u);
+            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+            const float factor = 1.0f + u * (static_cast<float>(jitter) / 100.0f);
+            w = static_cast<int>(static_cast<float>(baseW) * factor + 0.5f);
+        }
+        int minPct = brushMinDiameter;
+        if (minPct < 0) minPct = 0;
+        if (minPct > 100) minPct = 100;
+        if (minPct > 0) {
+            int floorW = static_cast<int>(static_cast<float>(tipW) * (static_cast<float>(minPct) / 100.0f) + 0.5f);
+            if (floorW < 1) floorW = 1;
+            if (w < floorW) w = floorW;
+        }
+        if (w < 1) w = 1;
+        return w;
+    };
+
+    auto OpacityJitter = [](int x, int y, int salt, float basePressure) -> float {
+        int jitter = brushOpacityJitter;
+        if (jitter < 1) return basePressure;
+        if (jitter > 100) jitter = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 1103515245u)
+            ^ (static_cast<unsigned>(y) * 12345u)
+            ^ (static_cast<unsigned>(salt) * 1664525u);
+        const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+        float p = basePressure * (1.0f + u * (static_cast<float>(jitter) / 100.0f));
+        if (p < 0.05f) p = 0.05f;
+        if (p > 1.0f) p = 1.0f;
+        return p;
+    };
+
+    auto RoundnessJitter = [](int x, int y, int salt, int baseR) -> int {
+        int jitter = brushRoundnessJitter;
+        int r = baseR;
+        if (jitter >= 1) {
+            if (jitter > 100) jitter = 100;
+            const unsigned n = (static_cast<unsigned>(x) * 2654435761u)
+                ^ (static_cast<unsigned>(y) * 2246822519u)
+                ^ (static_cast<unsigned>(salt) * 3266489917u);
+            const float u = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+            const float factor = 1.0f + u * (static_cast<float>(jitter) / 100.0f);
+            r = static_cast<int>(static_cast<float>(baseR) * factor + 0.5f);
+        }
+        if (r < 1) r = 1;
+        if (r > 100) r = 100;
+        return r;
+    };
+
+    auto FlipChance = [](int x, int y, int salt, int chance, unsigned mix) -> bool {
+        if (chance < 1) return false;
+        if (chance > 100) chance = 100;
+        const unsigned n = (static_cast<unsigned>(x) * 1597334677u)
+            ^ (static_cast<unsigned>(y) * 3812015801u)
+            ^ (static_cast<unsigned>(salt) * mix);
+        return static_cast<int>(n % 100u) < chance;
+    };
+
+    const float strokeAngleDeg = (segLen >= 0.001f)
+        ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
+        : 0.0f;
+    float baseTipAngleDeg = strokeAngleDeg + static_cast<float>(brushTipAngle);
+    if (brushExperimental && brushClockPhase > 0) {
+        SYSTEMTIME st = {};
+        GetLocalTime(&st);
+        const float secAngle = (static_cast<float>(st.wSecond)
+            + static_cast<float>(st.wMilliseconds) / 1000.0f) * 6.0f;
+        baseTipAngleDeg += secAngle * (static_cast<float>(ClampInt(brushClockPhase, 0, 100)) / 100.0f);
+    }
+    if (brushExperimental && brushCompassLock > 0) {
+        const float t = static_cast<float>(ClampInt(brushCompassLock, 0, 100)) / 100.0f;
+        baseTipAngleDeg = baseTipAngleDeg * (1.0f - t) + gUiCompassAngle * t;
+    }
+
+    int count = brushStampCount;
+    if (count < 1) count = 1;
+    if (count > 8) count = 8;
+
+    auto PlaceStamps = [&](int sx, int sy, int baseSalt, float pressure) {
+        // Aging: as the stroke dries, flow drops and tip shrinks slightly.
+        float agedPressure = pressure;
+        int agedWidth = width;
+        if (aging > 0.001f && !eraseTransparent) {
+            agedPressure = pressure * (1.0f - 0.55f * aging);
+            if (agedPressure < 0.08f) agedPressure = 0.08f;
+            agedWidth = MaxInt(1, static_cast<int>(static_cast<float>(width) * (1.0f - 0.25f * aging) + 0.5f));
+        }
+        // Tide: size breathes with a sine of accumulated stroke distance.
+        if (brushExperimental && brushTide > 0 && !eraseTransparent) {
+            const float strength = static_cast<float>(ClampInt(brushTide, 0, 100)) / 100.0f;
+            const float wavelength = 56.0f + 90.0f * (1.0f - strength); // stronger → tighter waves
+            const float wave = sinf(gStrokeDistPx * (6.2831853f / MaxFloat(24.0f, wavelength)));
+            const float breathe = 1.0f + wave * (0.18f + 0.42f * strength);
+            agedWidth = MaxInt(1, static_cast<int>(static_cast<float>(agedWidth) * breathe + 0.5f));
+            agedPressure = MaxFloat(0.08f, agedPressure * (1.0f + wave * 0.12f * strength));
+            if (agedPressure > 1.0f) agedPressure = 1.0f;
+        }
+        const int baseW = PenPressureWidth(agedWidth, agedPressure);
+        int spacingW = baseW;
+        for (int c = 0; c < count; ++c) {
+            const int salt = baseSalt * 8 + c;
+            const int stampW = SizeJitter(sx, sy, salt, baseW, agedWidth);
+            if (c == 0) spacingW = stampW;
+            const float stampP = OpacityJitter(sx, sy, salt, agedPressure);
+            int ox = 0, oy = 0;
+            ScatterOffset(sx, sy, stampW, salt, ox, oy);
+            // Count polish: if Scatter is off, fan secondary stamps so Count is visible.
+            if (brushScatter < 1 && brushWind < 1 && count > 1 && c > 0) {
+                const unsigned n = (static_cast<unsigned>(sx) * 73856093u)
+                    ^ (static_cast<unsigned>(sy) * 19349663u)
+                    ^ (static_cast<unsigned>(salt) * 83492791u);
+                const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
+                const float amp = static_cast<float>(stampW) * 0.40f;
+                ox = static_cast<int>(rx * amp + (rx >= 0.0f ? 0.5f : -0.5f));
+                oy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
+            }
+            const float ang = AngleJitter(sx, sy, salt, baseTipAngleDeg);
+            const int stampRd = RoundnessJitter(sx, sy, salt, brushRoundness);
+            const bool fx = FlipChance(sx, sy, salt, brushFlipX, 0x85ebca6bu);
+            const bool fy = FlipChance(sx, sy, salt, brushFlipY, 0xc2b2ae35u);
+            COLORREF stampColor = color;
+            if (brushColorJitter > 0 && !eraseTransparent) {
+                int jitter = brushColorJitter;
+                if (jitter > 100) jitter = 100;
+                const unsigned n = (static_cast<unsigned>(sx) * 374761393u)
+                    ^ (static_cast<unsigned>(sy) * 668265263u)
+                    ^ (static_cast<unsigned>(salt) * 0x9e3779b9u);
+                const float u = static_cast<float>(n & 255u) / 255.0f; // 0..1 toward backColor
+                const float t = u * (static_cast<float>(jitter) / 100.0f);
+                const int ar = GetRValue(color), ag = GetGValue(color), ab = GetBValue(color);
+                const int br = GetRValue(backColor), bg = GetGValue(backColor), bb = GetBValue(backColor);
+                stampColor = RGB(
+                    static_cast<int>(ar + (br - ar) * t + 0.5f),
+                    static_cast<int>(ag + (bg - ag) * t + 0.5f),
+                    static_cast<int>(ab + (bb - ab) * t + 0.5f));
+            }
+            if (!eraseTransparent) {
+                stampColor = ApplyHsbJitter(stampColor, sx, sy, salt);
+                stampColor = AgePigmentColor(stampColor, aging);
+            }
+            DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, stampColor, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
+            EnqueueEchoFromStamp(sx + ox, sy + oy, stampColor, stampW, stampP, ang, stampRd, fx, fy, eraseTransparent);
+            // Bloom: soft dilated halo under/around the primary stamp (once per spacing step).
+            if (c == 0 && brushExperimental && brushBloom > 0 && !eraseTransparent) {
+                const float bs = static_cast<float>(ClampInt(brushBloom, 0, 100)) / 100.0f;
+                const int bloomW = MaxInt(stampW + 2,
+                    static_cast<int>(static_cast<float>(stampW) * (1.30f + 1.10f * bs) + 0.5f));
+                const float bloomP = MaxFloat(0.06f, stampP * (0.14f + 0.28f * bs));
+                const int pr = GetRValue(stampColor), pg = GetGValue(stampColor), pb = GetBValue(stampColor);
+                // Lift toward white so the halo reads as glow, not a second opaque core.
+                const COLORREF bloomColor = RGB(
+                    ClampInt(pr + static_cast<int>((255 - pr) * (0.25f + 0.20f * bs)), 0, 255),
+                    ClampInt(pg + static_cast<int>((255 - pg) * (0.25f + 0.20f * bs)), 0, 255),
+                    ClampInt(pb + static_cast<int>((255 - pb) * (0.25f + 0.20f * bs)), 0, 255));
+                DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, bloomColor, bloomW,
+                    false, bloomP, ang, stampRd, fx, fy);
+            }
+            if (c == 0) {
+                EnqueueMirageFromStamp(sx + ox, sy + oy, stampColor, stampW, stampP, ang, stampRd, fx, fy, eraseTransparent);
+            }
+        }
+        return spacingW;
+    };
 
     if (segLen < 0.001f) {
-        const int stampW = PenPressureWidth(width, pressure1);
-        DrawStamp(target, preset->tip.get(), x1, y1, color, stampW, eraseTransparent, pressure1);
+        PlaceStamps(x1, y1, 0, pressure1);
+        gStrokeDistPx += 1.0f;
+        if (brushExperimental && (brushEchoDelay > 0 || brushMirage > 0) && BrushTemporalPending()) {
+            ProcessBrushTemporalQueue();
+        }
         return;
     }
 
     float dist = gStampCarry;
+    int stampIndex = 0;
     while (dist <= segLen) {
         const float t = dist / segLen;
         const float pressure = pressure0 + (pressure1 - pressure0) * t;
-        const int stampW = PenPressureWidth(width, pressure);
-        const int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
-        const int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
-        DrawStamp(target, preset->tip.get(), sx, sy, color, stampW, eraseTransparent, pressure);
-        dist += MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, stampW)));
+        int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
+        int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
+        const int spacingW = PlaceStamps(sx, sy, stampIndex, pressure);
+        const float step = MaxFloat(1.0f, preset->spacing * static_cast<float>(MaxInt(1, spacingW)));
+        dist += step;
+        gStrokeDistPx += step;
+        ++stampIndex;
     }
     gStampCarry = dist - segLen;
-}
 
-bool ImportBrushTipFromFile(HWND owner, const char* path) {
-    if (!path || !path[0]) return false;
-    if (CustomBrushCount() >= kMaxCustomBrushes || static_cast<int>(gPresets.size()) >= kMaxTotalBrushes) {
-        MessageBoxA(owner, "Custom brush limit reached.", "Import Brush", MB_OK | MB_ICONINFORMATION);
-        return false;
+    // Flush any echoes/mirages that became due during this segment (timer also drains the queue).
+    if (brushExperimental && (brushEchoDelay > 0 || brushMirage > 0) && BrushTemporalPending()) {
+        ProcessBrushTemporalQueue();
     }
-
-    Bitmap loaded(PathToWide(path).c_str());
-    if (loaded.GetLastStatus() != Ok) return false;
-    Bitmap* tip = NormalizeImportedTip(&loaded);
-    if (!tip) return false;
-
-    std::string name = "Imported";
-    const char* slash = strrchr(path, '\\');
-    if (!slash) slash = strrchr(path, '/');
-    if (slash && slash[1]) {
-        name = slash + 1;
-        const size_t dot = name.rfind('.');
-        if (dot != std::string::npos) name.erase(dot);
-    }
-    if (!AddCustomPreset(name.c_str(), tip, 0.15f, 12)) {
-        delete tip;
-        return false;
-    }
-    gActiveBrush = static_cast<int>(gPresets.size()) - 1;
-    SaveBrushSettings();
-    SyncBrushMenuItems();
-    return true;
-}
-
-bool PromptImportBrushTip(HWND owner) {
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = owner;
-    ofn.lpstrFilter = "Brush Tip Images\0*.png;*.bmp;*.jpg;*.jpeg\0";
-    ofn.lpstrFile = filePath;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-    if (gLastBrowseDir[0]) ofn.lpstrInitialDir = gLastBrowseDir;
-    if (!GetOpenFileNameA(&ofn)) return false;
-    if (!ImportBrushTipFromFile(owner, filePath)) {
-        MessageBoxA(owner, "Could not load brush tip image.", "Import Brush", MB_OK | MB_ICONERROR);
-        return false;
-    }
-    return true;
-}
-
-struct AbrImportPickerState {
-    const std::vector<AbrSampledBrush>* samples = nullptr;
-    std::vector<int> selected;
-};
-
-static void AbrListSelectAll(HWND list, int count, bool select) {
-    for (int i = 0; i < count; ++i) {
-        SendMessageA(list, LB_SETSEL, select ? TRUE : FALSE, i);
-    }
-}
-
-static INT_PTR CALLBACK AbrImportDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
-    AbrImportPickerState* state = reinterpret_cast<AbrImportPickerState*>(
-        GetWindowLongPtrA(hDlg, GWLP_USERDATA));
-    switch (message) {
-    case WM_INITDIALOG: {
-        state = reinterpret_cast<AbrImportPickerState*>(lParam);
-        SetWindowLongPtrA(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
-        if (!state || !state->samples) return TRUE;
-        HWND list = GetDlgItem(hDlg, IDC_ABR_LIST);
-        if (!list) return TRUE;
-        const auto& samples = *state->samples;
-        for (const AbrSampledBrush& sample : samples) {
-            char line[128];
-            snprintf(line, sizeof(line), "%s (%dx%d)", sample.name.c_str(), sample.width, sample.height);
-            SendMessageA(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line));
-        }
-        AbrListSelectAll(list, static_cast<int>(samples.size()), true);
-        return TRUE;
-    }
-    case WM_COMMAND:
-        switch (LOWORD(wParam)) {
-        case IDC_ABR_SELECT_ALL:
-            if (state && state->samples) {
-                if (HWND list = GetDlgItem(hDlg, IDC_ABR_LIST)) {
-                    AbrListSelectAll(list, static_cast<int>(state->samples->size()), true);
-                }
-            }
-            return TRUE;
-        case IDC_ABR_CLEAR_ALL:
-            if (state && state->samples) {
-                if (HWND list = GetDlgItem(hDlg, IDC_ABR_LIST)) {
-                    AbrListSelectAll(list, static_cast<int>(state->samples->size()), false);
-                }
-            }
-            return TRUE;
-        case IDOK:
-            if (state && state->samples) {
-                HWND list = GetDlgItem(hDlg, IDC_ABR_LIST);
-                if (!list) {
-                    EndDialog(hDlg, IDCANCEL);
-                    return TRUE;
-                }
-                const int count = static_cast<int>(SendMessageA(list, LB_GETSELCOUNT, 0, 0));
-                if (count <= 0) {
-                    MessageBoxA(hDlg, "Select at least one brush.", "Import ABR", MB_OK | MB_ICONWARNING);
-                    return TRUE;
-                }
-                state->selected.resize(static_cast<size_t>(count));
-                SendMessageA(list, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(state->selected.data()));
-            }
-            EndDialog(hDlg, IDOK);
-            return TRUE;
-        case IDCANCEL:
-            EndDialog(hDlg, IDCANCEL);
-            return TRUE;
-        }
-        break;
-    }
-    return FALSE;
-}
-
-bool PromptAbrBrushSelection(HWND owner, const std::vector<AbrSampledBrush>& samples,
-    std::vector<int>& outIndices) {
-    outIndices.clear();
-    if (samples.empty()) return false;
-    if (samples.size() == 1) {
-        outIndices.push_back(0);
-        return true;
-    }
-    AbrImportPickerState state = {};
-    state.samples = &samples;
-    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_ABR_IMPORT), owner,
-            AbrImportDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
-        return false;
-    }
-    outIndices = std::move(state.selected);
-    return !outIndices.empty();
-}
-
-bool ImportAbrBrushesFromFile(HWND owner, const char* path) {
-    if (!path || !path[0]) return false;
-    std::vector<AbrSampledBrush> samples;
-    std::string error;
-    if (!LoadAbrSampledBrushes(path, samples, error)) {
-        if (owner && !error.empty()) {
-            MessageBoxA(owner, error.c_str(), "Import ABR", MB_OK | MB_ICONERROR);
-        }
-        return false;
-    }
-
-    std::vector<int> pickIndices;
-    if (!PromptAbrBrushSelection(owner, samples, pickIndices)) {
-        return false;
-    }
-
-    int imported = 0;
-    int firstIndex = -1;
-    for (int sampleIdx : pickIndices) {
-        if (sampleIdx < 0 || sampleIdx >= static_cast<int>(samples.size())) continue;
-        if (CustomBrushCount() >= kMaxCustomBrushes || static_cast<int>(gPresets.size()) >= kMaxTotalBrushes) {
-            break;
-        }
-        const AbrSampledBrush& sample = samples[static_cast<size_t>(sampleIdx)];
-        Bitmap* tip = TipFromSampleMask(sample.mask.data(), sample.width, sample.height);
-        if (!tip) continue;
-        const float spacing = MaxFloat(0.05f, static_cast<float>(sample.spacing) / 100.0f);
-        int defaultSize = MaxInt(sample.width, sample.height) / 4;
-        if (defaultSize < 4) defaultSize = 4;
-        if (defaultSize > 32) defaultSize = 32;
-        if (!AddCustomPreset(sample.name.c_str(), tip, spacing, defaultSize)) {
-            delete tip;
-            continue;
-        }
-        if (firstIndex < 0) firstIndex = static_cast<int>(gPresets.size()) - 1;
-        ++imported;
-    }
-
-    if (imported <= 0) {
-        MessageBoxA(owner, "No brushes could be imported from this ABR file.", "Import ABR", MB_OK | MB_ICONERROR);
-        return false;
-    }
-
-    gActiveBrush = firstIndex;
-    SaveBrushSettings();
-    SyncBrushMenuItems();
-
-    char msg[128];
-    sprintf_s(msg, "Imported %d brush(es). Active: %s", imported, GetActiveBrushName());
-    MessageBoxA(owner, msg, "Import ABR", MB_OK | MB_ICONINFORMATION);
-    return true;
-}
-
-bool PromptImportAbrBrushes(HWND owner) {
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = owner;
-    ofn.lpstrFilter = "Photoshop Brushes\0*.abr\0";
-    ofn.lpstrFile = filePath;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-    if (gLastBrowseDir[0]) ofn.lpstrInitialDir = gLastBrowseDir;
-    if (!GetOpenFileNameA(&ofn)) return false;
-    return ImportAbrBrushesFromFile(owner, filePath);
 }
 
 int GetBrushFlow() {
@@ -659,6 +1214,78 @@ int GetBrushFlow() {
 
 int GetBrushHardness() {
     return brushHardness;
+}
+
+int GetBrushScatter() {
+    return brushScatter;
+}
+
+int GetBrushAngleJitter() {
+    return brushAngleJitter;
+}
+
+int GetBrushTipAngle() {
+    return brushTipAngle;
+}
+
+int GetBrushSizeJitter() {
+    return brushSizeJitter;
+}
+
+int GetBrushOpacityJitter() {
+    return brushOpacityJitter;
+}
+
+int GetBrushSmoothing() {
+    return brushSmoothing;
+}
+
+int GetBrushStampCount() {
+    return brushStampCount;
+}
+
+int GetBrushRoundness() {
+    return brushRoundness;
+}
+
+int GetBrushMinDiameter() {
+    return brushMinDiameter;
+}
+
+int GetBrushWetEdges() {
+    return brushWetEdges;
+}
+
+int GetBrushRoundnessJitter() {
+    return brushRoundnessJitter;
+}
+
+int GetBrushFlipX() {
+    return brushFlipX;
+}
+
+int GetBrushFlipY() {
+    return brushFlipY;
+}
+
+int GetBrushFlowJitter() {
+    return brushFlowJitter;
+}
+
+int GetBrushColorJitter() {
+    return brushColorJitter;
+}
+
+int GetBrushHueJitter() {
+    return brushHueJitter;
+}
+
+int GetBrushSatJitter() {
+    return brushSatJitter;
+}
+
+int GetBrushBrightJitter() {
+    return brushBrightJitter;
 }
 
 void SetBrushFlow(int flow) {
@@ -677,6 +1304,313 @@ void SetBrushHardness(int hardness) {
     SyncBrushMenuItems();
 }
 
+void SetBrushScatter(int scatter) {
+    if (scatter < 0) scatter = 0;
+    if (scatter > 100) scatter = 100;
+    brushScatter = scatter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushAngleJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushAngleJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushTipAngle(int degrees) {
+    if (degrees < 0) degrees = 0;
+    if (degrees > 180) degrees = 180;
+    brushTipAngle = degrees;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushSizeJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushSizeJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushOpacityJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushOpacityJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushSmoothing(int amount) {
+    if (amount < 0) amount = 0;
+    if (amount > 100) amount = 100;
+    brushSmoothing = amount;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushStampCount(int count) {
+    if (count < 1) count = 1;
+    if (count > 8) count = 8;
+    brushStampCount = count;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushRoundness(int percent) {
+    if (percent < 1) percent = 1;
+    if (percent > 100) percent = 100;
+    brushRoundness = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushMinDiameter(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    brushMinDiameter = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushWetEdges(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    if (brushWetEdges != percent) InvalidateWetTipCache();
+    brushWetEdges = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushRoundnessJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushRoundnessJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushFlipX(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    brushFlipX = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushFlipY(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    brushFlipY = percent;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushFlowJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushFlowJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushColorJitter(int jitter) {
+    if (jitter < 0) jitter = 0;
+    if (jitter > 100) jitter = 100;
+    brushColorJitter = jitter;
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushHueJitter(int jitter) {
+    brushHueJitter = ClampInt(jitter, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushSatJitter(int jitter) {
+    brushSatJitter = ClampInt(jitter, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushBrightJitter(int jitter) {
+    brushBrightJitter = ClampInt(jitter, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+bool IsBrushExperimental() {
+    return brushExperimental;
+}
+
+int GetBrushEchoDelay() {
+    return brushEchoDelay;
+}
+
+int GetBrushEchoFeedback() {
+    return brushEchoFeedback;
+}
+
+void SetBrushExperimental(bool enabled) {
+    brushExperimental = enabled;
+    if (!brushExperimental) {
+        ClearBrushTemporalQueue();
+        ClearBrushHeatMapInternal();
+    }
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushEchoDelay(int delay) {
+    brushEchoDelay = ClampInt(delay, 0, 100);
+    if (brushEchoDelay < 1) ClearBrushTemporalQueue();
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushEchoFeedback(int feedback) {
+    brushEchoFeedback = ClampInt(feedback, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+int GetBrushPing() {
+    return brushPing;
+}
+
+int GetBrushBiolum() {
+    return brushBiolum;
+}
+
+void SetBrushPing(int strength) {
+    brushPing = ClampInt(strength, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushBiolum(int amount) {
+    brushBiolum = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+int GetBrushHeat() {
+    return brushHeat;
+}
+
+int GetBrushClockPhase() {
+    return brushClockPhase;
+}
+
+int GetBrushCompassLock() {
+    return brushCompassLock;
+}
+
+void SetBrushHeat(int amount) {
+    brushHeat = ClampInt(amount, 0, 100);
+    if (brushHeat < 1) ClearBrushHeatMapInternal();
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushClockPhase(int amount) {
+    brushClockPhase = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushCompassLock(int amount) {
+    brushCompassLock = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+int GetBrushAfterimage() {
+    return brushAfterimage;
+}
+
+int GetBrushAging() {
+    return brushAging;
+}
+
+int GetBrushWind() {
+    return brushWind;
+}
+
+int GetBrushTide() {
+    return brushTide;
+}
+
+int GetBrushBloom() {
+    return brushBloom;
+}
+
+int GetBrushMirage() {
+    return brushMirage;
+}
+
+void SetBrushAfterimage(int amount) {
+    brushAfterimage = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushAging(int amount) {
+    brushAging = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushWind(int amount) {
+    brushWind = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushTide(int amount) {
+    brushTide = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushBloom(int amount) {
+    brushBloom = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushMirage(int amount) {
+    brushMirage = ClampInt(amount, 0, 100);
+    if (brushMirage < 1) ClearBrushTemporalQueue();
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+int GetBrushSpacingPercent() {
+    const BrushPreset* preset = ActivePreset();
+    if (!preset) return 20;
+    int pct = static_cast<int>(preset->spacing * 100.0f + 0.5f);
+    if (pct < 5) pct = 5;
+    if (pct > 100) pct = 100;
+    return pct;
+}
+
+void SetBrushSpacingPercent(int percent) {
+    BrushPreset* preset = ActivePresetMutable();
+    if (!preset) return;
+    percent = ClampInt(percent, 5, 100);
+    preset->spacing = static_cast<float>(percent) / 100.0f;
+    if (!preset->builtin) {
+        SaveCustomBrushesToDisk();
+    }
+    SaveBrushSettings(); // persists BrushSpacing for active tip
+    SyncBrushFlyoutChecks();
+}
+
 void LoadBrushSettings() {
     char iniPath[MAX_PATH] = {};
     GetFeaturesIniPath(iniPath, MAX_PATH);
@@ -687,11 +1621,80 @@ void LoadBrushSettings() {
     }
     brushFlow = GetPrivateProfileIntA("Features", "BrushFlow", 100, iniPath);
     brushHardness = GetPrivateProfileIntA("Features", "BrushHardness", 100, iniPath);
+    brushScatter = GetPrivateProfileIntA("Features", "BrushScatter", 0, iniPath);
+    brushAngleJitter = GetPrivateProfileIntA("Features", "BrushAngleJitter", 0, iniPath);
+    brushTipAngle = GetPrivateProfileIntA("Features", "BrushTipAngle", 0, iniPath);
+    brushSizeJitter = GetPrivateProfileIntA("Features", "BrushSizeJitter", 0, iniPath);
+    brushOpacityJitter = GetPrivateProfileIntA("Features", "BrushOpacityJitter", 0, iniPath);
+    brushSmoothing = GetPrivateProfileIntA("Features", "BrushSmoothing", 0, iniPath);
+    brushStampCount = GetPrivateProfileIntA("Features", "BrushStampCount", 1, iniPath);
+    brushRoundness = GetPrivateProfileIntA("Features", "BrushRoundness", 100, iniPath);
+    brushMinDiameter = GetPrivateProfileIntA("Features", "BrushMinDiameter", 0, iniPath);
+    brushWetEdges = GetPrivateProfileIntA("Features", "BrushWetEdges", 0, iniPath);
+    brushRoundnessJitter = GetPrivateProfileIntA("Features", "BrushRoundnessJitter", 0, iniPath);
+    brushFlipX = GetPrivateProfileIntA("Features", "BrushFlipX", 0, iniPath);
+    brushFlipY = GetPrivateProfileIntA("Features", "BrushFlipY", 0, iniPath);
+    brushFlowJitter = GetPrivateProfileIntA("Features", "BrushFlowJitter", 0, iniPath);
+    brushColorJitter = GetPrivateProfileIntA("Features", "BrushColorJitter", 0, iniPath);
+    brushHueJitter = GetPrivateProfileIntA("Features", "BrushHueJitter", 0, iniPath);
+    brushSatJitter = GetPrivateProfileIntA("Features", "BrushSatJitter", 0, iniPath);
+    brushBrightJitter = GetPrivateProfileIntA("Features", "BrushBrightJitter", 0, iniPath);
+    brushExperimental = GetPrivateProfileIntA("Features", "BrushExperimental", 0, iniPath) != 0;
+    brushEchoDelay = GetPrivateProfileIntA("Features", "BrushEchoDelay", 0, iniPath);
+    brushEchoFeedback = GetPrivateProfileIntA("Features", "BrushEchoFeedback", 40, iniPath);
+    brushPing = GetPrivateProfileIntA("Features", "BrushPing", 0, iniPath);
+    brushBiolum = GetPrivateProfileIntA("Features", "BrushBiolum", 0, iniPath);
+    brushHeat = GetPrivateProfileIntA("Features", "BrushHeat", 0, iniPath);
+    brushClockPhase = GetPrivateProfileIntA("Features", "BrushClockPhase", 0, iniPath);
+    brushCompassLock = GetPrivateProfileIntA("Features", "BrushCompassLock", 0, iniPath);
+    brushAfterimage = GetPrivateProfileIntA("Features", "BrushAfterimage", 0, iniPath);
+    brushAging = GetPrivateProfileIntA("Features", "BrushAging", 0, iniPath);
+    brushWind = GetPrivateProfileIntA("Features", "BrushWind", 0, iniPath);
+    brushTide = GetPrivateProfileIntA("Features", "BrushTide", 0, iniPath);
+    brushBloom = GetPrivateProfileIntA("Features", "BrushBloom", 0, iniPath);
+    brushMirage = GetPrivateProfileIntA("Features", "BrushMirage", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
-    if (brushFlow < 1) brushFlow = 1;
-    if (brushFlow > 100) brushFlow = 100;
-    if (brushHardness < 1) brushHardness = 1;
-    if (brushHardness > 100) brushHardness = 100;
+    const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
+    if (spacingPct >= 5) {
+        if (BrushPreset* preset = ActivePresetMutable()) {
+            int pct = spacingPct;
+            if (pct > 100) pct = 100;
+            preset->spacing = static_cast<float>(pct) / 100.0f;
+        }
+    }
+    brushFlow = ClampInt(brushFlow, 1, 100);
+    brushHardness = ClampInt(brushHardness, 1, 100);
+    brushScatter = ClampInt(brushScatter, 0, 100);
+    brushAngleJitter = ClampInt(brushAngleJitter, 0, 100);
+    brushTipAngle = ClampInt(brushTipAngle, 0, 180);
+    brushSizeJitter = ClampInt(brushSizeJitter, 0, 100);
+    brushOpacityJitter = ClampInt(brushOpacityJitter, 0, 100);
+    brushSmoothing = ClampInt(brushSmoothing, 0, 100);
+    brushStampCount = ClampInt(brushStampCount, 1, 8);
+    brushRoundness = ClampInt(brushRoundness, 1, 100);
+    brushMinDiameter = ClampInt(brushMinDiameter, 0, 100);
+    brushWetEdges = ClampInt(brushWetEdges, 0, 100);
+    brushRoundnessJitter = ClampInt(brushRoundnessJitter, 0, 100);
+    brushFlipX = ClampInt(brushFlipX, 0, 100);
+    brushFlipY = ClampInt(brushFlipY, 0, 100);
+    brushFlowJitter = ClampInt(brushFlowJitter, 0, 100);
+    brushColorJitter = ClampInt(brushColorJitter, 0, 100);
+    brushHueJitter = ClampInt(brushHueJitter, 0, 100);
+    brushSatJitter = ClampInt(brushSatJitter, 0, 100);
+    brushBrightJitter = ClampInt(brushBrightJitter, 0, 100);
+    brushEchoDelay = ClampInt(brushEchoDelay, 0, 100);
+    brushEchoFeedback = ClampInt(brushEchoFeedback, 0, 100);
+    brushPing = ClampInt(brushPing, 0, 100);
+    brushBiolum = ClampInt(brushBiolum, 0, 100);
+    brushHeat = ClampInt(brushHeat, 0, 100);
+    brushClockPhase = ClampInt(brushClockPhase, 0, 100);
+    brushCompassLock = ClampInt(brushCompassLock, 0, 100);
+    brushAfterimage = ClampInt(brushAfterimage, 0, 100);
+    brushAging = ClampInt(brushAging, 0, 100);
+    brushWind = ClampInt(brushWind, 0, 100);
+    brushTide = ClampInt(brushTide, 0, 100);
+    brushBloom = ClampInt(brushBloom, 0, 100);
+    brushMirage = ClampInt(brushMirage, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -705,14 +1708,105 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushFlow", buf, iniPath);
     sprintf_s(buf, "%d", brushHardness);
     WritePrivateProfileStringA("Features", "BrushHardness", buf, iniPath);
+    sprintf_s(buf, "%d", brushScatter);
+    WritePrivateProfileStringA("Features", "BrushScatter", buf, iniPath);
+    sprintf_s(buf, "%d", brushAngleJitter);
+    WritePrivateProfileStringA("Features", "BrushAngleJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushTipAngle);
+    WritePrivateProfileStringA("Features", "BrushTipAngle", buf, iniPath);
+    sprintf_s(buf, "%d", brushSizeJitter);
+    WritePrivateProfileStringA("Features", "BrushSizeJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushOpacityJitter);
+    WritePrivateProfileStringA("Features", "BrushOpacityJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushSmoothing);
+    WritePrivateProfileStringA("Features", "BrushSmoothing", buf, iniPath);
+    sprintf_s(buf, "%d", brushStampCount);
+    WritePrivateProfileStringA("Features", "BrushStampCount", buf, iniPath);
+    sprintf_s(buf, "%d", brushRoundness);
+    WritePrivateProfileStringA("Features", "BrushRoundness", buf, iniPath);
+    sprintf_s(buf, "%d", brushMinDiameter);
+    WritePrivateProfileStringA("Features", "BrushMinDiameter", buf, iniPath);
+    sprintf_s(buf, "%d", brushWetEdges);
+    WritePrivateProfileStringA("Features", "BrushWetEdges", buf, iniPath);
+    sprintf_s(buf, "%d", brushRoundnessJitter);
+    WritePrivateProfileStringA("Features", "BrushRoundnessJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushFlipX);
+    WritePrivateProfileStringA("Features", "BrushFlipX", buf, iniPath);
+    sprintf_s(buf, "%d", brushFlipY);
+    WritePrivateProfileStringA("Features", "BrushFlipY", buf, iniPath);
+    sprintf_s(buf, "%d", brushFlowJitter);
+    WritePrivateProfileStringA("Features", "BrushFlowJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushColorJitter);
+    WritePrivateProfileStringA("Features", "BrushColorJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushHueJitter);
+    WritePrivateProfileStringA("Features", "BrushHueJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushSatJitter);
+    WritePrivateProfileStringA("Features", "BrushSatJitter", buf, iniPath);
+    sprintf_s(buf, "%d", brushBrightJitter);
+    WritePrivateProfileStringA("Features", "BrushBrightJitter", buf, iniPath);
+    WritePrivateProfileStringA("Features", "BrushExperimental", brushExperimental ? "1" : "0", iniPath);
+    sprintf_s(buf, "%d", brushEchoDelay);
+    WritePrivateProfileStringA("Features", "BrushEchoDelay", buf, iniPath);
+    sprintf_s(buf, "%d", brushEchoFeedback);
+    WritePrivateProfileStringA("Features", "BrushEchoFeedback", buf, iniPath);
+    sprintf_s(buf, "%d", brushPing);
+    WritePrivateProfileStringA("Features", "BrushPing", buf, iniPath);
+    sprintf_s(buf, "%d", brushBiolum);
+    WritePrivateProfileStringA("Features", "BrushBiolum", buf, iniPath);
+    sprintf_s(buf, "%d", brushHeat);
+    WritePrivateProfileStringA("Features", "BrushHeat", buf, iniPath);
+    sprintf_s(buf, "%d", brushClockPhase);
+    WritePrivateProfileStringA("Features", "BrushClockPhase", buf, iniPath);
+    sprintf_s(buf, "%d", brushCompassLock);
+    WritePrivateProfileStringA("Features", "BrushCompassLock", buf, iniPath);
+    sprintf_s(buf, "%d", brushAfterimage);
+    WritePrivateProfileStringA("Features", "BrushAfterimage", buf, iniPath);
+    sprintf_s(buf, "%d", brushAging);
+    WritePrivateProfileStringA("Features", "BrushAging", buf, iniPath);
+    sprintf_s(buf, "%d", brushWind);
+    WritePrivateProfileStringA("Features", "BrushWind", buf, iniPath);
+    sprintf_s(buf, "%d", brushTide);
+    WritePrivateProfileStringA("Features", "BrushTide", buf, iniPath);
+    sprintf_s(buf, "%d", brushBloom);
+    WritePrivateProfileStringA("Features", "BrushBloom", buf, iniPath);
+    sprintf_s(buf, "%d", brushMirage);
+    WritePrivateProfileStringA("Features", "BrushMirage", buf, iniPath);
+    sprintf_s(buf, "%d", GetBrushSpacingPercent());
+    WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
 }
 
+namespace {
+
+bool MenuContainsCommand(HMENU menu, UINT commandId) {
+    if (!menu) return false;
+    const int count = GetMenuItemCount(menu);
+    for (int i = 0; i < count; ++i) {
+        const UINT id = GetMenuItemID(menu, i);
+        if (id == commandId) return true;
+        HMENU sub = GetSubMenu(menu, i);
+        if (sub && MenuContainsCommand(sub, commandId)) return true;
+    }
+    return false;
+}
+
+HMENU FindToolsSubmenuContaining(UINT commandId) {
+    if (!gAppMenu) return nullptr;
+    HMENU toolsMenu = GetSubMenu(gAppMenu, 4);
+    if (!toolsMenu) return nullptr;
+    const int count = GetMenuItemCount(toolsMenu);
+    for (int i = 0; i < count; ++i) {
+        HMENU sub = GetSubMenu(toolsMenu, i);
+        if (sub && MenuContainsCommand(sub, commandId)) return sub;
+    }
+    return nullptr;
+}
+
+} // namespace
+
 void SyncBrushMenuItems() {
     if (!gAppMenu) return;
-    HMENU toolsMenu = GetSubMenu(gAppMenu, 4);
-    if (!toolsMenu) return;
-    HMENU presetMenu = GetSubMenu(toolsMenu, 8);
+    HMENU presetMenu = FindToolsSubmenuContaining(IDM_BRUSH_ROUND);
     if (presetMenu) {
         for (int i = IDM_BRUSH_ROUND; i <= IDM_BRUSH_PENCIL; ++i) {
             CheckMenuItem(presetMenu, i, MF_BYCOMMAND | MF_UNCHECKED);
@@ -722,7 +1816,7 @@ void SyncBrushMenuItems() {
         }
     }
 
-    HMENU dynamicsMenu = GetSubMenu(toolsMenu, 9);
+    HMENU dynamicsMenu = FindToolsSubmenuContaining(IDM_FLOW_LOW);
     if (!dynamicsMenu) return;
     CheckMenuItem(dynamicsMenu, IDM_FLOW_LOW, MF_BYCOMMAND | (brushFlow == 25 ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(dynamicsMenu, IDM_FLOW_MED, MF_BYCOMMAND | (brushFlow == 50 ? MF_CHECKED : MF_UNCHECKED));
@@ -732,4 +1826,5 @@ void SyncBrushMenuItems() {
     CheckMenuItem(dynamicsMenu, IDM_HARD_HARD, MF_BYCOMMAND | (brushHardness == 100 ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(dynamicsMenu, IDM_PRESSURE_ENABLE,
         MF_BYCOMMAND | (penPressureEnabled ? MF_CHECKED : MF_UNCHECKED));
+    SyncBrushFlyoutChecks();
 }

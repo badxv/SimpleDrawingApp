@@ -6,6 +6,7 @@
 #include "EventBus.h"
 #include "AtelierEvents.h"
 #include "UiShapeFlyout.h"
+#include "UiBrushFlyout.h"
 #include "LayerStack.h"
 #include <commctrl.h>
 #include <cstdio>
@@ -31,6 +32,32 @@ const char* StatusToolName() {
     return "Pen";
 }
 
+void AppendExtras(char* dest, size_t destChars, const char* piece) {
+    if (!dest || !piece || !piece[0] || destChars == 0) return;
+    strcat_s(dest, destChars, piece);
+}
+
+void AppendPct(char* dest, size_t destChars, const char* key, int value, int hideIf) {
+    if (value == hideIf) return;
+    char buf[32];
+    sprintf_s(buf, " %s:%d%%", key, value);
+    AppendExtras(dest, destChars, buf);
+}
+
+void AppendIntKey(char* dest, size_t destChars, const char* key, int value, int hideIf) {
+    if (value == hideIf) return;
+    char buf[32];
+    sprintf_s(buf, " %s:%d", key, value);
+    AppendExtras(dest, destChars, buf);
+}
+
+void AppendDeg(char* dest, size_t destChars, const char* key, int value, int hideIf) {
+    if (value == hideIf) return;
+    char buf[32];
+    sprintf_s(buf, " %s:%ddeg", key, value);
+    AppendExtras(dest, destChars, buf);
+}
+
 void BuildStatusTip(char* out, size_t outChars) {
     if (!out || outChars == 0) return;
     out[0] = '\0';
@@ -43,20 +70,68 @@ void BuildStatusTip(char* out, size_t outChars) {
     else if (currentTool == DrawTool::Shape) tip = "U  Alt=fill  Ctrl=both  Shift=constrain";
     else if (currentTool == DrawTool::Pen) tip = "B  [ / ] size  draw freely";
 
-    char extras[64] = "";
+    // Only emit non-default dynamics so the tip pane stays readable (avoids overflow/clip).
+    char extras[256] = "";
     if (currentTool == DrawTool::Pen) {
-        if (penPressureEnabled) {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%  P:%d%%", GetActiveBrushName(), brushFlow, brushHardness,
-                static_cast<int>(lastPenPressure * 100.0f + 0.5f));
-        } else {
-            sprintf_s(extras, "  %s  F:%d%% H:%d%%", GetActiveBrushName(), brushFlow, brushHardness);
+        AppendExtras(extras, sizeof(extras), "  ");
+        AppendExtras(extras, sizeof(extras), GetActiveBrushName());
+        AppendPct(extras, sizeof(extras), "Fx", brushFlipX, 0);
+        AppendPct(extras, sizeof(extras), "Fy", brushFlipY, 0);
+        AppendPct(extras, sizeof(extras), "Fj", brushFlowJitter, 0);
+        AppendPct(extras, sizeof(extras), "Cj", brushColorJitter, 0);
+        AppendPct(extras, sizeof(extras), "Hj", brushHueJitter, 0);
+        AppendPct(extras, sizeof(extras), "Sj", brushSatJitter, 0);
+        AppendPct(extras, sizeof(extras), "Bj", brushBrightJitter, 0);
+        if (brushExperimental) {
+            // Cap experimental codes so the tip pane stays readable (max ~5 keys).
+            const size_t expBudget = strlen(extras) + 72;
+            auto AppendExp = [&](const char* key, int value, int hideIf) {
+                if (strlen(extras) >= expBudget) return;
+                AppendPct(extras, sizeof(extras), key, value, hideIf);
+            };
+            AppendExp("Ec", brushEchoDelay, 0);
+            if (brushEchoDelay > 0) {
+                AppendExp("Ef", brushEchoFeedback, 40);
+            }
+            AppendExp("Pn", brushPing, 0);
+            AppendExp("Bl", brushBiolum, 0);
+            AppendExp("Ht", brushHeat, 0);
+            AppendExp("Ck", brushClockPhase, 0);
+            AppendExp("Co", brushCompassLock, 0);
+            AppendExp("Af", brushAfterimage, 0); // Afterimage (not "Ai" — reads as AI)
+            AppendExp("Ag", brushAging, 0);
+            AppendExp("Wn", brushWind, 0);
+            AppendExp("Td", brushTide, 0);
+            AppendExp("Bm", brushBloom, 0);
+            AppendExp("Mg", brushMirage, 0);
         }
+        AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
+        AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);
+        AppendPct(extras, sizeof(extras), "We", brushWetEdges, 0);
+        AppendPct(extras, sizeof(extras), "Rj", brushRoundnessJitter, 0);
+        AppendPct(extras, sizeof(extras), "S", brushScatter, 0);
+        AppendPct(extras, sizeof(extras), "A", brushAngleJitter, 0);
+        AppendDeg(extras, sizeof(extras), "T", brushTipAngle, 0);
+        AppendPct(extras, sizeof(extras), "O", brushOpacityJitter, 0);
+        AppendIntKey(extras, sizeof(extras), "C", brushStampCount, 1);
+        AppendPct(extras, sizeof(extras), "Rd", brushRoundness, 100);
+        AppendPct(extras, sizeof(extras), "F", brushFlow, 100);
+        AppendPct(extras, sizeof(extras), "H", brushHardness, 100);
+        AppendPct(extras, sizeof(extras), "M", brushSmoothing, 0);
+        if (penPressureEnabled) {
+            char buf[24];
+            sprintf_s(buf, "  P:%d%%", static_cast<int>(lastPenPressure * 100.0f + 0.5f));
+            AppendExtras(extras, sizeof(extras), buf);
+        }
+    } else if (currentTool == DrawTool::Eraser && brushExperimental && brushAfterimage > 0) {
+        AppendExtras(extras, sizeof(extras), "  ");
+        AppendPct(extras, sizeof(extras), "Af", brushAfterimage, 0);
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
-        strcat_s(extras, "  Snap");
+        AppendExtras(extras, sizeof(extras), "  Snap");
     }
     if (IsFeatureEnabled(AppFeature::CanvasGrid)) {
-        strcat_s(extras, "  Grid");
+        AppendExtras(extras, sizeof(extras), "  Grid");
     }
 
     sprintf_s(out, outChars, "%s - %s%s", StatusToolName(), tip, extras);
@@ -88,6 +163,10 @@ void ApplyPenWidth(HWND hwnd, int width) {
     UpdateStatusBar(hwnd);
     SaveFeatureFlags();
     SyncFeatureFlagMenuItems();
+    if (IsActiveBrushCustom()) {
+        PersistActiveBrushDefaultSize(penWidth);
+    }
+    SyncBrushFlyoutChecks();
 }
 
 void UpdateOpacityDisplay() {
@@ -121,7 +200,7 @@ void UpdateStatusBar(HWND hwnd) {
 
     const int zoomPct = static_cast<int>(zoomFactor * 100.0f + 0.5f);
 
-    char part0[160];
+    char part0[256];
     char part1[96];
     char part2[80];
     BuildStatusTip(part0, sizeof(part0));
@@ -176,6 +255,9 @@ void SetActiveTool(DrawTool tool) {
         if (tool != DrawTool::Shape) {
             CloseShapeFlyout();
         }
+        if (tool != DrawTool::Pen) {
+            CloseBrushFlyout();
+        }
     }
     for (int i = 0; i < kToolButtonCount; ++i) {
         if (!hwndToolButtons[i]) continue;
@@ -185,6 +267,7 @@ void SetActiveTool(DrawTool tool) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
     }
     SyncShapeFlyoutChecks();
+    SyncBrushFlyoutChecks();
     if (changed) {
         EventPayload payload{};
         payload.type = AtelierEvent::ActiveToolChanged;
@@ -251,10 +334,10 @@ void LayoutStatusParts(HWND hwnd) {
     RECT rc = {};
     GetClientRect(hwnd, &rc);
     const int width = rc.right - rc.left;
-    // Wider tip pane (left), then layer/coords, then brush/dirty.
+    // Wider tip pane (left) so brush dynamics (Z/Md/…) are not clipped.
     int parts[4] = {
-        (width * 48) / 100,
-        (width * 78) / 100,
+        (width * 62) / 100,
+        (width * 82) / 100,
         width - 1,
         -1
     };
