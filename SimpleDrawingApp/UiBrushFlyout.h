@@ -5,6 +5,7 @@
 bool RegisterBrushFlyoutClass(HINSTANCE hInstance);
 void CloseBrushFlyout();
 void OpenBrushFlyout(HWND parent);
+bool IsBrushFlyoutVisible(); // main or sub flyout showing
 void SyncBrushFlyoutChecks();
 int BrushFlyoutPresetIndexFromCmd(int cmdId);
 void RebuildBrushFlyoutPresets();

@@ -433,6 +433,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 || (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             const bool shiftDown = ((GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0)
                 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            // While Brush Atelier is open, wheel scrolls the flyout - do not also
+            // change Size/Opacity (Wine often delivers wheel to the focused main window).
+            if (IsBrushFlyoutVisible() && !ctrlDown) {
+                if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
+                    SendMessageA(hwndBrushFlyout, WM_MOUSEWHEEL, wParam, lParam);
+                }
+                return 0;
+            }
             if (ctrlDown) {
                 // Zoom toward cursor when possible.
                 POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };

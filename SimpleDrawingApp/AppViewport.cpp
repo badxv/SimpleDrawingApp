@@ -515,14 +515,38 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
                 // Heat ledger: warm ember visit map (Experimental). Drawn in view space
                 // with the same dest as the composite so zoom/scroll stay locked.
+                // When Biolum is also on, dampen heat so the veil does not turn the doc orange-black.
                 if (Bitmap* heatViz = GetBrushHeatViz()) {
                     g.ResetTransform();
                     g.SetCompositingMode(CompositingModeSourceOver);
                     g.SetInterpolationMode(InterpolationModeNearestNeighbor);
-                    g.DrawImage(heatViz, dest);
+                    REAL heatA = 1.0f;
+                    if (brushBiolum > 0) {
+                        heatA = 0.22f + 0.18f * (1.0f - static_cast<REAL>(ClampInt(brushBiolum, 0, 100)) / 100.0f);
+                    }
+                    if (heatA < 0.99f) {
+                        ColorMatrix matrix = {
+                            1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                            0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                            0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                            0.0f, 0.0f, 0.0f, heatA, 0.0f,
+                            0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+                        };
+                        ImageAttributes attrs;
+                        attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+                        g.DrawImage(
+                            heatViz, dest,
+                            0, 0,
+                            static_cast<int>(heatViz->GetWidth()),
+                            static_cast<int>(heatViz->GetHeight()),
+                            UnitPixel, &attrs);
+                    } else {
+                        g.DrawImage(heatViz, dest);
+                    }
                 }
 
                 // Biolum veil: darken view except a soft hole around the cursor (Experimental).
+                // Soften when Heat is active so paint + ember stay readable.
                 if (brushExperimental && brushBiolum > 0 && gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
                     g.ResetTransform();
                     const REAL z = (zoomFactor > 0.0f) ? zoomFactor : 1.0f;
@@ -533,7 +557,10 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                     veil.AddRectangle(RectF(0.0f, 0.0f, static_cast<REAL>(viewW), static_cast<REAL>(viewH)));
                     veil.AddEllipse(sx - radius, sy - radius, radius * 2.0f, radius * 2.0f);
                     veil.SetFillMode(FillModeAlternate);
-                    const int alpha = ClampInt(150 + (100 - brushBiolum) / 2, 120, 200);
+                    int alpha = ClampInt(150 + (100 - brushBiolum) / 2, 120, 200);
+                    if (brushHeat > 0) {
+                        alpha = ClampInt(alpha - 45 - brushHeat / 3, 70, 140);
+                    }
                     SolidBrush dark(Color(static_cast<BYTE>(alpha), 6, 8, 14));
                     g.FillPath(&dark, &veil);
                 }

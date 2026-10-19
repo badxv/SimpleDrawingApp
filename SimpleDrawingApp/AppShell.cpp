@@ -83,18 +83,24 @@ void BuildStatusTip(char* out, size_t outChars) {
         AppendPct(extras, sizeof(extras), "Sj", brushSatJitter, 0);
         AppendPct(extras, sizeof(extras), "Bj", brushBrightJitter, 0);
         if (brushExperimental) {
-            AppendPct(extras, sizeof(extras), "Ec", brushEchoDelay, 0);
+            // Cap experimental codes so the tip pane stays readable (max ~5 keys).
+            const size_t expBudget = strlen(extras) + 72;
+            auto AppendExp = [&](const char* key, int value, int hideIf) {
+                if (strlen(extras) >= expBudget) return;
+                AppendPct(extras, sizeof(extras), key, value, hideIf);
+            };
+            AppendExp("Ec", brushEchoDelay, 0);
             if (brushEchoDelay > 0) {
-                AppendPct(extras, sizeof(extras), "Ef", brushEchoFeedback, 40);
+                AppendExp("Ef", brushEchoFeedback, 40);
             }
-            AppendPct(extras, sizeof(extras), "Pn", brushPing, 0);
-            AppendPct(extras, sizeof(extras), "Bl", brushBiolum, 0);
-            AppendPct(extras, sizeof(extras), "Ht", brushHeat, 0);
-            AppendPct(extras, sizeof(extras), "Ck", brushClockPhase, 0);
-            AppendPct(extras, sizeof(extras), "Co", brushCompassLock, 0);
-            AppendPct(extras, sizeof(extras), "Ai", brushAfterimage, 0);
-            AppendPct(extras, sizeof(extras), "Ag", brushAging, 0);
-            AppendPct(extras, sizeof(extras), "Wn", brushWind, 0);
+            AppendExp("Pn", brushPing, 0);
+            AppendExp("Bl", brushBiolum, 0);
+            AppendExp("Ht", brushHeat, 0);
+            AppendExp("Ck", brushClockPhase, 0);
+            AppendExp("Co", brushCompassLock, 0);
+            AppendExp("Af", brushAfterimage, 0); // Afterimage (not "Ai" — reads as AI)
+            AppendExp("Ag", brushAging, 0);
+            AppendExp("Wn", brushWind, 0);
         }
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);
@@ -116,7 +122,7 @@ void BuildStatusTip(char* out, size_t outChars) {
         }
     } else if (currentTool == DrawTool::Eraser && brushExperimental && brushAfterimage > 0) {
         AppendExtras(extras, sizeof(extras), "  ");
-        AppendPct(extras, sizeof(extras), "Ai", brushAfterimage, 0);
+        AppendPct(extras, sizeof(extras), "Af", brushAfterimage, 0);
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
         AppendExtras(extras, sizeof(extras), "  Snap");

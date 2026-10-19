@@ -492,33 +492,26 @@ void EnqueueAfterimageAt(int x, int y, int size) {
     if (!brushExperimental || brushAfterimage < 1) return;
     if (size < 1) return;
     const int strength = ClampInt(brushAfterimage, 0, 100);
-    const int delayMs = ClampInt(90 - strength / 3, 40, 90);
-    const int hops = ClampInt(1 + strength / 35, 1, 3);
-    const int pr = GetRValue(penColor), pg = GetGValue(penColor), pb = GetBValue(penColor);
-    // Complementary residual with forced contrast vs canvas (black→white is invisible).
-    int ir = 255 - pr, ig = 255 - pg, ib = 255 - pb;
+    const int delayMs = ClampInt(70 - strength / 4, 28, 70);
+    const int hops = ClampInt(2 + strength / 40, 2, 4);
+    // Always use a vivid teal residual so ghosts read on white/parchment (black invert = white).
+    const int ir = 32, ig = 190, ib = 210;
     const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
-    if (abs(ir - cr) + abs(ig - cg) + abs(ib - cb) < 160) {
-        // Cool teal residual so afterimages read on light parchment/canvas.
-        ir = ClampInt((ir + 48) / 2, 30, 210);
-        ig = ClampInt((ig + 170) / 2, 80, 230);
-        ib = ClampInt((ib + 200) / 2, 120, 255);
-    }
     const DWORD now = GetTickCount();
-    float amp = 0.55f + 0.35f * (static_cast<float>(strength) / 100.0f);
-    for (int hop = 1; hop <= hops && amp >= 0.10f; ++hop) {
+    float amp = 0.75f + 0.22f * (static_cast<float>(strength) / 100.0f);
+    for (int hop = 1; hop <= hops && amp >= 0.14f; ++hop) {
         if (gTemporalQueue.size() >= kTemporalQueueCap) break;
-        const float ghost = 0.45f + 0.40f * amp; // keep residual vivid enough to see
+        const float ghost = 0.72f + 0.22f * amp; // stay colorful; little canvas mix
         TemporalStampJob job;
         job.dueMs = now + static_cast<DWORD>(hop * delayMs);
-        job.x = x + (hop - 1) * ((hop & 1) ? 2 : -2);
-        job.y = y + (hop - 1) * ((hop & 1) ? -2 : 2);
+        job.x = x + (hop - 1) * ((hop & 1) ? 3 : -3);
+        job.y = y + (hop - 1) * ((hop & 1) ? -3 : 3);
         job.color = RGB(
             ClampInt(static_cast<int>(ir + (cr - ir) * (1.0f - ghost) + 0.5f), 0, 255),
             ClampInt(static_cast<int>(ig + (cg - ig) * (1.0f - ghost) + 0.5f), 0, 255),
             ClampInt(static_cast<int>(ib + (cb - ib) * (1.0f - ghost) + 0.5f), 0, 255));
-        job.size = MaxInt(1, size - (hop - 1) * 2);
-        job.pressure = MaxFloat(0.12f, amp * 0.85f);
+        job.size = MaxInt(2, size + 2 - (hop - 1));
+        job.pressure = MaxFloat(0.35f, amp);
         job.angleDeg = static_cast<float>((hop * 37) % 180);
         job.roundness = brushRoundness;
         job.flipX = false;
@@ -526,7 +519,7 @@ void EnqueueAfterimageAt(int x, int y, int size) {
         job.eraseTransparent = false;
         job.toActiveLayer = true;
         gTemporalQueue.push_back(job);
-        amp *= 0.55f;
+        amp *= 0.58f;
     }
 }
 

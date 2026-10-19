@@ -54,51 +54,51 @@ struct BrushRowDef {
 
 // Single source of truth for Atelier rows (order = button index).
 constexpr BrushRowDef kBrushRows[] = {
-    { IDC_BRUSH_ROW_SIZE, BrushSubPanel::Size, "Size — brush diameter in pixels", false },
-    { IDC_BRUSH_ROW_SPACING, BrushSubPanel::Spacing, "Spacing — distance between stamps", false },
-    { IDC_BRUSH_ROW_FLOW, BrushSubPanel::Flow, "Flow — paint opacity per stamp", false },
-    { IDC_BRUSH_ROW_HARDNESS, BrushSubPanel::Hardness, "Hardness — edge falloff", false },
-    { IDC_BRUSH_ROW_SCATTER, BrushSubPanel::Scatter, "Scatter — random stamp spread", false },
-    { IDC_BRUSH_ROW_ANGLE, BrushSubPanel::Angle, "Angle — tip rotation jitter along stroke", false },
-    { IDC_BRUSH_ROW_ORIENT, BrushSubPanel::Orient, "Orient — fixed tip angle offset in degrees", false },
-    { IDC_BRUSH_ROW_SIZEJITTER, BrushSubPanel::SizeJitter, "Size jitter — random stamp diameter along stroke", false },
-    { IDC_BRUSH_ROW_OPJITTER, BrushSubPanel::OpacityJitter, "Opacity jitter — random stamp opacity along stroke", false },
-    { IDC_BRUSH_ROW_SMOOTH, BrushSubPanel::Smooth, "Smooth — stabilize freehand stroke path", false },
-    { IDC_BRUSH_ROW_COUNT, BrushSubPanel::Count, "Count — stamps per spacing step (fans when Scatter is 0)", false },
-    { IDC_BRUSH_ROW_ROUNDNESS, BrushSubPanel::Roundness, "Roundness — tip height as percent of width", false },
-    { IDC_BRUSH_ROW_MINDIAM, BrushSubPanel::MinDiameter, "Min diameter — floor for size jitter as percent of size", false },
-    { IDC_BRUSH_ROW_WETEDGES, BrushSubPanel::WetEdges, "Wet edges — watercolor buildup toward tip edges", false },
-    { IDC_BRUSH_ROW_RDJITTER, BrushSubPanel::RoundnessJitter, "Roundness jitter — random tip squash along stroke", false },
-    { IDC_BRUSH_ROW_FLIPX, BrushSubPanel::FlipX, "Flip X — chance to mirror tip horizontally", false },
-    { IDC_BRUSH_ROW_FLIPY, BrushSubPanel::FlipY, "Flip Y — chance to mirror tip vertically", false },
-    { IDC_BRUSH_ROW_FLOWJITTER, BrushSubPanel::FlowJitter, "Flow jitter — random stamp flow/alpha along stroke", false },
-    { IDC_BRUSH_ROW_COLORJITTER, BrushSubPanel::ColorJitter, "Color jitter — blend toward background color per stamp", false },
-    { IDC_BRUSH_ROW_HUEJITTER, BrushSubPanel::HueJitter, "Hue jitter — random hue shift per stamp", false },
-    { IDC_BRUSH_ROW_SATJITTER, BrushSubPanel::SatJitter, "Sat jitter — random saturation per stamp", false },
-    { IDC_BRUSH_ROW_BRIJITTER, BrushSubPanel::BrightJitter, "Bright jitter — random brightness per stamp", false },
-    { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure — tablet dynamics", false },
+    { IDC_BRUSH_ROW_SIZE, BrushSubPanel::Size, "Size  -  brush diameter in pixels", false },
+    { IDC_BRUSH_ROW_SPACING, BrushSubPanel::Spacing, "Spacing  -  distance between stamps", false },
+    { IDC_BRUSH_ROW_FLOW, BrushSubPanel::Flow, "Flow  -  paint opacity per stamp", false },
+    { IDC_BRUSH_ROW_HARDNESS, BrushSubPanel::Hardness, "Hardness  -  edge falloff", false },
+    { IDC_BRUSH_ROW_SCATTER, BrushSubPanel::Scatter, "Scatter  -  random stamp spread", false },
+    { IDC_BRUSH_ROW_ANGLE, BrushSubPanel::Angle, "Angle  -  tip rotation jitter along stroke", false },
+    { IDC_BRUSH_ROW_ORIENT, BrushSubPanel::Orient, "Orient  -  fixed tip angle offset in degrees", false },
+    { IDC_BRUSH_ROW_SIZEJITTER, BrushSubPanel::SizeJitter, "Size jitter  -  random stamp diameter along stroke", false },
+    { IDC_BRUSH_ROW_OPJITTER, BrushSubPanel::OpacityJitter, "Opacity jitter  -  random stamp opacity along stroke", false },
+    { IDC_BRUSH_ROW_SMOOTH, BrushSubPanel::Smooth, "Smooth  -  stabilize freehand stroke path", false },
+    { IDC_BRUSH_ROW_COUNT, BrushSubPanel::Count, "Count  -  stamps per spacing step (fans when Scatter is 0)", false },
+    { IDC_BRUSH_ROW_ROUNDNESS, BrushSubPanel::Roundness, "Roundness  -  tip height as percent of width", false },
+    { IDC_BRUSH_ROW_MINDIAM, BrushSubPanel::MinDiameter, "Min diameter  -  floor for size jitter as percent of size", false },
+    { IDC_BRUSH_ROW_WETEDGES, BrushSubPanel::WetEdges, "Wet edges  -  watercolor buildup toward tip edges", false },
+    { IDC_BRUSH_ROW_RDJITTER, BrushSubPanel::RoundnessJitter, "Roundness jitter  -  random tip squash along stroke", false },
+    { IDC_BRUSH_ROW_FLIPX, BrushSubPanel::FlipX, "Flip X  -  chance to mirror tip horizontally", false },
+    { IDC_BRUSH_ROW_FLIPY, BrushSubPanel::FlipY, "Flip Y  -  chance to mirror tip vertically", false },
+    { IDC_BRUSH_ROW_FLOWJITTER, BrushSubPanel::FlowJitter, "Flow jitter  -  random stamp flow/alpha along stroke", false },
+    { IDC_BRUSH_ROW_COLORJITTER, BrushSubPanel::ColorJitter, "Color jitter  -  blend toward background color per stamp", false },
+    { IDC_BRUSH_ROW_HUEJITTER, BrushSubPanel::HueJitter, "Hue jitter  -  random hue shift per stamp", false },
+    { IDC_BRUSH_ROW_SATJITTER, BrushSubPanel::SatJitter, "Sat jitter  -  random saturation per stamp", false },
+    { IDC_BRUSH_ROW_BRIJITTER, BrushSubPanel::BrightJitter, "Bright jitter  -  random brightness per stamp", false },
+    { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure  -  tablet dynamics", false },
     { IDC_BRUSH_ROW_EXPERIMENTAL, BrushSubPanel::Experimental,
-      "Experimental — opt-in atelier lab (echo and future weird tools). Off by default.", false },
+      "Experimental  -  opt-in atelier lab (echo and future weird tools). Off by default.", false },
     { IDC_BRUSH_ROW_ECHODELAY, BrushSubPanel::EchoDelay,
-      "Echo delay — postponed ghost stamps (ms scaled). Requires Experimental On.", true },
+      "Echo delay  -  postponed ghost stamps (ms scaled). Requires Experimental On.", true },
     { IDC_BRUSH_ROW_ECHOFEEDBACK, BrushSubPanel::EchoFeedback,
-      "Echo feedback — how many decaying repeats follow each stamp", true },
+      "Echo feedback  -  how many decaying repeats follow each stamp", true },
     { IDC_BRUSH_ROW_PING, BrushSubPanel::Ping,
-      "Ping — sonar ring sediment on stroke start (expanding stamps)", true },
+      "Ping  -  sonar ring sediment on stroke start (expanding stamps)", true },
     { IDC_BRUSH_ROW_BIOLUM, BrushSubPanel::Biolum,
-      "Biolum — canvas stays dark; paint glows near the cursor", true },
+      "Biolum  -  canvas stays dark; paint glows near the cursor", true },
     { IDC_BRUSH_ROW_HEAT, BrushSubPanel::Heat,
-      "Heat — visit ledger overlay (ember map of where you stamped)", true },
+      "Heat  -  visit ledger overlay (ember map of where you stamped)", true },
     { IDC_BRUSH_ROW_CLOCK, BrushSubPanel::ClockPhase,
-      "Clock phase — tip angle follows the second hand", true },
+      "Clock phase  -  tip angle follows the second hand", true },
     { IDC_BRUSH_ROW_COMPASS, BrushSubPanel::CompassLock,
-      "Compass lock — blend tip angle toward the Atelier compass", true },
+      "Compass lock  -  blend tip angle toward the Atelier compass", true },
     { IDC_BRUSH_ROW_AFTERIMAGE, BrushSubPanel::Afterimage,
-      "Afterimage — inverted ghost stamps trail the eraser", true },
+      "Afterimage  -  inverted ghost stamps trail the eraser", true },
     { IDC_BRUSH_ROW_AGING, BrushSubPanel::Aging,
-      "Aging — pigment dries (mutes/shrinks) over a long stroke", true },
+      "Aging  -  pigment dries (mutes/shrinks) over a long stroke", true },
     { IDC_BRUSH_ROW_WIND, BrushSubPanel::Wind,
-      "Wind — scatter bias toward the nearest canvas edge", true },
+      "Wind  -  scatter bias toward the nearest canvas edge", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
@@ -1057,11 +1057,11 @@ void EnsureBrushFlyout(HWND owner) {
         }
     }
 
-    hwndBrushPageButtons[0] = CreateWindowA("BUTTON", "\xE2\x80\xB9",
+    hwndBrushPageButtons[0] = CreateWindowA("BUTTON", "<",
         WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
         12, 192, 28, 20, hwndBrushFlyout, (HMENU)(INT_PTR)IDC_BRUSH_PAGE_PREV,
         GetModuleHandle(NULL), NULL);
-    hwndBrushPageButtons[1] = CreateWindowA("BUTTON", "\xE2\x80\xBA",
+    hwndBrushPageButtons[1] = CreateWindowA("BUTTON", ">",
         WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
         kFlyoutW - 40, 192, 28, 20, hwndBrushFlyout, (HMENU)(INT_PTR)IDC_BRUSH_PAGE_NEXT,
         GetModuleHandle(NULL), NULL);
@@ -1129,8 +1129,8 @@ void EnsureBrushFlyout(HWND owner) {
 void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     if (!out || outChars == 0) return;
     out[0] = '\0';
-    // UTF-8 › (U+203A) matches existing Atelier row labels.
-    constexpr const char* kSep = "  \xE2\x80\xBA  ";
+    // ASCII separator: SetWindowTextA cannot safely carry UTF-8 under Wine/ACP.
+    constexpr const char* kSep = " : ";
     switch (panel) {
     case BrushSubPanel::Size: sprintf_s(out, outChars, "Size%s%d px", kSep, penWidth); break;
     case BrushSubPanel::Spacing: sprintf_s(out, outChars, "Spacing%s%d%%", kSep, GetBrushSpacingPercent()); break;
@@ -1278,6 +1278,12 @@ void CloseBrushFlyout() {
     if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
         ShowWindow(hwndBrushFlyout, SW_HIDE);
     }
+}
+
+bool IsBrushFlyoutVisible() {
+    if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) return true;
+    if (hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout)) return true;
+    return false;
 }
 
 bool RegisterBrushFlyoutClass(HINSTANCE hInstance) {
