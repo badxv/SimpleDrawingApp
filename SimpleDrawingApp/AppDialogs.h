@@ -6,3 +6,4 @@ void ShowAboutDialog(HWND owner);
 void ShowShortcutsDialog(HWND owner);
 // Returns true if the user confirmed a name (written to outName). Does not mutate layers.
 bool PromptLayerRename(HWND owner, char* outName, size_t outChars);
+bool PromptBrushRename(HWND owner, const char* currentName, char* outName, size_t outChars);
