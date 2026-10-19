@@ -5,6 +5,7 @@
 #include "AppMetrics.h"
 #include "AppSelection.h"
 #include "AppFeatureFlags.h"
+#include "BrushEngine.h"
 #include "PenInput.h"
 #include "SimpleDrawingApp.h"
 #include "DrawingTools.h"
@@ -125,11 +126,17 @@ static void ViewportUpdateHover(HWND hwnd, HWND parent, int localX, int localY) 
             gStatusHoverDocX = docX;
             gStatusHoverDocY = docY;
             if (parent) UpdateStatusBar(parent);
+            if (brushExperimental && brushBiolum > 0) {
+                InvalidateCanvas();
+            }
         }
     } else if (gStatusHoverDocX >= 0 || gStatusHoverDocY >= 0) {
         gStatusHoverDocX = -1;
         gStatusHoverDocY = -1;
         if (parent) UpdateStatusBar(parent);
+        if (brushExperimental && brushBiolum > 0) {
+            InvalidateCanvas();
+        }
     }
 }
 
@@ -192,9 +199,16 @@ static void ViewportOnCanvasDown(HWND hwnd, HWND parent, int localX, int localY,
     lastPoint.y = docY;
     shapeStart.x = docX;
     shapeStart.y = docY;
-
     if (IsFreehandTool(currentTool)) {
+        InitBrushStrokeSmoothing(docX, docY);
         DrawStrokeOnto(strokeGraphics.get(), docX, docY, docX, docY, pressure, pressure);
+        if (currentTool == DrawTool::Pen && brushExperimental && brushPing > 0) {
+            FireBrushPing(docX, docY, penColor, penWidth, false);
+            // Hold stroke until ping rings finish draining (same path as echo).
+            if (BrushTemporalPending()) {
+                strokeAwaitingEcho = true;
+            }
+        }
     } else if (IsShapeTool(currentTool)) {
         RedrawShapePreview(docX, docY, shiftDown);
     }
@@ -230,10 +244,15 @@ static void ViewportOnCanvasMove(HWND hwnd, int localX, int localY, float pressu
     lastPenPressure = pressure;
 
     if (IsFreehandTool(currentTool)) {
-        DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, docX, docY, pressureStart, pressure);
-        lastPoint.x = docX;
-        lastPoint.y = docY;
-        InvalidateCanvas();
+        int sx = docX;
+        int sy = docY;
+        SmoothBrushStrokePoint(docX, docY, sx, sy);
+        if (sx != lastPoint.x || sy != lastPoint.y) {
+            DrawStrokeOnto(strokeGraphics.get(), lastPoint.x, lastPoint.y, sx, sy, pressureStart, pressure);
+            lastPoint.x = sx;
+            lastPoint.y = sy;
+            InvalidateCanvas();
+        }
     } else if (IsShapeTool(currentTool)) {
         RedrawShapePreview(docX, docY, shiftDown);
         InvalidateCanvas();
@@ -263,7 +282,12 @@ static void ViewportOnCanvasUp(HWND hwnd) {
     if (isDrawing) {
         isDrawing = false;
         lastPenPressure = 1.0f;
-        CommitStrokeLayer();
+        if (BrushTemporalPending()) {
+            strokeAwaitingEcho = true;
+        } else {
+            strokeAwaitingEcho = false;
+            CommitStrokeLayer();
+        }
         if (GetCapture() == hwnd) {
             ReleaseCapture();
         }
@@ -398,7 +422,12 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         if (isDrawing) {
             isDrawing = false;
             lastPenPressure = 1.0f;
-            CommitStrokeLayer();
+            if (BrushTemporalPending()) {
+                strokeAwaitingEcho = true;
+            } else {
+                strokeAwaitingEcho = false;
+                CommitStrokeLayer();
+            }
             InvalidateCanvas();
         }
         break;
@@ -483,6 +512,31 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                 g.TranslateTransform(static_cast<REAL>(-scrollX), static_cast<REAL>(-scrollY));
                 DrawCanvasGrid(&g);
                 DrawSelectionOverlay(&g);
+
+                // Heat ledger: warm ember visit map (Experimental). Drawn in view space
+                // with the same dest as the composite so zoom/scroll stay locked.
+                if (Bitmap* heatViz = GetBrushHeatViz()) {
+                    g.ResetTransform();
+                    g.SetCompositingMode(CompositingModeSourceOver);
+                    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+                    g.DrawImage(heatViz, dest);
+                }
+
+                // Biolum veil: darken view except a soft hole around the cursor (Experimental).
+                if (brushExperimental && brushBiolum > 0 && gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
+                    g.ResetTransform();
+                    const REAL z = (zoomFactor > 0.0f) ? zoomFactor : 1.0f;
+                    const REAL sx = static_cast<REAL>(gStatusHoverDocX) * z - static_cast<REAL>(scrollX);
+                    const REAL sy = static_cast<REAL>(gStatusHoverDocY) * z - static_cast<REAL>(scrollY);
+                    const REAL radius = static_cast<REAL>(40 + brushBiolum * 4) * ((z < 1.0f) ? 1.0f : z);
+                    GraphicsPath veil;
+                    veil.AddRectangle(RectF(0.0f, 0.0f, static_cast<REAL>(viewW), static_cast<REAL>(viewH)));
+                    veil.AddEllipse(sx - radius, sy - radius, radius * 2.0f, radius * 2.0f);
+                    veil.SetFillMode(FillModeAlternate);
+                    const int alpha = ClampInt(150 + (100 - brushBiolum) / 2, 120, 200);
+                    SolidBrush dark(Color(static_cast<BYTE>(alpha), 6, 8, 14));
+                    g.FillPath(&dark, &veil);
+                }
             }
 
             BitBlt(hdc, 0, 0, viewW, viewH, memDC, 0, 0, SRCCOPY);
