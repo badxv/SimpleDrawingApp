@@ -5,6 +5,7 @@
 #include "AppMetrics.h"
 #include "AppSelection.h"
 #include "AppFeatureFlags.h"
+#include "GraphicsBackend.h"
 #include "BrushEngine.h"
 #include "PenInput.h"
 #include "SimpleDrawingApp.h"
@@ -566,7 +567,9 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                 }
             }
 
-            BitBlt(hdc, 0, 0, viewW, viewH, memDC, 0, 0, SRCCOPY);
+            if (!PresentViewportAccelerated(hwnd, hdc, memDC, viewW, viewH)) {
+                BitBlt(hdc, 0, 0, viewW, viewH, memDC, 0, 0, SRCCOPY);
+            }
 
             SelectObject(memDC, oldBmp);
             DeleteObject(memBmp);

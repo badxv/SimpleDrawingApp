@@ -2,6 +2,7 @@
 #include "framework.h"
 #include "SimpleDrawingApp.h"
 #include "AppFeatureFlags.h"
+#include "GraphicsBackend.h"
 #include "BrushEngine.h"
 #include "PenInput.h"
 #include "AppDocument.h"
@@ -35,6 +36,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
     LoadFeatureFlags();
+    LoadGraphicsBackend();
     InitPenInput();
     InitBrushEngine();
     LoadBrushSettings();

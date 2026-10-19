@@ -433,10 +433,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 || (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             const bool shiftDown = ((GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0)
                 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-            // While Brush Atelier is open, wheel scrolls the flyout - do not also
-            // change Size/Opacity (Wine often delivers wheel to the focused main window).
+            // While Brush Atelier / Experimental Lab is open, wheel scrolls that panel —
+            // do not also change Size/Opacity (Wine often delivers wheel to the main window).
             if (IsBrushFlyoutVisible() && !ctrlDown) {
-                if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
+                if (hwndExpLabFlyout && IsWindowVisible(hwndExpLabFlyout)) {
+                    SendMessageA(hwndExpLabFlyout, WM_MOUSEWHEEL, wParam, lParam);
+                } else if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
                     SendMessageA(hwndBrushFlyout, WM_MOUSEWHEEL, wParam, lParam);
                 }
                 return 0;

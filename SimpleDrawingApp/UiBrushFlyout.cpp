@@ -1,4 +1,5 @@
 #include "UiBrushFlyout.h"
+#include "UiExpLab.h"
 #include "BrushEngine.h"
 #include "BrushGallery.h"
 #include "UiControls.h"
@@ -35,7 +36,8 @@ constexpr int kActionH = 22;
 constexpr int kActionGap = 8;
 constexpr int kFlyoutBottomPad = 12;
 
-int gBrushRowScrollPx = 0; // scroll the tall dynamics list when Experimental adds rows
+int gBrushRowScrollPx = 0; // scroll Brush Atelier dynamics list
+int gLabRowScrollPx = 0;   // scroll Experimental Lab list (separate flyout)
 
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
@@ -77,24 +79,28 @@ constexpr BrushRowDef kBrushRows[] = {
     { IDC_BRUSH_ROW_SATJITTER, BrushSubPanel::SatJitter, "Sat jitter  -  random saturation per stamp", false },
     { IDC_BRUSH_ROW_BRIJITTER, BrushSubPanel::BrightJitter, "Bright jitter  -  random brightness per stamp", false },
     { IDC_BRUSH_ROW_PRESSURE, BrushSubPanel::Pressure, "Pen pressure  -  tablet dynamics", false },
+};
+
+// Experimental Lab rows live in a separate flyout (Lab button) — not in Brush Atelier list.
+constexpr BrushRowDef kLabRows[] = {
     { IDC_BRUSH_ROW_EXPERIMENTAL, BrushSubPanel::Experimental,
-      "Experimental  -  opt-in atelier lab (echo and future weird tools). Off by default.", false },
+      "Experimental  -  master switch for atelier lab effects", false },
     { IDC_BRUSH_ROW_ECHODELAY, BrushSubPanel::EchoDelay,
-      "Echo delay  -  postponed ghost stamps (ms scaled). Requires Experimental On.", true },
+      "Echo delay  -  postponed ghost stamps (ms scaled)", true },
     { IDC_BRUSH_ROW_ECHOFEEDBACK, BrushSubPanel::EchoFeedback,
       "Echo feedback  -  how many decaying repeats follow each stamp", true },
     { IDC_BRUSH_ROW_PING, BrushSubPanel::Ping,
-      "Ping  -  sonar ring sediment on stroke start (expanding stamps)", true },
+      "Ping  -  sonar ring sediment on stroke start", true },
     { IDC_BRUSH_ROW_BIOLUM, BrushSubPanel::Biolum,
       "Biolum  -  canvas stays dark; paint glows near the cursor", true },
     { IDC_BRUSH_ROW_HEAT, BrushSubPanel::Heat,
-      "Heat  -  visit ledger overlay (ember map of where you stamped)", true },
+      "Heat  -  visit ledger overlay (ember map)", true },
     { IDC_BRUSH_ROW_CLOCK, BrushSubPanel::ClockPhase,
       "Clock phase  -  tip angle follows the second hand", true },
     { IDC_BRUSH_ROW_COMPASS, BrushSubPanel::CompassLock,
       "Compass lock  -  blend tip angle toward the Atelier compass", true },
     { IDC_BRUSH_ROW_AFTERIMAGE, BrushSubPanel::Afterimage,
-      "Afterimage  -  inverted ghost stamps trail the eraser", true },
+      "Afterimage  -  teal ghost stamps trail the eraser", true },
     { IDC_BRUSH_ROW_AGING, BrushSubPanel::Aging,
       "Aging  -  pigment dries (mutes/shrinks) over a long stroke", true },
     { IDC_BRUSH_ROW_WIND, BrushSubPanel::Wind,
@@ -113,19 +119,34 @@ constexpr BrushRowDef kBrushRows[] = {
       "Ember  -  warm sparks that drift upward after each stamp", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
+constexpr int kLabRowCount = static_cast<int>(sizeof(kLabRows) / sizeof(kLabRows[0]));
 
-static_assert(kBrushRowCount == 40, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 23, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kLabRowCount == 17, "hwndLabRowButtons size must match kLabRows");
 
 bool RowVisible(const BrushRowDef& row) {
+    // Brush Atelier list no longer hosts Experimental rows.
+    (void)row;
+    return true;
+}
+
+bool LabRowVisible(const BrushRowDef& row) {
+    // Master Experimental row is always shown; dependents need the master On.
+    if (row.panel == BrushSubPanel::Experimental) return true;
     return !row.experimental || brushExperimental;
 }
 
 void LayoutBrushFlyoutRows(); // defined below; used by flyout proc / ensure
+void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY);
 
 int VisibleBrushRowCount() {
+    return kBrushRowCount;
+}
+
+int VisibleLabRowCount() {
     int n = 0;
-    for (const BrushRowDef& row : kBrushRows) {
-        if (RowVisible(row)) ++n;
+    for (const BrushRowDef& row : kLabRows) {
+        if (LabRowVisible(row)) ++n;
     }
     return n;
 }
@@ -933,6 +954,9 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             if (hwndBrushSubFlyout && (under == hwndBrushSubFlyout || IsChild(hwndBrushSubFlyout, under))) {
                 return 0;
             }
+            if (hwndExpLabFlyout && (under == hwndExpLabFlyout || IsChild(hwndExpLabFlyout, under))) {
+                return 0;
+            }
             if (under == hwndToolButtons[static_cast<int>(DrawTool::Pen)]) return 0;
         }
         CloseBrushFlyout();
@@ -969,6 +993,13 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             ++gBrushPresetPage;
             RefreshPresetGrid();
             SyncBrushFlyoutChecks();
+            return 0;
+        }
+        if (id == IDC_BRUSH_FLYOUT_LAB) {
+            HWND owner = GetWindow(hwnd, GW_OWNER);
+            if (!owner) owner = GetParent(hwnd);
+            if (IsExpLabVisible()) CloseExpLabFlyout();
+            else OpenExpLabFlyout(owner ? owner : hwnd);
             return 0;
         }
         HWND parent = GetParent(hwnd);
@@ -1141,18 +1172,20 @@ void EnsureBrushFlyout(HWND owner) {
         }
     }
 
-    const int actionIds[3] = {
-        IDC_BRUSH_FLYOUT_GALLERY, IDC_BRUSH_FLYOUT_IMPORT, IDC_BRUSH_FLYOUT_DELETE
+    const int actionIds[4] = {
+        IDC_BRUSH_FLYOUT_GALLERY, IDC_BRUSH_FLYOUT_LAB,
+        IDC_BRUSH_FLYOUT_IMPORT, IDC_BRUSH_FLYOUT_DELETE
     };
-    const char* actionLabels[3] = { "Gallery", "Import", "Delete" };
-    const char* actionTips[3] = {
+    const char* actionLabels[4] = { "Gallery", "Lab", "Import", "Delete" };
+    const char* actionTips[4] = {
         "Open brush gallery",
+        "Experimental Lab  -  echo, biolum, tide, and other atelier effects",
         "Import PNG tip or ABR set",
         "Delete selected custom brush"
     };
-    const int actionW = (kFlyoutW - 28) / 3;
+    const int actionW = (kFlyoutW - 32) / 4;
     const int actionY = kRowTop + VisibleBrushRowCount() * kRowStep + kActionGap;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         hwndBrushActionButtons[i] = CreateWindowA("BUTTON", actionLabels[i],
             WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
             10 + i * (actionW + 4), actionY, actionW, kActionH,
@@ -1258,8 +1291,8 @@ void LayoutBrushFlyoutRows() {
             MoveWindow(btn, 10, y, kFlyoutW - 20, kRowH, TRUE);
         }
     }
-    const int actionW = (kFlyoutW - 28) / 3;
-    for (int i = 0; i < 3; ++i) {
+    const int actionW = (kFlyoutW - 32) / 4;
+    for (int i = 0; i < 4; ++i) {
         if (!hwndBrushActionButtons[i]) continue;
         MoveWindow(hwndBrushActionButtons[i], 10 + i * (actionW + 4), actionY, actionW, kActionH, TRUE);
         ShowWindow(hwndBrushActionButtons[i], SW_SHOW);
@@ -1316,9 +1349,11 @@ void SyncBrushFlyoutChecks() {
 
     LayoutBrushFlyoutRows();
     SyncBrushRowButtonLabels();
+    SyncExpLabLabels();
 
-    if (hwndBrushActionButtons[2]) {
-        EnableWindow(hwndBrushActionButtons[2], IsActiveBrushCustom() ? TRUE : FALSE);
+    // Delete is the 4th action button (Gallery, Lab, Import, Delete).
+    if (hwndBrushActionButtons[3]) {
+        EnableWindow(hwndBrushActionButtons[3], IsActiveBrushCustom() ? TRUE : FALSE);
     }
     if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
 
@@ -1329,6 +1364,7 @@ void SyncBrushFlyoutChecks() {
 
 void CloseBrushFlyout() {
     CloseBrushSubFlyoutInternal();
+    CloseExpLabFlyout();
     if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) {
         ShowWindow(hwndBrushFlyout, SW_HIDE);
     }
@@ -1337,6 +1373,7 @@ void CloseBrushFlyout() {
 bool IsBrushFlyoutVisible() {
     if (hwndBrushFlyout && IsWindowVisible(hwndBrushFlyout)) return true;
     if (hwndBrushSubFlyout && IsWindowVisible(hwndBrushSubFlyout)) return true;
+    if (IsExpLabVisible()) return true;
     return false;
 }
 
@@ -1358,7 +1395,32 @@ bool RegisterBrushFlyoutClass(HINSTANCE hInstance) {
     sub.hbrBackground = NULL;
     sub.style = CS_DROPSHADOW;
     const bool subOk = RegisterClassA(&sub) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
-    return mainOk && subOk;
+    const bool labOk = RegisterExpLabClass(hInstance);
+    return mainOk && subOk && labOk;
+}
+
+void OpenBrushLabSubPanel(int brushRowCmdId, int screenAnchorY) {
+    BrushSubPanel panel = BrushSubPanel::None;
+    switch (brushRowCmdId) {
+    case IDC_BRUSH_ROW_ECHODELAY: panel = BrushSubPanel::EchoDelay; break;
+    case IDC_BRUSH_ROW_ECHOFEEDBACK: panel = BrushSubPanel::EchoFeedback; break;
+    case IDC_BRUSH_ROW_PING: panel = BrushSubPanel::Ping; break;
+    case IDC_BRUSH_ROW_BIOLUM: panel = BrushSubPanel::Biolum; break;
+    case IDC_BRUSH_ROW_HEAT: panel = BrushSubPanel::Heat; break;
+    case IDC_BRUSH_ROW_CLOCK: panel = BrushSubPanel::ClockPhase; break;
+    case IDC_BRUSH_ROW_COMPASS: panel = BrushSubPanel::CompassLock; break;
+    case IDC_BRUSH_ROW_AFTERIMAGE: panel = BrushSubPanel::Afterimage; break;
+    case IDC_BRUSH_ROW_AGING: panel = BrushSubPanel::Aging; break;
+    case IDC_BRUSH_ROW_WIND: panel = BrushSubPanel::Wind; break;
+    case IDC_BRUSH_ROW_TIDE: panel = BrushSubPanel::Tide; break;
+    case IDC_BRUSH_ROW_BLOOM: panel = BrushSubPanel::Bloom; break;
+    case IDC_BRUSH_ROW_MIRAGE: panel = BrushSubPanel::Mirage; break;
+    case IDC_BRUSH_ROW_RIME: panel = BrushSubPanel::Rime; break;
+    case IDC_BRUSH_ROW_ORBIT: panel = BrushSubPanel::Orbit; break;
+    case IDC_BRUSH_ROW_EMBER: panel = BrushSubPanel::Ember; break;
+    default: return;
+    }
+    OpenBrushSubFlyoutInternal(panel, screenAnchorY);
 }
 
 void OpenBrushFlyout(HWND parent) {

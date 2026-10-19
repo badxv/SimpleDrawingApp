@@ -2,6 +2,7 @@
 #include "AppShell.h"
 #include "AppDialogs.h"
 #include "AppFeatureFlags.h"
+#include "GraphicsBackend.h"
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppCanvas.h"
@@ -390,6 +391,15 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         case IDM_GRID_64:
             SetGridSpacing(64);
             InvalidateCanvas();
+            return true;
+        case IDM_GFX_AUTO:
+            SetGraphicsBackend(GraphicsBackend::Auto);
+            return true;
+        case IDM_GFX_SOFTWARE:
+            SetGraphicsBackend(GraphicsBackend::Software);
+            return true;
+        case IDM_GFX_HARDWARE:
+            SetGraphicsBackend(GraphicsBackend::Hardware);
             return true;
         case IDM_BRUSH_FINE:
             ApplyPenWidth(hwnd, kBrushPresetFine);

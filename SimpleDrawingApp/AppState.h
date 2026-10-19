@@ -69,8 +69,10 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[40];
-extern HWND hwndBrushActionButtons[3];
+extern HWND hwndBrushRowButtons[23];
+extern HWND hwndBrushActionButtons[4]; // Gallery, Lab, Import, Delete
+extern HWND hwndExpLabFlyout;
+extern HWND hwndLabRowButtons[17];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
 extern HWND hwndBrushSubSlider;

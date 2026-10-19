@@ -3,6 +3,7 @@
 #include "AppPaths.h"
 #include "AppState.h"
 #include "AppMetrics.h"
+#include "GraphicsBackend.h"
 #include "Resource.h"
 #include <windows.h>
 #include <cstdio>
@@ -161,4 +162,5 @@ void SyncFeatureFlagMenuItems() {
             MF_BYCOMMAND | (w == kBrushPresetBold ? MF_CHECKED : MF_UNCHECKED));
     }
     SyncBrushMenuItems();
+    SyncGraphicsBackendMenuItems();
 }

@@ -44,7 +44,8 @@ struct TemporalStampJob {
     bool eraseTransparent = false;
     bool toActiveLayer = false; // afterimage ghosts paint into the layer, not the erase mask
 };
-constexpr size_t kTemporalQueueCap = 2048;
+constexpr size_t kTemporalQueueCap = 1024;
+constexpr size_t kTemporalProcessBudget = 48; // due stamps per drain (perf)
 std::vector<TemporalStampJob> gTemporalQueue;
 DWORD gStrokeStartMs = 0;
 float gStrokeDistPx = 0.0f; // accumulated path length for Tide breathe
@@ -112,14 +113,23 @@ void NoteHeatStamp(int cx, int cy, int size) {
     const int y1 = MinInt(gHeatH - 1, cy + r);
     const float r2 = static_cast<float>(r * r);
 
+    // Always update the float field; only LockBits the viz every few stamps (big win while drawing).
+    static unsigned sHeatVizGate = 0;
+    ++sHeatVizGate;
+    bool paintViz = ((sHeatVizGate & 3u) == 0u);
+
     BitmapData data = {};
-    Rect lockRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-    if (gHeatViz->LockBits(&lockRect, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
-        return;
+    BYTE* base = nullptr;
+    if (paintViz) {
+        Rect lockRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+        if (gHeatViz->LockBits(&lockRect, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
+            paintViz = false;
+        } else {
+            base = static_cast<BYTE*>(data.Scan0);
+        }
     }
-    auto* base = static_cast<BYTE*>(data.Scan0);
     for (int y = y0; y <= y1; ++y) {
-        BYTE* row = base + (y - y0) * data.Stride;
+        BYTE* row = (paintViz && base) ? (base + (y - y0) * data.Stride) : nullptr;
         for (int x = x0; x <= x1; ++x) {
             const float dx = static_cast<float>(x - cx);
             const float dy = static_cast<float>(y - cy);
@@ -130,6 +140,7 @@ void NoteHeatStamp(int cx, int cy, int size) {
             float v = gHeatField[idx] + add * fall;
             if (v > 1.0f) v = 1.0f;
             gHeatField[idx] = v;
+            if (!row) continue;
             // Warm ember ramp: cool → amber → white-hot.
             const BYTE a = static_cast<BYTE>(v * 200.0f + 0.5f);
             const BYTE rr = static_cast<BYTE>(MinInt(255, static_cast<int>(80 + v * 175.0f)));
@@ -143,7 +154,9 @@ void NoteHeatStamp(int cx, int cy, int size) {
             px[3] = a;
         }
     }
-    gHeatViz->UnlockBits(&data);
+    if (paintViz && base) {
+        gHeatViz->UnlockBits(&data);
+    }
 }
 
 Bitmap* BuildWetEdgesTip(Bitmap* src, int wetPct) {
@@ -719,10 +732,18 @@ bool ProcessBrushTemporalQueue() {
     const DWORD now = GetTickCount();
     bool drew = false;
     size_t write = 0;
+    size_t processedDue = 0;
     for (size_t i = 0; i < gTemporalQueue.size(); ++i) {
         TemporalStampJob& job = gTemporalQueue[i];
         // Unsigned wrap-safe: due in the past or equal.
         if (static_cast<int>(now - job.dueMs) >= 0) {
+            if (processedDue >= kTemporalProcessBudget) {
+                // Keep remaining due jobs for the next timer tick.
+                if (write != i) gTemporalQueue[write] = job;
+                ++write;
+                continue;
+            }
+            ++processedDue;
             Graphics* target = strokeTarget;
             Graphics* activeOwned = nullptr;
             if (job.toActiveLayer) {
@@ -1256,10 +1277,7 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
     if (segLen < 0.001f) {
         PlaceStamps(x1, y1, 0, pressure1);
         gStrokeDistPx += 1.0f;
-        if (brushExperimental && (brushEchoDelay > 0 || brushMirage > 0 || brushEmber > 0)
-            && BrushTemporalPending()) {
-            ProcessBrushTemporalQueue();
-        }
+        // Temporal queue drains on IDT_TEMPORAL (~30fps) — avoid mid-stroke flush (perf).
         return;
     }
 
@@ -1277,12 +1295,6 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
         ++stampIndex;
     }
     gStampCarry = dist - segLen;
-
-    // Flush echoes/mirages/embers due during this segment (timer also drains the queue).
-    if (brushExperimental && (brushEchoDelay > 0 || brushMirage > 0 || brushEmber > 0)
-        && BrushTemporalPending()) {
-        ProcessBrushTemporalQueue();
-    }
 }
 
 int GetBrushFlow() {
