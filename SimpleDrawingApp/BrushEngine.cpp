@@ -46,6 +46,12 @@ struct TemporalStampJob {
 constexpr size_t kTemporalQueueCap = 2048;
 std::vector<TemporalStampJob> gTemporalQueue;
 
+// Heat ledger field (visit map) + warm ARGB viz for overlay.
+std::vector<float> gHeatField;
+Bitmap* gHeatViz = nullptr;
+int gHeatW = 0;
+int gHeatH = 0;
+
 // Cached wet-edges remapped tip (invalidated when tip/wet% change).
 Bitmap* gWetTipCache = nullptr;
 Bitmap* gWetTipSource = nullptr;
@@ -56,6 +62,85 @@ void InvalidateWetTipCache() {
     gWetTipCache = nullptr;
     gWetTipSource = nullptr;
     gWetTipPct = -1;
+}
+
+void ClearBrushHeatMapInternal() {
+    gHeatField.clear();
+    delete gHeatViz;
+    gHeatViz = nullptr;
+    gHeatW = 0;
+    gHeatH = 0;
+}
+
+void EnsureBrushHeatMapInternal(int width, int height) {
+    if (width < 1 || height < 1) return;
+    if (gHeatViz && gHeatW == width && gHeatH == height
+        && static_cast<int>(gHeatField.size()) == width * height) {
+        return;
+    }
+    ClearBrushHeatMapInternal();
+    gHeatW = width;
+    gHeatH = height;
+    gHeatField.assign(static_cast<size_t>(width) * static_cast<size_t>(height), 0.0f);
+    gHeatViz = new Bitmap(width, height, PixelFormat32bppARGB);
+    if (!gHeatViz || gHeatViz->GetLastStatus() != Ok) {
+        delete gHeatViz;
+        gHeatViz = nullptr;
+        gHeatField.clear();
+        gHeatW = 0;
+        gHeatH = 0;
+        return;
+    }
+    Graphics g(gHeatViz);
+    g.Clear(Color(0, 0, 0, 0));
+}
+
+void NoteHeatStamp(int cx, int cy, int size) {
+    if (!brushExperimental || brushHeat < 1) return;
+    if (docWidth < 1 || docHeight < 1) return;
+    EnsureBrushHeatMapInternal(docWidth, docHeight);
+    if (!gHeatViz || gHeatField.empty()) return;
+
+    const int r = MaxInt(1, size / 2);
+    const float add = 0.06f + 0.40f * (static_cast<float>(ClampInt(brushHeat, 0, 100)) / 100.0f);
+    const int x0 = MaxInt(0, cx - r);
+    const int y0 = MaxInt(0, cy - r);
+    const int x1 = MinInt(gHeatW - 1, cx + r);
+    const int y1 = MinInt(gHeatH - 1, cy + r);
+    const float r2 = static_cast<float>(r * r);
+
+    BitmapData data = {};
+    Rect lockRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    if (gHeatViz->LockBits(&lockRect, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
+        return;
+    }
+    auto* base = static_cast<BYTE*>(data.Scan0);
+    for (int y = y0; y <= y1; ++y) {
+        BYTE* row = base + (y - y0) * data.Stride;
+        for (int x = x0; x <= x1; ++x) {
+            const float dx = static_cast<float>(x - cx);
+            const float dy = static_cast<float>(y - cy);
+            const float d2 = dx * dx + dy * dy;
+            if (d2 > r2) continue;
+            const float fall = 1.0f - (d2 / r2);
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(gHeatW) + static_cast<size_t>(x);
+            float v = gHeatField[idx] + add * fall;
+            if (v > 1.0f) v = 1.0f;
+            gHeatField[idx] = v;
+            // Warm ember ramp: cool → amber → white-hot.
+            const BYTE a = static_cast<BYTE>(v * 200.0f + 0.5f);
+            const BYTE rr = static_cast<BYTE>(MinInt(255, static_cast<int>(80 + v * 175.0f)));
+            const BYTE gg = static_cast<BYTE>(MinInt(255, static_cast<int>(v * v * 160.0f)));
+            const BYTE bb = static_cast<BYTE>(MinInt(255, static_cast<int>(v * 40.0f)));
+            BYTE* px = row + (x - x0) * 4;
+            // BGRA
+            px[0] = bb;
+            px[1] = gg;
+            px[2] = rr;
+            px[3] = a;
+        }
+    }
+    gHeatViz->UnlockBits(&data);
 }
 
 Bitmap* BuildWetEdgesTip(Bitmap* src, int wetPct) {
@@ -312,6 +397,7 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
         target->SetCompositingMode(CompositingModeSourceOver);
         target->DrawImage(tip, dest, 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &attrs);
         target->Restore(state);
+        NoteHeatStamp(cx, cy, size);
         return;
     }
 
@@ -346,6 +432,7 @@ void DrawStamp(Graphics* target, Bitmap* tip, int cx, int cy, COLORREF color, in
     attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
     target->DrawImage(tip, dest, 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &attrs);
     target->Restore(state);
+    NoteHeatStamp(cx, cy, size);
 }
 
 void EnqueueEchoFromStamp(int x, int y, COLORREF color, int size, float pressure,
@@ -592,9 +679,23 @@ void ShutdownBrushEngine() {
     SaveCustomBrushesToDisk();
     InvalidateWetTipCache();
     ClearBrushTemporalQueue();
+    ClearBrushHeatMapInternal();
     gPresets.clear();
     gActiveBrush = 0;
     gStampCarry = 0.0f;
+}
+
+void ClearBrushHeatMap() {
+    ClearBrushHeatMapInternal();
+}
+
+void EnsureBrushHeatMap(int width, int height) {
+    EnsureBrushHeatMapInternal(width, height);
+}
+
+Bitmap* GetBrushHeatViz() {
+    if (!brushExperimental || brushHeat < 1) return nullptr;
+    return gHeatViz;
 }
 
 int BrushPresetCount() {
@@ -817,7 +918,18 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
     const float strokeAngleDeg = (segLen >= 0.001f)
         ? (atan2f(dy, dx) * (180.0f / 3.14159265f))
         : 0.0f;
-    const float baseTipAngleDeg = strokeAngleDeg + static_cast<float>(brushTipAngle);
+    float baseTipAngleDeg = strokeAngleDeg + static_cast<float>(brushTipAngle);
+    if (brushExperimental && brushClockPhase > 0) {
+        SYSTEMTIME st = {};
+        GetLocalTime(&st);
+        const float secAngle = (static_cast<float>(st.wSecond)
+            + static_cast<float>(st.wMilliseconds) / 1000.0f) * 6.0f;
+        baseTipAngleDeg += secAngle * (static_cast<float>(ClampInt(brushClockPhase, 0, 100)) / 100.0f);
+    }
+    if (brushExperimental && brushCompassLock > 0) {
+        const float t = static_cast<float>(ClampInt(brushCompassLock, 0, 100)) / 100.0f;
+        baseTipAngleDeg = baseTipAngleDeg * (1.0f - t) + gUiCompassAngle * t;
+    }
 
     int count = brushStampCount;
     if (count < 1) count = 1;
@@ -1151,6 +1263,7 @@ void SetBrushExperimental(bool enabled) {
     brushExperimental = enabled;
     if (!brushExperimental) {
         ClearBrushTemporalQueue();
+        ClearBrushHeatMapInternal();
     }
     SaveBrushSettings();
     SyncBrushFlyoutChecks();
@@ -1185,6 +1298,37 @@ void SetBrushPing(int strength) {
 
 void SetBrushBiolum(int amount) {
     brushBiolum = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+int GetBrushHeat() {
+    return brushHeat;
+}
+
+int GetBrushClockPhase() {
+    return brushClockPhase;
+}
+
+int GetBrushCompassLock() {
+    return brushCompassLock;
+}
+
+void SetBrushHeat(int amount) {
+    brushHeat = ClampInt(amount, 0, 100);
+    if (brushHeat < 1) ClearBrushHeatMapInternal();
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushClockPhase(int amount) {
+    brushClockPhase = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushCompassLock(int amount) {
+    brushCompassLock = ClampInt(amount, 0, 100);
     SaveBrushSettings();
     SyncBrushFlyoutChecks();
 }
@@ -1243,6 +1387,9 @@ void LoadBrushSettings() {
     brushEchoFeedback = GetPrivateProfileIntA("Features", "BrushEchoFeedback", 40, iniPath);
     brushPing = GetPrivateProfileIntA("Features", "BrushPing", 0, iniPath);
     brushBiolum = GetPrivateProfileIntA("Features", "BrushBiolum", 0, iniPath);
+    brushHeat = GetPrivateProfileIntA("Features", "BrushHeat", 0, iniPath);
+    brushClockPhase = GetPrivateProfileIntA("Features", "BrushClockPhase", 0, iniPath);
+    brushCompassLock = GetPrivateProfileIntA("Features", "BrushCompassLock", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -1276,6 +1423,9 @@ void LoadBrushSettings() {
     brushEchoFeedback = ClampInt(brushEchoFeedback, 0, 100);
     brushPing = ClampInt(brushPing, 0, 100);
     brushBiolum = ClampInt(brushBiolum, 0, 100);
+    brushHeat = ClampInt(brushHeat, 0, 100);
+    brushClockPhase = ClampInt(brushClockPhase, 0, 100);
+    brushCompassLock = ClampInt(brushCompassLock, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -1334,6 +1484,12 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushPing", buf, iniPath);
     sprintf_s(buf, "%d", brushBiolum);
     WritePrivateProfileStringA("Features", "BrushBiolum", buf, iniPath);
+    sprintf_s(buf, "%d", brushHeat);
+    WritePrivateProfileStringA("Features", "BrushHeat", buf, iniPath);
+    sprintf_s(buf, "%d", brushClockPhase);
+    WritePrivateProfileStringA("Features", "BrushClockPhase", buf, iniPath);
+    sprintf_s(buf, "%d", brushCompassLock);
+    WritePrivateProfileStringA("Features", "BrushCompassLock", buf, iniPath);
     sprintf_s(buf, "%d", GetBrushSpacingPercent());
     WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);

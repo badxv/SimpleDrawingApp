@@ -70,6 +70,9 @@ int GetBrushEchoDelay();
 int GetBrushEchoFeedback();
 int GetBrushPing();
 int GetBrushBiolum();
+int GetBrushHeat();
+int GetBrushClockPhase();
+int GetBrushCompassLock();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -95,6 +98,9 @@ void SetBrushEchoDelay(int delay); // 0..100
 void SetBrushEchoFeedback(int feedback); // 0..100
 void SetBrushPing(int strength); // 0..100
 void SetBrushBiolum(int amount); // 0..100
+void SetBrushHeat(int amount); // 0..100
+void SetBrushClockPhase(int amount); // 0..100
+void SetBrushCompassLock(int amount); // 0..100
 
 // Deferred stamp queue (echo / radar ping). Returns true if anything was drawn.
 bool BrushTemporalPending();
@@ -103,6 +109,11 @@ bool ProcessBrushTemporalQueue();
 
 // Expanding sonar ring from (cx,cy); no-op unless Experimental + Ping > 0.
 void FireBrushPing(int cx, int cy, COLORREF color, int tipSize, bool eraseTransparent);
+
+// Heat ledger field map (visit count). Overlay bitmap may be null when inactive.
+void ClearBrushHeatMap();
+void EnsureBrushHeatMap(int width, int height);
+Gdiplus::Bitmap* GetBrushHeatViz(); // do not free; null if unused
 
 // Tip used for painting/preview (applies wet-edges remap when enabled). Do not free.
 Gdiplus::Bitmap* BrushTipForDraw(Gdiplus::Bitmap* tip);

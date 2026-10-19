@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[28];
+extern HWND hwndBrushRowButtons[31];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -159,6 +159,9 @@ extern int brushEchoDelay;       // 0..100 — echo delay (maps to ms); 0 = off
 extern int brushEchoFeedback;    // 0..100 — echo decay / hop count
 extern int brushPing;            // 0..100 — sonar ping ring on stroke start
 extern int brushBiolum;          // 0..100 — proximity reveal veil radius
+extern int brushHeat;            // 0..100 — visit heat ledger strength / overlay
+extern int brushClockPhase;      // 0..100 — tip angle driven by clock seconds
+extern int brushCompassLock;     // 0..100 — blend tip angle toward UI compass
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;

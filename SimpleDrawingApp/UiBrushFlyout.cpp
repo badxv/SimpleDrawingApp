@@ -33,12 +33,15 @@ constexpr int kRowH = 20;      // button height
 constexpr int kRowStep = 20;    // tighter than 22 so tall dynamics list fits more screens
 constexpr int kActionH = 22;
 constexpr int kActionGap = 8;
+constexpr int kFlyoutBottomPad = 12;
+
+int gBrushRowScrollPx = 0; // scroll the tall dynamics list when Experimental adds rows
 
 enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
     FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter,
-    Experimental, EchoDelay, EchoFeedback, Ping, Biolum
+    Experimental, EchoDelay, EchoFeedback, Ping, Biolum, Heat, ClockPhase, CompassLock
 };
 
 struct BrushRowDef {
@@ -83,10 +86,16 @@ constexpr BrushRowDef kBrushRows[] = {
       "Ping — sonar ring sediment on stroke start (expanding stamps)", true },
     { IDC_BRUSH_ROW_BIOLUM, BrushSubPanel::Biolum,
       "Biolum — canvas stays dark; paint glows near the cursor", true },
+    { IDC_BRUSH_ROW_HEAT, BrushSubPanel::Heat,
+      "Heat — visit ledger overlay (ember map of where you stamped)", true },
+    { IDC_BRUSH_ROW_CLOCK, BrushSubPanel::ClockPhase,
+      "Clock phase — tip angle follows the second hand", true },
+    { IDC_BRUSH_ROW_COMPASS, BrushSubPanel::CompassLock,
+      "Compass lock — blend tip angle toward the Atelier compass", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 28, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 31, "hwndBrushRowButtons size must match kBrushRows");
 
 bool RowVisible(const BrushRowDef& row) {
     return !row.experimental || brushExperimental;
@@ -102,8 +111,33 @@ int VisibleBrushRowCount() {
     return n;
 }
 
+int NaturalFlyoutHeight() {
+    return kRowTop + VisibleBrushRowCount() * kRowStep + kActionGap + kActionH + kFlyoutBottomPad;
+}
+
+int MaxFlyoutHeight() {
+    RECT work = {};
+    SystemParametersInfoA(SPI_GETWORKAREA, 0, &work, 0);
+    int h = work.bottom - work.top - 8;
+    if (h < 420) h = 420;
+    return h;
+}
+
 int FlyoutContentHeight() {
-    return kRowTop + VisibleBrushRowCount() * kRowStep + kActionGap + kActionH + 12;
+    const int natural = NaturalFlyoutHeight();
+    const int maxH = MaxFlyoutHeight();
+    return (natural < maxH) ? natural : maxH;
+}
+
+int MaxBrushRowScrollPx() {
+    const int overflow = NaturalFlyoutHeight() - FlyoutContentHeight();
+    return (overflow > 0) ? overflow : 0;
+}
+
+void ClampBrushRowScroll() {
+    const int maxScroll = MaxBrushRowScrollPx();
+    if (gBrushRowScrollPx > maxScroll) gBrushRowScrollPx = maxScroll;
+    if (gBrushRowScrollPx < 0) gBrushRowScrollPx = 0;
 }
 
 int gBrushCtxPreset = -1;
@@ -512,7 +546,10 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::EchoDelay
         || gBrushSubPanel == BrushSubPanel::EchoFeedback
         || gBrushSubPanel == BrushSubPanel::Ping
-        || gBrushSubPanel == BrushSubPanel::Biolum);
+        || gBrushSubPanel == BrushSubPanel::Biolum
+        || gBrushSubPanel == BrushSubPanel::Heat
+        || gBrushSubPanel == BrushSubPanel::ClockPhase
+        || gBrushSubPanel == BrushSubPanel::CompassLock);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -549,7 +586,10 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::EchoDelay
                 || gBrushSubPanel == BrushSubPanel::EchoFeedback
                 || gBrushSubPanel == BrushSubPanel::Ping
-                || gBrushSubPanel == BrushSubPanel::Biolum) {
+                || gBrushSubPanel == BrushSubPanel::Biolum
+                || gBrushSubPanel == BrushSubPanel::Heat
+                || gBrushSubPanel == BrushSubPanel::ClockPhase
+                || gBrushSubPanel == BrushSubPanel::CompassLock) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -570,6 +610,9 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::EchoFeedback) pos = GetBrushEchoFeedback();
                 else if (gBrushSubPanel == BrushSubPanel::Ping) pos = GetBrushPing();
                 else if (gBrushSubPanel == BrushSubPanel::Biolum) pos = GetBrushBiolum();
+                else if (gBrushSubPanel == BrushSubPanel::Heat) pos = GetBrushHeat();
+                else if (gBrushSubPanel == BrushSubPanel::ClockPhase) pos = GetBrushClockPhase();
+                else if (gBrushSubPanel == BrushSubPanel::CompassLock) pos = GetBrushCompassLock();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -657,7 +700,9 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::ColorJitter || gBrushSubPanel == BrushSubPanel::HueJitter
         || gBrushSubPanel == BrushSubPanel::SatJitter || gBrushSubPanel == BrushSubPanel::BrightJitter
         || gBrushSubPanel == BrushSubPanel::EchoDelay || gBrushSubPanel == BrushSubPanel::EchoFeedback
-        || gBrushSubPanel == BrushSubPanel::Ping || gBrushSubPanel == BrushSubPanel::Biolum) {
+        || gBrushSubPanel == BrushSubPanel::Ping || gBrushSubPanel == BrushSubPanel::Biolum
+        || gBrushSubPanel == BrushSubPanel::Heat || gBrushSubPanel == BrushSubPanel::ClockPhase
+        || gBrushSubPanel == BrushSubPanel::CompassLock) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -740,6 +785,12 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushPing(pos);
             } else if (gBrushSubPanel == BrushSubPanel::Biolum) {
                 SetBrushBiolum(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Heat) {
+                SetBrushHeat(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::ClockPhase) {
+                SetBrushClockPhase(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::CompassLock) {
+                SetBrushCompassLock(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -791,6 +842,15 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             PostMessageA(hwnd, WM_APP + 9, 0, 0);
         }
         return 0;
+    case WM_MOUSEWHEEL: {
+        const int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        if (delta == 0 || MaxBrushRowScrollPx() < 1) return 0;
+        // One notch ≈ one dynamics row.
+        gBrushRowScrollPx -= (delta / WHEEL_DELTA) * kRowStep;
+        ClampBrushRowScroll();
+        LayoutBrushFlyoutRows();
+        return 0;
+    }
     case WM_APP + 9: {
         POINT pt = {};
         GetCursorPos(&pt);
@@ -811,6 +871,7 @@ LRESULT CALLBACK BrushFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             if (id == kBrushRows[i].id) {
                 if (kBrushRows[i].panel == BrushSubPanel::Experimental) {
                     SetBrushExperimental(!IsBrushExperimental());
+                    gBrushRowScrollPx = 0;
                     LayoutBrushFlyoutRows();
                     SyncBrushFlyoutChecks();
                     HWND parent = GetWindow(hwnd, GW_OWNER);
@@ -1079,6 +1140,9 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     case BrushSubPanel::EchoFeedback: sprintf_s(out, outChars, "Echo Fdbk%s%d%%", kSep, brushEchoFeedback); break;
     case BrushSubPanel::Ping: sprintf_s(out, outChars, "Ping%s%d%%", kSep, brushPing); break;
     case BrushSubPanel::Biolum: sprintf_s(out, outChars, "Biolum%s%d%%", kSep, brushBiolum); break;
+    case BrushSubPanel::Heat: sprintf_s(out, outChars, "Heat%s%d%%", kSep, brushHeat); break;
+    case BrushSubPanel::ClockPhase: sprintf_s(out, outChars, "Clock%s%d%%", kSep, brushClockPhase); break;
+    case BrushSubPanel::CompassLock: sprintf_s(out, outChars, "Compass%s%d%%", kSep, brushCompassLock); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;
@@ -1088,27 +1152,36 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
 
 void LayoutBrushFlyoutRows() {
     if (!hwndBrushFlyout) return;
+    ClampBrushRowScroll();
+    const int h = FlyoutContentHeight();
+    const int actionY = h - kFlyoutBottomPad - kActionH;
+    const int rowClipBottom = actionY - kActionGap;
+    const int scroll = gBrushRowScrollPx;
+
     int visible = 0;
     for (int i = 0; i < kBrushRowCount; ++i) {
         HWND btn = hwndBrushRowButtons[i];
         if (!btn) continue;
-        if (RowVisible(kBrushRows[i])) {
-            ShowWindow(btn, SW_SHOW);
-            MoveWindow(btn, 10, kRowTop + visible * kRowStep, kFlyoutW - 20, kRowH, TRUE);
-            ++visible;
-        } else {
+        if (!RowVisible(kBrushRows[i])) {
             ShowWindow(btn, SW_HIDE);
+            continue;
+        }
+        const int y = kRowTop + visible * kRowStep - scroll;
+        ++visible;
+        // Keep rows inside the scroll viewport (below presets, above Import/Save actions).
+        if (y + kRowH <= kRowTop || y >= rowClipBottom) {
+            ShowWindow(btn, SW_HIDE);
+        } else {
+            ShowWindow(btn, SW_SHOW);
+            MoveWindow(btn, 10, y, kFlyoutW - 20, kRowH, TRUE);
         }
     }
-    const int actionY = kRowTop + visible * kRowStep + kActionGap;
     const int actionW = (kFlyoutW - 28) / 3;
     for (int i = 0; i < 3; ++i) {
         if (!hwndBrushActionButtons[i]) continue;
         MoveWindow(hwndBrushActionButtons[i], 10 + i * (actionW + 4), actionY, actionW, kActionH, TRUE);
+        ShowWindow(hwndBrushActionButtons[i], SW_SHOW);
     }
-    const int h = FlyoutContentHeight();
-    RECT wr = {};
-    GetWindowRect(hwndBrushFlyout, &wr);
     SetWindowPos(hwndBrushFlyout, nullptr, 0, 0, kFlyoutW, h,
         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
@@ -1210,6 +1283,7 @@ void OpenBrushFlyout(HWND parent) {
     int x = br.right + 6;
     int y = br.top - 4;
 
+    gBrushRowScrollPx = 0;
     LayoutBrushFlyoutRows();
     const int flyoutH = FlyoutContentHeight();
 

@@ -89,6 +89,9 @@ void BuildStatusTip(char* out, size_t outChars) {
             }
             AppendPct(extras, sizeof(extras), "Pn", brushPing, 0);
             AppendPct(extras, sizeof(extras), "Bl", brushBiolum, 0);
+            AppendPct(extras, sizeof(extras), "Ht", brushHeat, 0);
+            AppendPct(extras, sizeof(extras), "Ck", brushClockPhase, 0);
+            AppendPct(extras, sizeof(extras), "Co", brushCompassLock, 0);
         }
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);

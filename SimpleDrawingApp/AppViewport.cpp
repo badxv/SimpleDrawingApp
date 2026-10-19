@@ -513,6 +513,15 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                 DrawCanvasGrid(&g);
                 DrawSelectionOverlay(&g);
 
+                // Heat ledger: warm ember visit map (Experimental). Drawn in view space
+                // with the same dest as the composite so zoom/scroll stay locked.
+                if (Bitmap* heatViz = GetBrushHeatViz()) {
+                    g.ResetTransform();
+                    g.SetCompositingMode(CompositingModeSourceOver);
+                    g.SetInterpolationMode(InterpolationModeNearestNeighbor);
+                    g.DrawImage(heatViz, dest);
+                }
+
                 // Biolum veil: darken view except a soft hole around the cursor (Experimental).
                 if (brushExperimental && brushBiolum > 0 && gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
                     g.ResetTransform();
