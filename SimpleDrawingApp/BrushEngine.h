@@ -76,6 +76,9 @@ int GetBrushCompassLock();
 int GetBrushAfterimage();
 int GetBrushAging();
 int GetBrushWind();
+int GetBrushTide();
+int GetBrushBloom();
+int GetBrushMirage();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -107,6 +110,9 @@ void SetBrushCompassLock(int amount); // 0..100
 void SetBrushAfterimage(int amount); // 0..100 — eraser afterimage ghosts
 void SetBrushAging(int amount); // 0..100 — wet→dry over stroke age
 void SetBrushWind(int amount); // 0..100 — edge-biased scatter
+void SetBrushTide(int amount); // 0..100 — size breathe along stroke distance
+void SetBrushBloom(int amount); // 0..100 — soft dilated halo per stamp
+void SetBrushMirage(int amount); // 0..100 — mirror ghost across canvas midline
 
 // Deferred stamp queue (echo / radar ping). Returns true if anything was drawn.
 bool BrushTemporalPending();

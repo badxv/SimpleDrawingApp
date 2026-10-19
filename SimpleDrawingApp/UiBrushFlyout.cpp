@@ -42,7 +42,7 @@ enum class BrushSubPanel {
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
     FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter,
     Experimental, EchoDelay, EchoFeedback, Ping, Biolum, Heat, ClockPhase, CompassLock,
-    Afterimage, Aging, Wind
+    Afterimage, Aging, Wind, Tide, Bloom, Mirage
 };
 
 struct BrushRowDef {
@@ -99,10 +99,16 @@ constexpr BrushRowDef kBrushRows[] = {
       "Aging  -  pigment dries (mutes/shrinks) over a long stroke", true },
     { IDC_BRUSH_ROW_WIND, BrushSubPanel::Wind,
       "Wind  -  scatter bias toward the nearest canvas edge", true },
+    { IDC_BRUSH_ROW_TIDE, BrushSubPanel::Tide,
+      "Tide  -  size breathes in waves along the stroke path", true },
+    { IDC_BRUSH_ROW_BLOOM, BrushSubPanel::Bloom,
+      "Bloom  -  soft dilated halo around each stamp", true },
+    { IDC_BRUSH_ROW_MIRAGE, BrushSubPanel::Mirage,
+      "Mirage  -  delayed mirror ghost across the canvas midline", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 34, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 37, "hwndBrushRowButtons size must match kBrushRows");
 
 bool RowVisible(const BrushRowDef& row) {
     return !row.experimental || brushExperimental;
@@ -559,7 +565,10 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::CompassLock
         || gBrushSubPanel == BrushSubPanel::Afterimage
         || gBrushSubPanel == BrushSubPanel::Aging
-        || gBrushSubPanel == BrushSubPanel::Wind);
+        || gBrushSubPanel == BrushSubPanel::Wind
+        || gBrushSubPanel == BrushSubPanel::Tide
+        || gBrushSubPanel == BrushSubPanel::Bloom
+        || gBrushSubPanel == BrushSubPanel::Mirage);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -602,7 +611,10 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::CompassLock
                 || gBrushSubPanel == BrushSubPanel::Afterimage
                 || gBrushSubPanel == BrushSubPanel::Aging
-                || gBrushSubPanel == BrushSubPanel::Wind) {
+                || gBrushSubPanel == BrushSubPanel::Wind
+                || gBrushSubPanel == BrushSubPanel::Tide
+                || gBrushSubPanel == BrushSubPanel::Bloom
+                || gBrushSubPanel == BrushSubPanel::Mirage) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -629,6 +641,9 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::Afterimage) pos = GetBrushAfterimage();
                 else if (gBrushSubPanel == BrushSubPanel::Aging) pos = GetBrushAging();
                 else if (gBrushSubPanel == BrushSubPanel::Wind) pos = GetBrushWind();
+                else if (gBrushSubPanel == BrushSubPanel::Tide) pos = GetBrushTide();
+                else if (gBrushSubPanel == BrushSubPanel::Bloom) pos = GetBrushBloom();
+                else if (gBrushSubPanel == BrushSubPanel::Mirage) pos = GetBrushMirage();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -721,7 +736,10 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::CompassLock
                 || gBrushSubPanel == BrushSubPanel::Afterimage
                 || gBrushSubPanel == BrushSubPanel::Aging
-                || gBrushSubPanel == BrushSubPanel::Wind) {
+                || gBrushSubPanel == BrushSubPanel::Wind
+                || gBrushSubPanel == BrushSubPanel::Tide
+                || gBrushSubPanel == BrushSubPanel::Bloom
+                || gBrushSubPanel == BrushSubPanel::Mirage) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -816,6 +834,12 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushAging(pos);
             } else if (gBrushSubPanel == BrushSubPanel::Wind) {
                 SetBrushWind(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Tide) {
+                SetBrushTide(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Bloom) {
+                SetBrushBloom(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Mirage) {
+                SetBrushMirage(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -1171,6 +1195,9 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     case BrushSubPanel::Afterimage: sprintf_s(out, outChars, "Afterimg%s%d%%", kSep, brushAfterimage); break;
     case BrushSubPanel::Aging: sprintf_s(out, outChars, "Aging%s%d%%", kSep, brushAging); break;
     case BrushSubPanel::Wind: sprintf_s(out, outChars, "Wind%s%d%%", kSep, brushWind); break;
+    case BrushSubPanel::Tide: sprintf_s(out, outChars, "Tide%s%d%%", kSep, brushTide); break;
+    case BrushSubPanel::Bloom: sprintf_s(out, outChars, "Bloom%s%d%%", kSep, brushBloom); break;
+    case BrushSubPanel::Mirage: sprintf_s(out, outChars, "Mirage%s%d%%", kSep, brushMirage); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;

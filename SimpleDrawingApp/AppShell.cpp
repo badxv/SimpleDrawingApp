@@ -101,6 +101,9 @@ void BuildStatusTip(char* out, size_t outChars) {
             AppendExp("Af", brushAfterimage, 0); // Afterimage (not "Ai" — reads as AI)
             AppendExp("Ag", brushAging, 0);
             AppendExp("Wn", brushWind, 0);
+            AppendExp("Td", brushTide, 0);
+            AppendExp("Bm", brushBloom, 0);
+            AppendExp("Mg", brushMirage, 0);
         }
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);

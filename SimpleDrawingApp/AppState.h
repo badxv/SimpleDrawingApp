@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[34];
+extern HWND hwndBrushRowButtons[37];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -165,6 +165,9 @@ extern int brushCompassLock;     // 0..100 — blend tip angle toward UI compass
 extern int brushAfterimage;      // 0..100 — inverted ghost stamps after erase
 extern int brushAging;           // 0..100 — wet→dry pigment over stroke duration
 extern int brushWind;            // 0..100 — scatter bias toward nearest canvas edge
+extern int brushTide;            // 0..100 — sinusoidal size breathe along stroke
+extern int brushBloom;           // 0..100 — soft halo stamp around each mark
+extern int brushMirage;          // 0..100 — delayed mirror ghost across canvas midline
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;
