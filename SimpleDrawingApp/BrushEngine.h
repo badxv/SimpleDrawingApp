@@ -79,6 +79,9 @@ int GetBrushWind();
 int GetBrushTide();
 int GetBrushBloom();
 int GetBrushMirage();
+int GetBrushRime();
+int GetBrushOrbit();
+int GetBrushEmber();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -113,6 +116,9 @@ void SetBrushWind(int amount); // 0..100 — edge-biased scatter
 void SetBrushTide(int amount); // 0..100 — size breathe along stroke distance
 void SetBrushBloom(int amount); // 0..100 — soft dilated halo per stamp
 void SetBrushMirage(int amount); // 0..100 — mirror ghost across canvas midline
+void SetBrushRime(int amount); // 0..100 — cool frost fringe stamps
+void SetBrushOrbit(int amount); // 0..100 — rotating satellite stamps
+void SetBrushEmber(int amount); // 0..100 — drifting warm spark ghosts
 
 // Deferred stamp queue (echo / radar ping). Returns true if anything was drawn.
 bool BrushTemporalPending();

@@ -69,7 +69,7 @@ extern HWND hwndShapeModeButtons[3];
 extern HWND hwndBrushFlyout;
 extern HWND hwndBrushSubFlyout;
 extern HWND hwndBrushPresetButtons[9];
-extern HWND hwndBrushRowButtons[37];
+extern HWND hwndBrushRowButtons[40];
 extern HWND hwndBrushActionButtons[3];
 extern HWND hwndBrushSubButtons[3];
 extern HWND hwndBrushPageButtons[2];
@@ -168,6 +168,9 @@ extern int brushWind;            // 0..100 — scatter bias toward nearest canva
 extern int brushTide;            // 0..100 — sinusoidal size breathe along stroke
 extern int brushBloom;           // 0..100 — soft halo stamp around each mark
 extern int brushMirage;          // 0..100 — delayed mirror ghost across canvas midline
+extern int brushRime;            // 0..100 — cool frost fringe along stroke edges
+extern int brushOrbit;           // 0..100 — satellite stamps on a rotating ring
+extern int brushEmber;           // 0..100 — warm sparks that drift upward over time
 extern bool penPressureEnabled;
 extern float lastPenPressure;
 extern DrawTool currentTool;

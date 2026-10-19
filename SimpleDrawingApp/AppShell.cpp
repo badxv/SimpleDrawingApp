@@ -104,6 +104,9 @@ void BuildStatusTip(char* out, size_t outChars) {
             AppendExp("Td", brushTide, 0);
             AppendExp("Bm", brushBloom, 0);
             AppendExp("Mg", brushMirage, 0);
+            AppendExp("Rm", brushRime, 0);
+            AppendExp("Or", brushOrbit, 0);
+            AppendExp("Em", brushEmber, 0);
         }
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);
