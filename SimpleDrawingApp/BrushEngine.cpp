@@ -42,9 +42,11 @@ struct TemporalStampJob {
     bool flipX = false;
     bool flipY = false;
     bool eraseTransparent = false;
+    bool toActiveLayer = false; // afterimage ghosts paint into the layer, not the erase mask
 };
 constexpr size_t kTemporalQueueCap = 2048;
 std::vector<TemporalStampJob> gTemporalQueue;
+DWORD gStrokeStartMs = 0;
 
 // Heat ledger field (visit map) + warm ARGB viz for overlay.
 std::vector<float> gHeatField;
@@ -479,9 +481,99 @@ void EnqueueEchoFromStamp(int x, int y, COLORREF color, int size, float pressure
         job.flipX = flipX;
         job.flipY = flipY;
         job.eraseTransparent = eraseTransparent;
+        job.toActiveLayer = false;
         gTemporalQueue.push_back(job);
         amp *= fade;
     }
+}
+
+// After erase: delayed inverted ghosts painted into the active layer (not the erase mask).
+void EnqueueAfterimageAt(int x, int y, int size) {
+    if (!brushExperimental || brushAfterimage < 1) return;
+    if (size < 1) return;
+    const int strength = ClampInt(brushAfterimage, 0, 100);
+    const int delayMs = ClampInt(90 - strength / 3, 40, 90);
+    const int hops = ClampInt(1 + strength / 35, 1, 3);
+    const int pr = GetRValue(penColor), pg = GetGValue(penColor), pb = GetBValue(penColor);
+    // Complementary residual with forced contrast vs canvas (black→white is invisible).
+    int ir = 255 - pr, ig = 255 - pg, ib = 255 - pb;
+    const int cr = GetRValue(gTheme.canvasBg), cg = GetGValue(gTheme.canvasBg), cb = GetBValue(gTheme.canvasBg);
+    if (abs(ir - cr) + abs(ig - cg) + abs(ib - cb) < 160) {
+        // Cool teal residual so afterimages read on light parchment/canvas.
+        ir = ClampInt((ir + 48) / 2, 30, 210);
+        ig = ClampInt((ig + 170) / 2, 80, 230);
+        ib = ClampInt((ib + 200) / 2, 120, 255);
+    }
+    const DWORD now = GetTickCount();
+    float amp = 0.55f + 0.35f * (static_cast<float>(strength) / 100.0f);
+    for (int hop = 1; hop <= hops && amp >= 0.10f; ++hop) {
+        if (gTemporalQueue.size() >= kTemporalQueueCap) break;
+        const float ghost = 0.45f + 0.40f * amp; // keep residual vivid enough to see
+        TemporalStampJob job;
+        job.dueMs = now + static_cast<DWORD>(hop * delayMs);
+        job.x = x + (hop - 1) * ((hop & 1) ? 2 : -2);
+        job.y = y + (hop - 1) * ((hop & 1) ? -2 : 2);
+        job.color = RGB(
+            ClampInt(static_cast<int>(ir + (cr - ir) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(ig + (cg - ig) * (1.0f - ghost) + 0.5f), 0, 255),
+            ClampInt(static_cast<int>(ib + (cb - ib) * (1.0f - ghost) + 0.5f), 0, 255));
+        job.size = MaxInt(1, size - (hop - 1) * 2);
+        job.pressure = MaxFloat(0.12f, amp * 0.85f);
+        job.angleDeg = static_cast<float>((hop * 37) % 180);
+        job.roundness = brushRoundness;
+        job.flipX = false;
+        job.flipY = false;
+        job.eraseTransparent = false;
+        job.toActiveLayer = true;
+        gTemporalQueue.push_back(job);
+        amp *= 0.55f;
+    }
+}
+
+void EnqueueAfterimageAlongSegment(int x0, int y0, int x1, int y1, int width) {
+    if (!brushExperimental || brushAfterimage < 1) return;
+    const float dx = static_cast<float>(x1 - x0);
+    const float dy = static_cast<float>(y1 - y0);
+    const float segLen = sqrtf(dx * dx + dy * dy);
+    const float step = MaxFloat(2.0f, static_cast<float>(MaxInt(1, width)) * 0.55f);
+    if (segLen < 0.001f) {
+        EnqueueAfterimageAt(x1, y1, width);
+        return;
+    }
+    for (float d = 0.0f; d <= segLen; d += step) {
+        const float t = d / segLen;
+        const int sx = x0 + static_cast<int>(dx * t + (dx >= 0.0f ? 0.5f : -0.5f));
+        const int sy = y0 + static_cast<int>(dy * t + (dy >= 0.0f ? 0.5f : -0.5f));
+        EnqueueAfterimageAt(sx, sy, width);
+    }
+}
+
+float StrokeAgingAmount() {
+    if (!brushExperimental || brushAging < 1) return 0.0f;
+    if (gStrokeStartMs == 0) return 0.0f;
+    const DWORD now = GetTickCount();
+    const float elapsed = static_cast<float>(now - gStrokeStartMs);
+    // Full dry-out window: 1.2s (strong aging) … 4.5s (gentle).
+    const float strength = static_cast<float>(ClampInt(brushAging, 0, 100)) / 100.0f;
+    const float windowMs = 4500.0f - 3300.0f * strength;
+    float age = elapsed / MaxFloat(400.0f, windowMs);
+    if (age > 1.0f) age = 1.0f;
+    if (age < 0.0f) age = 0.0f;
+    return age * strength;
+}
+
+COLORREF AgePigmentColor(COLORREF color, float age) {
+    if (age < 0.001f) return color;
+    // Wet → dry: lean toward a muted, slightly warmer gray of the same hue family.
+    const int r = GetRValue(color), g = GetGValue(color), b = GetBValue(color);
+    const int gray = (r * 30 + g * 59 + b * 11) / 100;
+    const int dryR = ClampInt(gray + 18, 0, 255);
+    const int dryG = ClampInt(gray + 8, 0, 255);
+    const int dryB = ClampInt(gray - 6, 0, 255);
+    return RGB(
+        ClampInt(static_cast<int>(r + (dryR - r) * age + 0.5f), 0, 255),
+        ClampInt(static_cast<int>(g + (dryG - g) * age + 0.5f), 0, 255),
+        ClampInt(static_cast<int>(b + (dryB - b) * age + 0.5f), 0, 255));
 }
 
 } // namespace
@@ -543,20 +635,19 @@ void FireBrushPing(int cx, int cy, COLORREF color, int tipSize, bool eraseTransp
 bool ProcessBrushTemporalQueue() {
     if (gTemporalQueue.empty()) return false;
 
-    Graphics* target = strokeGraphics.get();
+    Graphics* strokeTarget = strokeGraphics.get();
     // Prefer live stroke layer; if somehow missing, paint into the active layer.
-    Gdiplus::Graphics* owned = nullptr;
-    if (!target) {
+    Gdiplus::Graphics* strokeOwned = nullptr;
+    if (!strokeTarget) {
         if (Bitmap* bmp = gLayers.ActiveBitmap()) {
-            owned = new Graphics(bmp);
-            target = owned;
+            strokeOwned = new Graphics(bmp);
+            strokeTarget = strokeOwned;
         }
     }
-    if (!target) return false;
 
     const BrushPreset* preset = ActivePreset();
     if (!preset || !preset->tip) {
-        delete owned;
+        delete strokeOwned;
         gTemporalQueue.clear();
         return false;
     }
@@ -568,16 +659,29 @@ bool ProcessBrushTemporalQueue() {
         TemporalStampJob& job = gTemporalQueue[i];
         // Unsigned wrap-safe: due in the past or equal.
         if (static_cast<int>(now - job.dueMs) >= 0) {
-            DrawStamp(target, preset->tip.get(), job.x, job.y, job.color, job.size,
-                job.eraseTransparent, job.pressure, job.angleDeg, job.roundness, job.flipX, job.flipY);
-            drew = true;
+            Graphics* target = strokeTarget;
+            Graphics* activeOwned = nullptr;
+            if (job.toActiveLayer) {
+                if (Bitmap* bmp = gLayers.ActiveBitmap()) {
+                    activeOwned = new Graphics(bmp);
+                    target = activeOwned;
+                } else {
+                    target = nullptr;
+                }
+            }
+            if (target) {
+                DrawStamp(target, preset->tip.get(), job.x, job.y, job.color, job.size,
+                    job.eraseTransparent, job.pressure, job.angleDeg, job.roundness, job.flipX, job.flipY);
+                drew = true;
+            }
+            delete activeOwned;
         } else {
             if (write != i) gTemporalQueue[write] = job;
             ++write;
         }
     }
     gTemporalQueue.resize(write);
-    delete owned;
+    delete strokeOwned;
     if (drew) InvalidateComposite();
     return drew;
 }
@@ -749,6 +853,7 @@ void ResetBrushStrokeState() {
     gSmoothInit = false;
     gSmoothX = 0.0f;
     gSmoothY = 0.0f;
+    gStrokeStartMs = 0;
     ClearBrushTemporalQueue();
 }
 
@@ -756,6 +861,7 @@ void InitBrushStrokeSmoothing(int x, int y) {
     gSmoothX = static_cast<float>(x);
     gSmoothY = static_cast<float>(y);
     gSmoothInit = true;
+    gStrokeStartMs = GetTickCount();
 }
 
 bool SmoothBrushStrokePoint(int rawX, int rawY, int& outX, int& outY) {
@@ -810,33 +916,55 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
 
     if (eraseOpaque) {
         DrawRoundLine(target, x0, y0, x1, y1, gTheme.canvasBg, effectiveWidth, false);
+        EnqueueAfterimageAlongSegment(x0, y0, x1, y1, effectiveWidth);
         return;
     }
 
     const BrushPreset* preset = ActivePreset();
     if (!preset || !preset->tip || currentTool != DrawTool::Pen) {
         DrawRoundLine(target, x0, y0, x1, y1, color, effectiveWidth, eraseTransparent);
+        if (eraseTransparent) {
+            EnqueueAfterimageAlongSegment(x0, y0, x1, y1, effectiveWidth);
+        }
         return;
     }
 
     const float dx = static_cast<float>(x1 - x0);
     const float dy = static_cast<float>(y1 - y0);
     const float segLen = sqrtf(dx * dx + dy * dy);
+    const float aging = StrokeAgingAmount();
 
     auto ScatterOffset = [](int x, int y, int stampW, int salt, int& outDx, int& outDy) {
         outDx = 0;
         outDy = 0;
         int scatter = brushScatter;
-        if (scatter < 1) return;
+        // Wind alone can still push stamps toward the nearest canvas edge.
+        const bool windOn = brushExperimental && brushWind > 0;
+        if (scatter < 1 && !windOn) return;
         if (scatter > 100) scatter = 100;
         const unsigned n = (static_cast<unsigned>(x) * 73856093u)
             ^ (static_cast<unsigned>(y) * 19349663u)
             ^ (static_cast<unsigned>(salt) * 83492791u);
         const float rx = (static_cast<float>(n & 255u) / 255.0f) * 2.0f - 1.0f;
         const float ry = (static_cast<float>((n >> 8) & 255u) / 255.0f) * 2.0f - 1.0f;
-        const float amp = static_cast<float>(stampW) * 0.55f * (static_cast<float>(scatter) / 100.0f);
+        const float scatterAmt = (scatter < 1) ? 0.0f : (static_cast<float>(scatter) / 100.0f);
+        const float amp = static_cast<float>(stampW) * 0.55f * MaxFloat(scatterAmt, windOn ? 0.20f : 0.0f);
         outDx = static_cast<int>(rx * amp + (rx >= 0.0f ? 0.5f : -0.5f));
         outDy = static_cast<int>(ry * amp + (ry >= 0.0f ? 0.5f : -0.5f));
+        if (windOn && docWidth > 1 && docHeight > 1) {
+            const float wind = static_cast<float>(ClampInt(brushWind, 0, 100)) / 100.0f;
+            const float nx = static_cast<float>(x) / static_cast<float>(docWidth - 1);
+            const float ny = static_cast<float>(y) / static_cast<float>(docHeight - 1);
+            // Push outward near edges (window-edge wind).
+            float wx = 0.0f, wy = 0.0f;
+            if (nx < 0.22f) wx = -(1.0f - nx / 0.22f);
+            else if (nx > 0.78f) wx = (nx - 0.78f) / 0.22f;
+            if (ny < 0.22f) wy = -(1.0f - ny / 0.22f);
+            else if (ny > 0.78f) wy = (ny - 0.78f) / 0.22f;
+            const float wamp = static_cast<float>(stampW) * 0.85f * wind;
+            outDx += static_cast<int>(wx * wamp + (wx >= 0.0f ? 0.5f : -0.5f));
+            outDy += static_cast<int>(wy * wamp + (wy >= 0.0f ? 0.5f : -0.5f));
+        }
     };
 
     auto AngleJitter = [](int x, int y, int salt, float baseDeg) -> float {
@@ -936,17 +1064,25 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
     if (count > 8) count = 8;
 
     auto PlaceStamps = [&](int sx, int sy, int baseSalt, float pressure) {
-        const int baseW = PenPressureWidth(width, pressure);
+        // Aging: as the stroke dries, flow drops and tip shrinks slightly.
+        float agedPressure = pressure;
+        int agedWidth = width;
+        if (aging > 0.001f && !eraseTransparent) {
+            agedPressure = pressure * (1.0f - 0.55f * aging);
+            if (agedPressure < 0.08f) agedPressure = 0.08f;
+            agedWidth = MaxInt(1, static_cast<int>(static_cast<float>(width) * (1.0f - 0.25f * aging) + 0.5f));
+        }
+        const int baseW = PenPressureWidth(agedWidth, agedPressure);
         int spacingW = baseW;
         for (int c = 0; c < count; ++c) {
             const int salt = baseSalt * 8 + c;
-            const int stampW = SizeJitter(sx, sy, salt, baseW, width);
+            const int stampW = SizeJitter(sx, sy, salt, baseW, agedWidth);
             if (c == 0) spacingW = stampW;
-            const float stampP = OpacityJitter(sx, sy, salt, pressure);
+            const float stampP = OpacityJitter(sx, sy, salt, agedPressure);
             int ox = 0, oy = 0;
             ScatterOffset(sx, sy, stampW, salt, ox, oy);
             // Count polish: if Scatter is off, fan secondary stamps so Count is visible.
-            if (brushScatter < 1 && count > 1 && c > 0) {
+            if (brushScatter < 1 && brushWind < 1 && count > 1 && c > 0) {
                 const unsigned n = (static_cast<unsigned>(sx) * 73856093u)
                     ^ (static_cast<unsigned>(sy) * 19349663u)
                     ^ (static_cast<unsigned>(salt) * 83492791u);
@@ -978,6 +1114,7 @@ void DrawBrushStrokeSegment(Graphics* target, int x0, int y0, int x1, int y1,
             }
             if (!eraseTransparent) {
                 stampColor = ApplyHsbJitter(stampColor, sx, sy, salt);
+                stampColor = AgePigmentColor(stampColor, aging);
             }
             DrawStamp(target, preset->tip.get(), sx + ox, sy + oy, stampColor, stampW, eraseTransparent, stampP, ang, stampRd, fx, fy);
             EnqueueEchoFromStamp(sx + ox, sy + oy, stampColor, stampW, stampP, ang, stampRd, fx, fy, eraseTransparent);
@@ -1333,6 +1470,36 @@ void SetBrushCompassLock(int amount) {
     SyncBrushFlyoutChecks();
 }
 
+int GetBrushAfterimage() {
+    return brushAfterimage;
+}
+
+int GetBrushAging() {
+    return brushAging;
+}
+
+int GetBrushWind() {
+    return brushWind;
+}
+
+void SetBrushAfterimage(int amount) {
+    brushAfterimage = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushAging(int amount) {
+    brushAging = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
+void SetBrushWind(int amount) {
+    brushWind = ClampInt(amount, 0, 100);
+    SaveBrushSettings();
+    SyncBrushFlyoutChecks();
+}
+
 int GetBrushSpacingPercent() {
     const BrushPreset* preset = ActivePreset();
     if (!preset) return 20;
@@ -1390,6 +1557,9 @@ void LoadBrushSettings() {
     brushHeat = GetPrivateProfileIntA("Features", "BrushHeat", 0, iniPath);
     brushClockPhase = GetPrivateProfileIntA("Features", "BrushClockPhase", 0, iniPath);
     brushCompassLock = GetPrivateProfileIntA("Features", "BrushCompassLock", 0, iniPath);
+    brushAfterimage = GetPrivateProfileIntA("Features", "BrushAfterimage", 0, iniPath);
+    brushAging = GetPrivateProfileIntA("Features", "BrushAging", 0, iniPath);
+    brushWind = GetPrivateProfileIntA("Features", "BrushWind", 0, iniPath);
     penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
     const int spacingPct = GetPrivateProfileIntA("Features", "BrushSpacing", -1, iniPath);
     if (spacingPct >= 5) {
@@ -1426,6 +1596,9 @@ void LoadBrushSettings() {
     brushHeat = ClampInt(brushHeat, 0, 100);
     brushClockPhase = ClampInt(brushClockPhase, 0, 100);
     brushCompassLock = ClampInt(brushCompassLock, 0, 100);
+    brushAfterimage = ClampInt(brushAfterimage, 0, 100);
+    brushAging = ClampInt(brushAging, 0, 100);
+    brushWind = ClampInt(brushWind, 0, 100);
 }
 
 void SaveBrushSettings() {
@@ -1490,6 +1663,12 @@ void SaveBrushSettings() {
     WritePrivateProfileStringA("Features", "BrushClockPhase", buf, iniPath);
     sprintf_s(buf, "%d", brushCompassLock);
     WritePrivateProfileStringA("Features", "BrushCompassLock", buf, iniPath);
+    sprintf_s(buf, "%d", brushAfterimage);
+    WritePrivateProfileStringA("Features", "BrushAfterimage", buf, iniPath);
+    sprintf_s(buf, "%d", brushAging);
+    WritePrivateProfileStringA("Features", "BrushAging", buf, iniPath);
+    sprintf_s(buf, "%d", brushWind);
+    WritePrivateProfileStringA("Features", "BrushWind", buf, iniPath);
     sprintf_s(buf, "%d", GetBrushSpacingPercent());
     WritePrivateProfileStringA("Features", "BrushSpacing", buf, iniPath);
     WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);

@@ -92,6 +92,9 @@ void BuildStatusTip(char* out, size_t outChars) {
             AppendPct(extras, sizeof(extras), "Ht", brushHeat, 0);
             AppendPct(extras, sizeof(extras), "Ck", brushClockPhase, 0);
             AppendPct(extras, sizeof(extras), "Co", brushCompassLock, 0);
+            AppendPct(extras, sizeof(extras), "Ai", brushAfterimage, 0);
+            AppendPct(extras, sizeof(extras), "Ag", brushAging, 0);
+            AppendPct(extras, sizeof(extras), "Wn", brushWind, 0);
         }
         AppendPct(extras, sizeof(extras), "Z", brushSizeJitter, 0);
         AppendPct(extras, sizeof(extras), "Md", brushMinDiameter, 0);
@@ -111,6 +114,9 @@ void BuildStatusTip(char* out, size_t outChars) {
             sprintf_s(buf, "  P:%d%%", static_cast<int>(lastPenPressure * 100.0f + 0.5f));
             AppendExtras(extras, sizeof(extras), buf);
         }
+    } else if (currentTool == DrawTool::Eraser && brushExperimental && brushAfterimage > 0) {
+        AppendExtras(extras, sizeof(extras), "  ");
+        AppendPct(extras, sizeof(extras), "Ai", brushAfterimage, 0);
     }
     if (IsFeatureEnabled(AppFeature::SnapToGrid)) {
         AppendExtras(extras, sizeof(extras), "  Snap");

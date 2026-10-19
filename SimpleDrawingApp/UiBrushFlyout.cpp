@@ -41,7 +41,8 @@ enum class BrushSubPanel {
     None = 0, Flow, Hardness, Pressure, Size, Spacing, Scatter, Angle, Orient, SizeJitter,
     OpacityJitter, Smooth, Count, Roundness, MinDiameter, WetEdges, RoundnessJitter, FlipX, FlipY,
     FlowJitter, ColorJitter, HueJitter, SatJitter, BrightJitter,
-    Experimental, EchoDelay, EchoFeedback, Ping, Biolum, Heat, ClockPhase, CompassLock
+    Experimental, EchoDelay, EchoFeedback, Ping, Biolum, Heat, ClockPhase, CompassLock,
+    Afterimage, Aging, Wind
 };
 
 struct BrushRowDef {
@@ -92,10 +93,16 @@ constexpr BrushRowDef kBrushRows[] = {
       "Clock phase — tip angle follows the second hand", true },
     { IDC_BRUSH_ROW_COMPASS, BrushSubPanel::CompassLock,
       "Compass lock — blend tip angle toward the Atelier compass", true },
+    { IDC_BRUSH_ROW_AFTERIMAGE, BrushSubPanel::Afterimage,
+      "Afterimage — inverted ghost stamps trail the eraser", true },
+    { IDC_BRUSH_ROW_AGING, BrushSubPanel::Aging,
+      "Aging — pigment dries (mutes/shrinks) over a long stroke", true },
+    { IDC_BRUSH_ROW_WIND, BrushSubPanel::Wind,
+      "Wind — scatter bias toward the nearest canvas edge", true },
 };
 constexpr int kBrushRowCount = static_cast<int>(sizeof(kBrushRows) / sizeof(kBrushRows[0]));
 
-static_assert(kBrushRowCount == 31, "hwndBrushRowButtons size must match kBrushRows");
+static_assert(kBrushRowCount == 34, "hwndBrushRowButtons size must match kBrushRows");
 
 bool RowVisible(const BrushRowDef& row) {
     return !row.experimental || brushExperimental;
@@ -549,7 +556,10 @@ void LayoutSubFlyoutOptions() {
         || gBrushSubPanel == BrushSubPanel::Biolum
         || gBrushSubPanel == BrushSubPanel::Heat
         || gBrushSubPanel == BrushSubPanel::ClockPhase
-        || gBrushSubPanel == BrushSubPanel::CompassLock);
+        || gBrushSubPanel == BrushSubPanel::CompassLock
+        || gBrushSubPanel == BrushSubPanel::Afterimage
+        || gBrushSubPanel == BrushSubPanel::Aging
+        || gBrushSubPanel == BrushSubPanel::Wind);
     if (hwndBrushSubSlider) {
         ShowWindow(hwndBrushSubSlider, useSlider ? SW_SHOW : SW_HIDE);
         if (useSlider) {
@@ -589,7 +599,10 @@ void LayoutSubFlyoutOptions() {
                 || gBrushSubPanel == BrushSubPanel::Biolum
                 || gBrushSubPanel == BrushSubPanel::Heat
                 || gBrushSubPanel == BrushSubPanel::ClockPhase
-                || gBrushSubPanel == BrushSubPanel::CompassLock) {
+                || gBrushSubPanel == BrushSubPanel::CompassLock
+                || gBrushSubPanel == BrushSubPanel::Afterimage
+                || gBrushSubPanel == BrushSubPanel::Aging
+                || gBrushSubPanel == BrushSubPanel::Wind) {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
                 int pos = GetBrushScatter();
                 if (gBrushSubPanel == BrushSubPanel::Angle) pos = GetBrushAngleJitter();
@@ -613,6 +626,9 @@ void LayoutSubFlyoutOptions() {
                 else if (gBrushSubPanel == BrushSubPanel::Heat) pos = GetBrushHeat();
                 else if (gBrushSubPanel == BrushSubPanel::ClockPhase) pos = GetBrushClockPhase();
                 else if (gBrushSubPanel == BrushSubPanel::CompassLock) pos = GetBrushCompassLock();
+                else if (gBrushSubPanel == BrushSubPanel::Afterimage) pos = GetBrushAfterimage();
+                else if (gBrushSubPanel == BrushSubPanel::Aging) pos = GetBrushAging();
+                else if (gBrushSubPanel == BrushSubPanel::Wind) pos = GetBrushWind();
                 SendMessage(hwndBrushSubSlider, TBM_SETPOS, TRUE, pos);
             } else {
                 SendMessage(hwndBrushSubSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
@@ -702,7 +718,10 @@ void OpenBrushSubFlyoutInternal(BrushSubPanel panel, int anchorY) {
         || gBrushSubPanel == BrushSubPanel::EchoDelay || gBrushSubPanel == BrushSubPanel::EchoFeedback
         || gBrushSubPanel == BrushSubPanel::Ping || gBrushSubPanel == BrushSubPanel::Biolum
         || gBrushSubPanel == BrushSubPanel::Heat || gBrushSubPanel == BrushSubPanel::ClockPhase
-        || gBrushSubPanel == BrushSubPanel::CompassLock) {
+        || gBrushSubPanel == BrushSubPanel::CompassLock
+                || gBrushSubPanel == BrushSubPanel::Afterimage
+                || gBrushSubPanel == BrushSubPanel::Aging
+                || gBrushSubPanel == BrushSubPanel::Wind) {
         subH = kSubFlyoutSliderH;
     }
     SetWindowPos(hwndBrushSubFlyout, HWND_TOPMOST, fr.right + 4, gBrushSubAnchorY,
@@ -791,6 +810,12 @@ LRESULT CALLBACK BrushSubFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 SetBrushClockPhase(pos);
             } else if (gBrushSubPanel == BrushSubPanel::CompassLock) {
                 SetBrushCompassLock(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Afterimage) {
+                SetBrushAfterimage(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Aging) {
+                SetBrushAging(pos);
+            } else if (gBrushSubPanel == BrushSubPanel::Wind) {
+                SetBrushWind(pos);
             }
             SyncBrushFlyoutChecks();
             if (hwndBrushPreview) InvalidateRect(hwndBrushPreview, NULL, FALSE);
@@ -1143,6 +1168,9 @@ void FormatBrushRowLabel(BrushSubPanel panel, char* out, size_t outChars) {
     case BrushSubPanel::Heat: sprintf_s(out, outChars, "Heat%s%d%%", kSep, brushHeat); break;
     case BrushSubPanel::ClockPhase: sprintf_s(out, outChars, "Clock%s%d%%", kSep, brushClockPhase); break;
     case BrushSubPanel::CompassLock: sprintf_s(out, outChars, "Compass%s%d%%", kSep, brushCompassLock); break;
+    case BrushSubPanel::Afterimage: sprintf_s(out, outChars, "Afterimg%s%d%%", kSep, brushAfterimage); break;
+    case BrushSubPanel::Aging: sprintf_s(out, outChars, "Aging%s%d%%", kSep, brushAging); break;
+    case BrushSubPanel::Wind: sprintf_s(out, outChars, "Wind%s%d%%", kSep, brushWind); break;
     case BrushSubPanel::Pressure:
         sprintf_s(out, outChars, "Pressure%s%s", kSep, penPressureEnabled ? "On" : "Off");
         break;

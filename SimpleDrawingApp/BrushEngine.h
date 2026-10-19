@@ -73,6 +73,9 @@ int GetBrushBiolum();
 int GetBrushHeat();
 int GetBrushClockPhase();
 int GetBrushCompassLock();
+int GetBrushAfterimage();
+int GetBrushAging();
+int GetBrushWind();
 void SetBrushFlow(int flow);
 void SetBrushHardness(int hardness);
 void SetBrushScatter(int scatter); // 0..100
@@ -101,6 +104,9 @@ void SetBrushBiolum(int amount); // 0..100
 void SetBrushHeat(int amount); // 0..100
 void SetBrushClockPhase(int amount); // 0..100
 void SetBrushCompassLock(int amount); // 0..100
+void SetBrushAfterimage(int amount); // 0..100 — eraser afterimage ghosts
+void SetBrushAging(int amount); // 0..100 — wet→dry over stroke age
+void SetBrushWind(int amount); // 0..100 — edge-biased scatter
 
 // Deferred stamp queue (echo / radar ping). Returns true if anything was drawn.
 bool BrushTemporalPending();
