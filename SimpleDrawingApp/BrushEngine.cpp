@@ -303,13 +303,13 @@ void SetBrushHardness(int hardness) {
 }
 
 void LoadBrushSettings() {
-    const int idx = FeaturesIniReadInt("ActiveBrush", 0);
+    const int idx = FeaturesIniReadIntA("ActiveBrush", 0);
     if (idx >= 0 && idx < static_cast<int>(gPresets.size())) {
         gActiveBrush = idx;
     }
-    brushFlow = FeaturesIniReadInt("BrushFlow", 100);
-    brushHardness = FeaturesIniReadInt("BrushHardness", 100);
-    penPressureEnabled = FeaturesIniReadInt("PenPressure", 1) != 0;
+    brushFlow = FeaturesIniReadIntA("BrushFlow", 100);
+    brushHardness = FeaturesIniReadIntA("BrushHardness", 100);
+    penPressureEnabled = FeaturesIniReadIntA("PenPressure", 1) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
     if (brushHardness < 1) brushHardness = 1;
@@ -319,12 +319,12 @@ void LoadBrushSettings() {
 void SaveBrushSettings() {
     char buf[16];
     sprintf_s(buf, "%d", gActiveBrush);
-    FeaturesIniWrite("ActiveBrush", buf);
+    FeaturesIniWriteA("ActiveBrush", buf);
     sprintf_s(buf, "%d", brushFlow);
-    FeaturesIniWrite("BrushFlow", buf);
+    FeaturesIniWriteA("BrushFlow", buf);
     sprintf_s(buf, "%d", brushHardness);
-    FeaturesIniWrite("BrushHardness", buf);
-    FeaturesIniWrite("PenPressure", penPressureEnabled ? "1" : "0");
+    FeaturesIniWriteA("BrushHardness", buf);
+    FeaturesIniWriteA("PenPressure", penPressureEnabled ? "1" : "0");
 }
 
 void SyncBrushMenuItems() {

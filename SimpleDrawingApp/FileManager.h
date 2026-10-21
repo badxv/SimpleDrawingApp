@@ -3,6 +3,6 @@
 #include <objidl.h>
 #include <gdiplus.h>
 
-bool SaveBitmapToFile(HWND hwnd, const char* filename);
-bool SaveCanvasToFile(Gdiplus::Bitmap* bitmap, const char* filename);
-bool LoadImageFromFile(const char* filename, Gdiplus::Bitmap*& bitmap, Gdiplus::Graphics*& graphics);
+bool SaveBitmapToFile(HWND hwnd, const wchar_t* filename);
+bool SaveCanvasToFile(Gdiplus::Bitmap* bitmap, const wchar_t* filename);
+bool LoadImageFromFile(const wchar_t* filename, Gdiplus::Bitmap*& bitmap, Gdiplus::Graphics*& graphics);

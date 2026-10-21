@@ -5,6 +5,7 @@
 #include "SimpleDrawingApp.h"
 #include "FileManager.h"
 #include "Resource.h"
+#include "AppPaths.h"
 #include <commdlg.h>
 #include <cstdio>
 #include <cstring>
@@ -26,92 +27,54 @@ const CanvasPreset kPresets[] = {
     { "Custom", 0, 0 }
 };
 
-void RememberBrowseDirFromPath(const char* path) {
+void RememberBrowseDirFromPath(const wchar_t* path) {
     if (!path || !path[0]) return;
-    char dir[MAX_PATH];
-    sprintf_s(dir, "%s", path);
-    char* slash = strrchr(dir, '\\');
-    if (!slash) slash = strrchr(dir, '/');
+    wchar_t dir[MAX_PATH];
+    wcsncpy_s(dir, path, _TRUNCATE);
+    wchar_t* slash = wcsrchr(dir, L'\\');
+    if (!slash) slash = wcsrchr(dir, L'/');
     if (!slash) return;
-    *slash = '\0';
-    sprintf_s(gLastBrowseDir, "%s", dir);
+    *slash = L'\0';
+    wcsncpy_s(gLastBrowseDir, dir, _TRUNCATE);
 }
 
-void GetSessionIniPath(char* path, size_t pathChars) {
-    if (!path || pathChars == 0) return;
-    path[0] = '\0';
-    DWORD len = GetModuleFileNameA(nullptr, path, static_cast<DWORD>(pathChars));
-    if (len == 0 || len >= pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    for (int i = static_cast<int>(len) - 1; i >= 0; --i) {
-        if (path[i] == '\\' || path[i] == '/') {
-            path[i + 1] = '\0';
-            break;
-        }
-    }
-    const size_t used = strlen(path);
-    const char suffix[] = "session.ini";
-    if (used + sizeof(suffix) > pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    strcat_s(path, pathChars, suffix);
+void GetSessionIniPath(wchar_t* path, size_t pathChars) {
+    GetModuleSiblingPathW(path, pathChars, L"session.ini");
 }
 
-void GetAutosavePath(char* path, size_t pathChars) {
-    if (!path || pathChars == 0) return;
-    path[0] = '\0';
-    DWORD len = GetModuleFileNameA(nullptr, path, static_cast<DWORD>(pathChars));
-    if (len == 0 || len >= pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    for (int i = static_cast<int>(len) - 1; i >= 0; --i) {
-        if (path[i] == '\\' || path[i] == '/') {
-            path[i + 1] = '\0';
-            break;
-        }
-    }
-    const size_t used = strlen(path);
-    const char suffix[] = "autosave.png";
-    if (used + sizeof(suffix) > pathChars) {
-        path[0] = '\0';
-        return;
-    }
-    strcat_s(path, pathChars, suffix);
+void GetAutosavePath(wchar_t* path, size_t pathChars) {
+    GetModuleSiblingPathW(path, pathChars, L"autosave.png");
 }
 
 void ClearAutosaveRecovery() {
-    char path[MAX_PATH] = {};
+    wchar_t path[MAX_PATH] = {};
     GetAutosavePath(path, MAX_PATH);
-    if (path[0]) DeleteFileA(path);
+    if (path[0]) DeleteFileW(path);
 }
 
-bool PathIsExistingFile(const char* path) {
+bool PathIsExistingFile(const wchar_t* path) {
     if (!path || !path[0]) return false;
-    const DWORD attrs = GetFileAttributesA(path);
+    const DWORD attrs = GetFileAttributesW(path);
     return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
 void SyncLastDocumentFromRecent() {
     if (gRecentDocumentCount > 0 && gRecentDocuments[0][0]) {
-        sprintf_s(gLastDocumentPath, "%s", gRecentDocuments[0]);
+        wcsncpy_s(gLastDocumentPath, gRecentDocuments[0], _TRUNCATE);
     } else {
-        gLastDocumentPath[0] = '\0';
+        gLastDocumentPath[0] = L'\0';
     }
 }
 
-void RememberRecentPath(const char* path) {
+void RememberRecentPath(const wchar_t* path) {
     if (!path || !path[0]) return;
 
-    char normalized[MAX_PATH];
-    sprintf_s(normalized, "%s", path);
+    wchar_t normalized[MAX_PATH];
+    wcsncpy_s(normalized, path, _TRUNCATE);
 
     int existing = -1;
     for (int i = 0; i < gRecentDocumentCount; ++i) {
-        if (_stricmp(gRecentDocuments[i], normalized) == 0) {
+        if (_wcsicmp(gRecentDocuments[i], normalized) == 0) {
             existing = i;
             break;
         }
@@ -123,40 +86,40 @@ void RememberRecentPath(const char* path) {
     }
 
     if (existing > 0) {
-        char moved[MAX_PATH];
-        sprintf_s(moved, "%s", gRecentDocuments[existing]);
+        wchar_t moved[MAX_PATH];
+        wcsncpy_s(moved, gRecentDocuments[existing], _TRUNCATE);
         for (int i = existing; i > 0; --i) {
-            sprintf_s(gRecentDocuments[i], "%s", gRecentDocuments[i - 1]);
+            wcsncpy_s(gRecentDocuments[i], gRecentDocuments[i - 1], _TRUNCATE);
         }
-        sprintf_s(gRecentDocuments[0], "%s", moved);
+        wcsncpy_s(gRecentDocuments[0], moved, _TRUNCATE);
     } else {
         const int count = (gRecentDocumentCount < kMaxRecentDocuments)
             ? gRecentDocumentCount + 1
             : kMaxRecentDocuments;
         for (int i = count - 1; i > 0; --i) {
-            sprintf_s(gRecentDocuments[i], "%s", gRecentDocuments[i - 1]);
+            wcsncpy_s(gRecentDocuments[i], gRecentDocuments[i - 1], _TRUNCATE);
         }
-        sprintf_s(gRecentDocuments[0], "%s", normalized);
+        wcsncpy_s(gRecentDocuments[0], normalized, _TRUNCATE);
         gRecentDocumentCount = count;
     }
     SyncLastDocumentFromRecent();
 }
 
-void RemoveRecentPath(const char* path) {
+void RemoveRecentPath(const wchar_t* path) {
     if (!path || !path[0] || gRecentDocumentCount <= 0) return;
     int found = -1;
     for (int i = 0; i < gRecentDocumentCount; ++i) {
-        if (_stricmp(gRecentDocuments[i], path) == 0) {
+        if (_wcsicmp(gRecentDocuments[i], path) == 0) {
             found = i;
             break;
         }
     }
     if (found < 0) return;
     for (int i = found; i < gRecentDocumentCount - 1; ++i) {
-        sprintf_s(gRecentDocuments[i], "%s", gRecentDocuments[i + 1]);
+        wcsncpy_s(gRecentDocuments[i], gRecentDocuments[i + 1], _TRUNCATE);
     }
     --gRecentDocumentCount;
-    gRecentDocuments[gRecentDocumentCount][0] = '\0';
+    gRecentDocuments[gRecentDocumentCount][0] = L'\0';
     SyncLastDocumentFromRecent();
 }
 
@@ -165,33 +128,33 @@ void PruneMissingRecentPaths() {
     for (int read = 0; read < gRecentDocumentCount; ++read) {
         if (!PathIsExistingFile(gRecentDocuments[read])) continue;
         if (write != read) {
-            sprintf_s(gRecentDocuments[write], "%s", gRecentDocuments[read]);
+            wcsncpy_s(gRecentDocuments[write], gRecentDocuments[read], _TRUNCATE);
         }
         ++write;
     }
     for (int i = write; i < gRecentDocumentCount; ++i) {
-        gRecentDocuments[i][0] = '\0';
+        gRecentDocuments[i][0] = L'\0';
     }
     gRecentDocumentCount = write;
     SyncLastDocumentFromRecent();
 }
 
-void FormatRecentMenuLabel(int index, const char* path, char* out, size_t outChars) {
+void FormatRecentMenuLabel(int index, const wchar_t* path, wchar_t* out, size_t outChars) {
     if (!out || outChars < 8 || !path) return;
-    const char* name = path;
-    const char* slash = strrchr(path, '\\');
-    if (!slash) slash = strrchr(path, '/');
+    const wchar_t* name = path;
+    const wchar_t* slash = wcsrchr(path, L'\\');
+    if (!slash) slash = wcsrchr(path, L'/');
     if (slash && slash[1]) name = slash + 1;
 
     // "&1 filename.png" — keep labels short for the menu.
-    char truncated[MAX_PATH];
-    sprintf_s(truncated, "%s", name);
+    wchar_t truncated[MAX_PATH];
+    wcsncpy_s(truncated, name, _TRUNCATE);
     const size_t maxName = 42;
-    if (strlen(truncated) > maxName) {
-        truncated[maxName - 3] = '\0';
-        strcat_s(truncated, "...");
+    if (wcslen(truncated) > maxName) {
+        truncated[maxName - 3] = L'\0';
+        wcscat_s(truncated, L"...");
     }
-    sprintf_s(out, outChars, "&%d %s", index + 1, truncated);
+    swprintf_s(out, outChars, L"&%d %s", index + 1, truncated);
 }
 
 HMENU FindRecentFilesSubMenu(HMENU fileMenu) {
@@ -211,32 +174,32 @@ HMENU FindRecentFilesSubMenu(HMENU fileMenu) {
 }
 
 void SaveSessionState() {
-    char iniPath[MAX_PATH] = {};
+    wchar_t iniPath[MAX_PATH] = {};
     GetSessionIniPath(iniPath, MAX_PATH);
     if (!iniPath[0]) return;
-    WritePrivateProfileStringA("Session", "LastDocument",
-        gLastDocumentPath[0] ? gLastDocumentPath : "", iniPath);
+    WritePrivateProfileStringW(L"Session", L"LastDocument",
+        gLastDocumentPath[0] ? gLastDocumentPath : L"", iniPath);
     for (int i = 0; i < kMaxRecentDocuments; ++i) {
-        char key[32];
-        sprintf_s(key, "Recent%d", i);
-        WritePrivateProfileStringA("Session", key,
-            (i < gRecentDocumentCount && gRecentDocuments[i][0]) ? gRecentDocuments[i] : "",
+        wchar_t key[32];
+        swprintf_s(key, L"Recent%d", i);
+        WritePrivateProfileStringW(L"Session", key,
+            (i < gRecentDocumentCount && gRecentDocuments[i][0]) ? gRecentDocuments[i] : L"",
             iniPath);
     }
 }
 
-void SetDocumentPath(const char* path) {
+void SetDocumentPath(const wchar_t* path) {
     if (path && path[0]) {
-        sprintf_s(gDocumentPath, "%s", path);
+        wcsncpy_s(gDocumentPath, path, _TRUNCATE);
         RememberBrowseDirFromPath(path);
         RememberRecentPath(path);
         SaveSessionState();
     } else {
-        gDocumentPath[0] = '\0';
+        gDocumentPath[0] = L'\0';
     }
 }
 
-bool WriteDocumentToPath(HWND hwnd, const char* path) {
+bool WriteDocumentToPath(HWND hwnd, const wchar_t* path) {
     ClearSelection(true);
     Bitmap* flat = GetCompositeBitmap();
     if (flat && SaveCanvasToFile(flat, path)) {
@@ -249,7 +212,7 @@ bool WriteDocumentToPath(HWND hwnd, const char* path) {
     return false;
 }
 
-bool OpenDocumentFromPath(HWND hwnd, const char* filePath) {
+bool OpenDocumentFromPath(HWND hwnd, const wchar_t* filePath) {
     if (!filePath || !filePath[0]) return false;
 
     DestroyStrokeLayer();
@@ -561,24 +524,24 @@ void SaveDocument(HWND hwnd) {
 void SaveDocumentAs(HWND hwnd) {
     EnsureCanvas(hwnd);
 
-    char filePath[MAX_PATH] = "";
+    wchar_t filePath[MAX_PATH] = L"";
     if (gDocumentPath[0]) {
-        sprintf_s(filePath, "%s", gDocumentPath);
+        wcsncpy_s(filePath, gDocumentPath, _TRUNCATE);
     }
 
-    OPENFILENAMEA ofn = {};
+    OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = "PNG Files\0*.png\0JPG Files\0*.jpg\0BMP Files\0*.bmp\0";
+    ofn.lpstrFilter = L"PNG Files\0*.png\0JPG Files\0*.jpg\0BMP Files\0*.bmp\0";
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = "png";
+    ofn.lpstrDefExt = L"png";
     if (gLastBrowseDir[0]) {
         ofn.lpstrInitialDir = gLastBrowseDir;
     }
 
-    if (GetSaveFileNameA(&ofn)) {
+    if (GetSaveFileNameW(&ofn)) {
         WriteDocumentToPath(hwnd, filePath);
     }
 }
@@ -586,39 +549,39 @@ void SaveDocumentAs(HWND hwnd) {
 void ExportDocument(HWND hwnd) {
     EnsureCanvas(hwnd);
 
-    char filePath[MAX_PATH] = "";
+    wchar_t filePath[MAX_PATH] = L"";
     if (gDocumentPath[0]) {
         // Suggest "name-export.png" beside the current document.
-        sprintf_s(filePath, "%s", gDocumentPath);
-        char* dot = strrchr(filePath, '.');
-        char* slash = strrchr(filePath, '\\');
-        if (!slash) slash = strrchr(filePath, '/');
+        wcsncpy_s(filePath, gDocumentPath, _TRUNCATE);
+        wchar_t* dot = wcsrchr(filePath, L'.');
+        wchar_t* slash = wcsrchr(filePath, L'\\');
+        if (!slash) slash = wcsrchr(filePath, L'/');
         if (dot && (!slash || dot > slash)) {
-            *dot = '\0';
-            char base[MAX_PATH];
-            sprintf_s(base, "%s", filePath);
-            sprintf_s(filePath, "%s-export.png", base);
+            *dot = L'\0';
+            wchar_t base[MAX_PATH];
+            wcsncpy_s(base, filePath, _TRUNCATE);
+            swprintf_s(filePath, L"%s-export.png", base);
         } else {
-            strcat_s(filePath, "-export.png");
+            wcscat_s(filePath, L"-export.png");
         }
     } else {
-        sprintf_s(filePath, "export.png");
+        wcsncpy_s(filePath, L"export.png", _TRUNCATE);
     }
 
-    OPENFILENAMEA ofn = {};
+    OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = "PNG Files\0*.png\0JPG Files\0*.jpg\0BMP Files\0*.bmp\0";
+    ofn.lpstrFilter = L"PNG Files\0*.png\0JPG Files\0*.jpg\0BMP Files\0*.bmp\0";
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = "png";
-    ofn.lpstrTitle = "Export As";
+    ofn.lpstrDefExt = L"png";
+    ofn.lpstrTitle = L"Export As";
     if (gLastBrowseDir[0]) {
         ofn.lpstrInitialDir = gLastBrowseDir;
     }
 
-    if (!GetSaveFileNameA(&ofn)) return;
+    if (!GetSaveFileNameW(&ofn)) return;
 
     // Flatten layers only — do not change the active document path or dirty flag.
     Bitmap* flat = GetCompositeBitmap();
@@ -700,7 +663,7 @@ void AutosaveIfNeeded(HWND hwnd) {
     if (!documentDirty) return;
     EnsureCanvas(hwnd);
 
-    char path[MAX_PATH] = {};
+    wchar_t path[MAX_PATH] = {};
     GetAutosavePath(path, MAX_PATH);
     if (!path[0]) return;
 
@@ -712,7 +675,7 @@ void AutosaveIfNeeded(HWND hwnd) {
 bool OfferAutosaveRecovery(HWND hwnd) {
     if (!IsFeatureEnabled(AppFeature::AutosaveRecovery)) return false;
 
-    char path[MAX_PATH] = {};
+    wchar_t path[MAX_PATH] = {};
     GetAutosavePath(path, MAX_PATH);
     if (!path[0] || !PathIsExistingFile(path)) return false;
 
@@ -743,11 +706,11 @@ bool OfferAutosaveRecovery(HWND hwnd) {
 void OpenDocument(HWND hwnd) {
     if (!PromptSaveIfDirty(hwnd)) return;
 
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
+    wchar_t filePath[MAX_PATH] = L"";
+    OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp\0";
+    ofn.lpstrFilter = L"Image Files\0*.png;*.jpg;*.jpeg;*.bmp\0";
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
@@ -755,7 +718,7 @@ void OpenDocument(HWND hwnd) {
         ofn.lpstrInitialDir = gLastBrowseDir;
     }
 
-    if (GetOpenFileNameA(&ofn)) {
+    if (GetOpenFileNameW(&ofn)) {
         if (!OpenDocumentFromPath(hwnd, filePath)) {
             MessageBoxA(hwnd, "Failed to load image.", "Error", MB_OK | MB_ICONERROR);
         }
@@ -767,37 +730,37 @@ bool LastDocumentAvailable() {
 }
 
 void LoadSessionState() {
-    char iniPath[MAX_PATH] = {};
+    wchar_t iniPath[MAX_PATH] = {};
     GetSessionIniPath(iniPath, MAX_PATH);
     if (!iniPath[0]) return;
 
     gRecentDocumentCount = 0;
     for (int i = 0; i < kMaxRecentDocuments; ++i) {
-        gRecentDocuments[i][0] = '\0';
-        char key[32];
-        sprintf_s(key, "Recent%d", i);
-        char path[MAX_PATH] = {};
-        GetPrivateProfileStringA("Session", key, "", path, MAX_PATH, iniPath);
+        gRecentDocuments[i][0] = L'\0';
+        wchar_t key[32];
+        swprintf_s(key, L"Recent%d", i);
+        wchar_t path[MAX_PATH] = {};
+        GetPrivateProfileStringW(L"Session", key, L"", path, MAX_PATH, iniPath);
         if (!path[0]) continue;
         // Dedupe while loading.
         bool dup = false;
         for (int j = 0; j < gRecentDocumentCount; ++j) {
-            if (_stricmp(gRecentDocuments[j], path) == 0) {
+            if (_wcsicmp(gRecentDocuments[j], path) == 0) {
                 dup = true;
                 break;
             }
         }
         if (dup) continue;
-        sprintf_s(gRecentDocuments[gRecentDocumentCount], "%s", path);
+        wcsncpy_s(gRecentDocuments[gRecentDocumentCount], path, _TRUNCATE);
         ++gRecentDocumentCount;
     }
 
-    char legacy[MAX_PATH] = {};
-    GetPrivateProfileStringA("Session", "LastDocument", "", legacy, MAX_PATH, iniPath);
+    wchar_t legacy[MAX_PATH] = {};
+    GetPrivateProfileStringW(L"Session", L"LastDocument", L"", legacy, MAX_PATH, iniPath);
     if (legacy[0]) {
         bool already = false;
         for (int i = 0; i < gRecentDocumentCount; ++i) {
-            if (_stricmp(gRecentDocuments[i], legacy) == 0) {
+            if (_wcsicmp(gRecentDocuments[i], legacy) == 0) {
                 already = true;
                 break;
             }
@@ -805,7 +768,7 @@ void LoadSessionState() {
         if (!already) {
             RememberRecentPath(legacy);
         } else if (gRecentDocumentCount > 0
-            && _stricmp(gRecentDocuments[0], legacy) != 0) {
+            && _wcsicmp(gRecentDocuments[0], legacy) != 0) {
             RememberRecentPath(legacy);
         }
     }
@@ -829,25 +792,25 @@ void SyncRecentFileMenu(HMENU fileMenu) {
     }
 
     if (gRecentDocumentCount <= 0) {
-        AppendMenuA(recent, MF_STRING | MF_GRAYED, IDM_RECENT_NONE, "(None)");
+        AppendMenuW(recent, MF_STRING | MF_GRAYED, IDM_RECENT_NONE, L"(None)");
         return;
     }
 
     for (int i = 0; i < gRecentDocumentCount; ++i) {
-        char label[MAX_PATH + 8];
-        FormatRecentMenuLabel(i, gRecentDocuments[i], label, sizeof(label));
-        AppendMenuA(recent, MF_STRING, IDM_RECENT_0 + i, label);
+        wchar_t label[MAX_PATH + 8];
+        FormatRecentMenuLabel(i, gRecentDocuments[i], label, MAX_PATH + 8);
+        AppendMenuW(recent, MF_STRING, IDM_RECENT_0 + i, label);
     }
-    AppendMenuA(recent, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(recent, MF_STRING, IDM_CLEAR_RECENT, "&Clear Recent List");
+    AppendMenuW(recent, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(recent, MF_STRING, IDM_CLEAR_RECENT, L"&Clear Recent List");
 }
 
 void ClearRecentDocuments() {
     for (int i = 0; i < kMaxRecentDocuments; ++i) {
-        gRecentDocuments[i][0] = '\0';
+        gRecentDocuments[i][0] = L'\0';
     }
     gRecentDocumentCount = 0;
-    gLastDocumentPath[0] = '\0';
+    gLastDocumentPath[0] = L'\0';
     SaveSessionState();
 }
 
@@ -858,8 +821,8 @@ void OpenLastDocument(HWND hwnd) {
         return;
     }
     if (!PromptSaveIfDirty(hwnd)) return;
-    char path[MAX_PATH];
-    sprintf_s(path, "%s", gLastDocumentPath);
+    wchar_t path[MAX_PATH];
+    wcsncpy_s(path, gLastDocumentPath, _TRUNCATE);
     if (!OpenDocumentFromPath(hwnd, path)) {
         MessageBoxA(hwnd, "Failed to open the last document.", "Error", MB_OK | MB_ICONERROR);
         RemoveRecentPath(path);
@@ -870,8 +833,8 @@ void OpenLastDocument(HWND hwnd) {
 void OpenRecentDocument(HWND hwnd, int index) {
     PruneMissingRecentPaths();
     if (index < 0 || index >= gRecentDocumentCount) return;
-    char path[MAX_PATH];
-    sprintf_s(path, "%s", gRecentDocuments[index]);
+    wchar_t path[MAX_PATH];
+    wcsncpy_s(path, gRecentDocuments[index], _TRUNCATE);
     if (!PathIsExistingFile(path)) {
         RemoveRecentPath(path);
         SaveSessionState();

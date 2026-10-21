@@ -34,9 +34,9 @@ void SetPenPressureEnabled(bool enabled);
 float PenPressureFactor(float pressure);
 int PenPressureWidth(int baseWidth, float pressure);
 
-bool ImportBrushTipFromFile(HWND owner, const char* path);
+bool ImportBrushTipFromFile(HWND owner, const wchar_t* path);
 bool PromptImportBrushTip(HWND owner);
-bool ImportAbrBrushesFromFile(HWND owner, const char* path);
+bool ImportAbrBrushesFromFile(HWND owner, const wchar_t* path);
 bool PromptImportAbrBrushes(HWND owner);
 
 int GetBrushFlow();

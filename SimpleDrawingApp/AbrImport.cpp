@@ -3,6 +3,7 @@
 #include "AbrComputed.h"
 #include "AbrDescriptor.h"
 
+#include <windows.h>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -12,13 +13,13 @@ namespace {
 
 class AbrReader {
 public:
-    explicit AbrReader(const char* path) {
+    explicit AbrReader(const wchar_t* path) {
         if (!path || !path[0]) return;
         FILE* f = nullptr;
 #ifdef _MSC_VER
-        if (fopen_s(&f, path, "rb") != 0) return;
+        if (_wfopen_s(&f, path, L"rb") != 0) return;
 #else
-        f = fopen(path, "rb");
+        f = _wfopen(path, L"rb");
 #endif
         if (f) file_.reset(f);
     }
@@ -158,7 +159,7 @@ std::string V12DefaultLeafName(int index, bool computed) {
     return buf;
 }
 
-std::string V12BrushName(const char* path, int index, bool computed, const V12BrushHeader& header) {
+std::string V12BrushName(const wchar_t* path, int index, bool computed, const V12BrushHeader& header) {
     const std::string leaf = header.sampleName.empty()
         ? V12DefaultLeafName(index, computed)
         : header.sampleName;
@@ -176,7 +177,7 @@ bool MaskToBrush(const std::uint8_t* mask, int width, int height, int spacing,
     return true;
 }
 
-bool LoadSampledV12(AbrReader& in, int version, int index, const char* path, long blockEnd,
+bool LoadSampledV12(AbrReader& in, int version, int index, const wchar_t* path, long blockEnd,
     AbrBrush& out) {
     V12BrushHeader header;
     if (!ReadV12BrushHeader(in, version, header)) return false;
@@ -205,7 +206,7 @@ bool LoadSampledV12(AbrReader& in, int version, int index, const char* path, lon
         V12BrushName(path, index, false, header), out);
 }
 
-bool LoadComputedV12(AbrReader& in, int version, int index, const char* path, long blockEnd,
+bool LoadComputedV12(AbrReader& in, int version, int index, const wchar_t* path, long blockEnd,
     AbrBrush& out) {
     V12BrushHeader header;
     if (!ReadV12BrushHeader(in, version, header)) return false;
@@ -241,7 +242,7 @@ bool LoadComputedV12(AbrReader& in, int version, int index, const char* path, lo
     return true;
 }
 
-bool LoadSampledV6(AbrReader& in, int subVersion, int index, const char* path, AbrBrush& out) {
+bool LoadSampledV6(AbrReader& in, int subVersion, int index, const wchar_t* path, AbrBrush& out) {
     std::int32_t brushSize = 0;
     if (!in.readI32(brushSize) || brushSize < 0) return false;
 
@@ -295,7 +296,7 @@ bool LoadSampledV6(AbrReader& in, int subVersion, int index, const char* path, A
 
 } // namespace
 
-bool LoadAbrBrushes(const char* path, std::vector<AbrBrush>& out, std::string& error) {
+bool LoadAbrBrushes(const wchar_t* path, std::vector<AbrBrush>& out, std::string& error) {
     out.clear();
     error.clear();
     if (!path || !path[0]) {

@@ -88,24 +88,24 @@ void LoadFeatureFlags() {
 
     for (const FeatureMeta& f : kFeatures) {
         const int def = f.defaultOn ? 1 : 0;
-        gFlags[static_cast<int>(f.id)] = (FeaturesIniReadInt(f.iniKey, def) != 0);
+        gFlags[static_cast<int>(f.id)] = (FeaturesIniReadIntA(f.iniKey, def) != 0);
     }
     gGridSpacing = NormalizeGridSpacing(
-        FeaturesIniReadInt("GridSpacing", kDefaultGridSpacing));
+        FeaturesIniReadIntA("GridSpacing", kDefaultGridSpacing));
     penWidth = ClampPenWidth(
-        FeaturesIniReadInt("PenWidth", kDefaultPenWidth));
+        FeaturesIniReadIntA("PenWidth", kDefaultPenWidth));
 }
 
 void SaveFeatureFlags() {
     for (const FeatureMeta& f : kFeatures) {
-        FeaturesIniWrite(f.iniKey, IsFeatureEnabled(f.id) ? "1" : "0");
+        FeaturesIniWriteA(f.iniKey, IsFeatureEnabled(f.id) ? "1" : "0");
     }
     char spacingBuf[16];
     sprintf_s(spacingBuf, "%d", NormalizeGridSpacing(gGridSpacing));
-    FeaturesIniWrite("GridSpacing", spacingBuf);
+    FeaturesIniWriteA("GridSpacing", spacingBuf);
     char widthBuf[16];
     sprintf_s(widthBuf, "%d", ClampPenWidth(penWidth));
-    FeaturesIniWrite("PenWidth", widthBuf);
+    FeaturesIniWriteA("PenWidth", widthBuf);
     // Keep brush prefs in the same flush so exit/save is one channel.
     SaveBrushSettings();
 }
