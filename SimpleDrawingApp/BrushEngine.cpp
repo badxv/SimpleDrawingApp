@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <utility>
 
 using namespace Gdiplus;
 
@@ -32,11 +33,11 @@ const BrushPreset* ActivePreset() {
     return ActivePresetMutable();
 }
 
-void AddBuiltinPreset(const char* name, Bitmap* tip, float spacing, int defaultSize) {
+void AddBuiltinPreset(const char* name, Atelier::GdiplusBitmapPtr tip, float spacing, int defaultSize) {
     if (!tip) return;
     BrushPreset preset;
     preset.name = name;
-    preset.tip.reset(tip);
+    preset.tip = std::move(tip);
     preset.spacing = spacing;
     preset.defaultSize = defaultSize;
     preset.builtin = true;
@@ -51,14 +52,14 @@ int CustomBrushCount() {
     return count;
 }
 
-bool AddCustomPreset(const char* name, Bitmap* tip, float spacing, int defaultSize) {
+bool AddCustomPreset(const char* name, Atelier::GdiplusBitmapPtr tip, float spacing, int defaultSize) {
     if (!tip) return false;
     if (CustomBrushCount() >= kMaxCustomBrushes || static_cast<int>(gPresets.size()) >= kMaxTotalBrushes) {
         return false;
     }
     BrushPreset preset;
     preset.name = name ? name : "Imported";
-    preset.tip.reset(tip);
+    preset.tip = std::move(tip);
     preset.spacing = spacing;
     preset.defaultSize = defaultSize;
     preset.builtin = false;
@@ -143,8 +144,8 @@ bool BrushPresetsCanAddCustom() {
     return CustomBrushCount() < kMaxCustomBrushes && static_cast<int>(gPresets.size()) < kMaxTotalBrushes;
 }
 
-bool BrushPresetsAddCustom(const char* name, Bitmap* tip, float spacing, int defaultSize) {
-    return AddCustomPreset(name, tip, spacing, defaultSize);
+bool BrushPresetsAddCustom(const char* name, Atelier::GdiplusBitmapPtr tip, float spacing, int defaultSize) {
+    return AddCustomPreset(name, std::move(tip), spacing, defaultSize);
 }
 
 void BrushPresetsSetActive(int index) {

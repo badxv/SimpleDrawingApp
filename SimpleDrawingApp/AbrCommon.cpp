@@ -13,6 +13,20 @@ std::string NarrowPathSegment(const wchar_t* wide) {
     return out;
 }
 
+std::string DecodeUcs2ToUtf8(const std::uint8_t* raw, std::size_t charCount) {
+    if (!raw || charCount == 0) return {};
+    std::wstring wide;
+    wide.reserve(charCount);
+    for (std::size_t i = 0; i < charCount; ++i) {
+        const wchar_t ch = static_cast<wchar_t>(
+            raw[i * 2] | (static_cast<unsigned>(raw[i * 2 + 1]) << 8));
+        if (ch == 0) break;
+        wide.push_back(ch);
+    }
+    if (wide.empty()) return {};
+    return NarrowPathSegment(wide.c_str());
+}
+
 std::string LeafNameFromPath(const wchar_t* path, const char* fallback) {
     if (!path || !path[0]) return fallback ? fallback : "Imported";
     const wchar_t* slash = wcsrchr(path, L'\\');

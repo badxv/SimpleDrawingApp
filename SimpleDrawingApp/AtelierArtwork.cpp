@@ -1,14 +1,15 @@
 #include "AtelierArtwork.h"
+#include "AtelierRaii.h"
 
 #include <string>
-#include <vector>
 
 using namespace Gdiplus;
+using Atelier::GdiplusBitmapPtr;
 
 namespace {
 
-Bitmap* gRailArt = nullptr;
-Bitmap* gLayersArt = nullptr;
+GdiplusBitmapPtr gRailArt;
+GdiplusBitmapPtr gLayersArt;
 bool gInited = false;
 
 std::wstring ModuleDirW() {
@@ -40,13 +41,12 @@ std::wstring ResolveArtwork(const wchar_t* file) {
     return {};
 }
 
-Bitmap* LoadPng(const wchar_t* file) {
+GdiplusBitmapPtr LoadPng(const wchar_t* file) {
     const std::wstring path = ResolveArtwork(file);
-    if (path.empty()) return nullptr;
-    Bitmap* bmp = Bitmap::FromFile(path.c_str(), FALSE);
+    if (path.empty()) return GdiplusBitmapPtr();
+    GdiplusBitmapPtr bmp(Bitmap::FromFile(path.c_str(), FALSE));
     if (!bmp || bmp->GetLastStatus() != Ok) {
-        delete bmp;
-        return nullptr;
+        return GdiplusBitmapPtr();
     }
     return bmp;
 }
@@ -120,10 +120,8 @@ bool AtelierArtwork_Init() {
 }
 
 void AtelierArtwork_Shutdown() {
-    delete gRailArt;
-    delete gLayersArt;
-    gRailArt = nullptr;
-    gLayersArt = nullptr;
+    gRailArt.reset();
+    gLayersArt.reset();
     gInited = false;
 }
 
@@ -131,18 +129,18 @@ void DrawFrescoArtwork(Graphics& g, const RectF& bounds, bool leftRail) {
     if (!gInited) AtelierArtwork_Init();
     if (leftRail) {
         // Stronger on the outer strip + lower half where controls are sparse.
-        DrawWatermark(g, gRailArt, bounds, 0.46f, true);
+        DrawWatermark(g, gRailArt.get(), bounds, 0.46f, true);
         if (bounds.Height > 160.0f) {
             RectF lower(bounds.X, bounds.Y + bounds.Height * 0.48f,
                 bounds.Width, bounds.Height * 0.52f);
-            DrawWatermark(g, gRailArt, lower, 0.55f, true);
+            DrawWatermark(g, gRailArt.get(), lower, 0.55f, true);
         }
     } else {
-        DrawWatermark(g, gLayersArt, bounds, 0.42f, true);
+        DrawWatermark(g, gLayersArt.get(), bounds, 0.42f, true);
         if (bounds.Height > 180.0f) {
             RectF lower(bounds.X + 6.0f, bounds.Y + bounds.Height * 0.42f,
                 bounds.Width - 12.0f, bounds.Height * 0.55f);
-            DrawWatermark(g, gLayersArt, lower, 0.58f, false);
+            DrawWatermark(g, gLayersArt.get(), lower, 0.58f, false);
         }
     }
 }

@@ -288,33 +288,31 @@ static void ApplyTransparentEraseMask(Bitmap* target, Bitmap* mask) {
     mask->UnlockBits(&maskData);
 }
 
-Gdiplus::Bitmap* CreateErasePreviewComposite(Bitmap* eraseMask) {
-    if (!eraseMask || gLayers.Width() < 1 || gLayers.Height() < 1) return nullptr;
-
-    Bitmap* out = new Bitmap(gLayers.Width(), gLayers.Height(), PixelFormat32bppARGB);
-    if (!out || out->GetLastStatus() != Ok) {
-        delete out;
-        return nullptr;
+Atelier::GdiplusBitmapPtr CreateErasePreviewComposite(Bitmap* eraseMask) {
+    if (!eraseMask || gLayers.Width() < 1 || gLayers.Height() < 1) {
+        return Atelier::GdiplusBitmapPtr();
     }
 
-    Graphics g(out);
+    Atelier::GdiplusBitmapPtr out = MakeBitmap(gLayers.Width(), gLayers.Height(), PixelFormat32bppARGB);
+    if (!out) return Atelier::GdiplusBitmapPtr();
+
+    Graphics g(out.get());
     g.Clear(Color(0, 0, 0, 0));
     g.SetCompositingMode(CompositingModeSourceOver);
     g.SetSmoothingMode(SmoothingModeNone);
 
     const int active = gLayers.ActiveIndex();
-    Bitmap* erasedActive = nullptr;
+    Atelier::GdiplusBitmapPtr erasedActive;
     if (const Layer* activeLayer = gLayers.ActiveLayer()) {
         if (activeLayer->bitmap) {
-            erasedActive = activeLayer->bitmap->Clone(0, 0,
+            erasedActive.reset(activeLayer->bitmap->Clone(0, 0,
                 static_cast<INT>(activeLayer->bitmap->GetWidth()),
                 static_cast<INT>(activeLayer->bitmap->GetHeight()),
-                PixelFormat32bppARGB);
+                PixelFormat32bppARGB));
             if (erasedActive && erasedActive->GetLastStatus() == Ok) {
-                ApplyTransparentEraseMask(erasedActive, eraseMask);
+                ApplyTransparentEraseMask(erasedActive.get(), eraseMask);
             } else {
-                delete erasedActive;
-                erasedActive = nullptr;
+                erasedActive.reset();
             }
         }
     }
@@ -322,7 +320,7 @@ Gdiplus::Bitmap* CreateErasePreviewComposite(Bitmap* eraseMask) {
     for (int i = 0; i < gLayers.Count(); ++i) {
         const Layer* layer = gLayers.At(i);
         if (!layer || !layer->visible) continue;
-        Bitmap* bmp = (i == active && erasedActive) ? erasedActive : layer->bitmap.get();
+        Bitmap* bmp = (i == active && erasedActive) ? erasedActive.get() : layer->bitmap.get();
         if (!bmp) continue;
 
         int opacity = layer->opacity;
@@ -348,7 +346,6 @@ Gdiplus::Bitmap* CreateErasePreviewComposite(Bitmap* eraseMask) {
         }
     }
 
-    delete erasedActive;
     return out;
 }
 

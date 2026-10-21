@@ -92,14 +92,7 @@ bool ReadUcs2String(AbrReader& in, std::string& out) {
     if (len == 0) return true;
     std::vector<std::uint8_t> raw(static_cast<size_t>(len) * 2);
     if (!in.readBytes(raw.data(), raw.size())) return false;
-    out.reserve(static_cast<size_t>(len));
-    for (std::int32_t i = 0; i < len; ++i) {
-        const wchar_t ch = static_cast<wchar_t>(raw[static_cast<size_t>(i) * 2]
-            | (raw[static_cast<size_t>(i) * 2 + 1] << 8));
-        if (ch == 0) break;
-        if (ch < 128) out.push_back(static_cast<char>(ch));
-        else out.push_back('?');
-    }
+    out = DecodeUcs2ToUtf8(raw.data(), static_cast<size_t>(len));
     return true;
 }
 

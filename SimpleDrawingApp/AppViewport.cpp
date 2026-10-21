@@ -447,7 +447,7 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                     && layer && !layer->isBackground;
 
                 if (erasePreview) {
-                    std::unique_ptr<Bitmap> preview(CreateErasePreviewComposite(strokeLayer.get()));
+                    Atelier::GdiplusBitmapPtr preview = CreateErasePreviewComposite(strokeLayer.get());
                     if (preview) {
                         g.DrawImage(preview.get(), dest);
                     } else if (flat) {

@@ -125,12 +125,11 @@ bool ImportBrushTipFromFile(HWND owner, const wchar_t* path) {
 
     Bitmap loaded(path);
     if (loaded.GetLastStatus() != Ok) return false;
-    Bitmap* tip = NormalizeImportedTip(&loaded);
+    Atelier::GdiplusBitmapPtr tip = NormalizeImportedTip(&loaded);
     if (!tip) return false;
 
     const std::string name = LeafNameFromPath(path, "Imported");
-    if (!BrushPresetsAddCustom(name.c_str(), tip, 0.15f, 12)) {
-        delete tip;
+    if (!BrushPresetsAddCustom(name.c_str(), std::move(tip), 0.15f, 12)) {
         return false;
     }
     BrushPresetsSetActive(BrushPresetCount() - 1);
@@ -180,14 +179,13 @@ bool ImportAbrBrushesFromFile(HWND owner, const wchar_t* path) {
         if (!BrushPresetsCanAddCustom()) break;
 
         const AbrBrush& sample = samples[static_cast<size_t>(sampleIdx)];
-        Bitmap* tip = TipFromSampleMask(sample.mask.data(), sample.width, sample.height);
+        Atelier::GdiplusBitmapPtr tip = TipFromSampleMask(sample.mask.data(), sample.width, sample.height);
         if (!tip) continue;
         const float spacing = MaxFloat(0.05f, static_cast<float>(sample.spacing) / 100.0f);
         int defaultSize = MaxInt(sample.width, sample.height) / 4;
         if (defaultSize < 4) defaultSize = 4;
         if (defaultSize > 32) defaultSize = 32;
-        if (!BrushPresetsAddCustom(sample.name.c_str(), tip, spacing, defaultSize)) {
-            delete tip;
+        if (!BrushPresetsAddCustom(sample.name.c_str(), std::move(tip), spacing, defaultSize)) {
             continue;
         }
         if (firstIndex < 0) firstIndex = BrushPresetCount() - 1;

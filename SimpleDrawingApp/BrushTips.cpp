@@ -6,6 +6,8 @@
 #include <vector>
 
 using namespace Gdiplus;
+using Atelier::GdiplusBitmapPtr;
+using Atelier::MakeBitmap;
 
 namespace {
 
@@ -28,33 +30,30 @@ float RadialAlpha(int x, int y, int cx, int cy, int rx, int ry, float hardness) 
 
 } // namespace
 
-Bitmap* TipFromFloatAlpha(const float* alpha, int size) {
-    if (!alpha || size < 1) return nullptr;
-    Bitmap* bmp = new Bitmap(size, size, PixelFormat32bppARGB);
-    if (!bmp || bmp->GetLastStatus() != Ok) {
-        delete bmp;
-        return nullptr;
-    }
+GdiplusBitmapPtr TipFromFloatAlpha(const float* alpha, int size) {
+    if (!alpha || size < 1) return GdiplusBitmapPtr();
+    GdiplusBitmapPtr bmp = MakeBitmap(size, size, PixelFormat32bppARGB);
+    if (!bmp) return GdiplusBitmapPtr();
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
             const float a = alpha[y * size + x];
             const BYTE ba = static_cast<BYTE>(MaxInt(0, (a * 255.0f + 0.5f) > 255.0f ? 255 : static_cast<int>(a * 255.0f + 0.5f)));
-            SetTipPixel(bmp, x, y, ba);
+            SetTipPixel(bmp.get(), x, y, ba);
         }
     }
     return bmp;
 }
 
-Bitmap* MakeRoundTip(float hardness, float rxScale, float ryScale) {
+GdiplusBitmapPtr MakeRoundTip(float hardness, float rxScale, float ryScale) {
     AbrComputedParams params = {};
     params.hardness = hardness;
     params.roundness = MaxFloat(0.05f, ryScale / MaxFloat(0.05f, rxScale));
     std::vector<std::uint8_t> mask;
-    if (!RasterizeComputedMask(params, kBrushTipSize, mask)) return nullptr;
+    if (!RasterizeComputedMask(params, kBrushTipSize, mask)) return GdiplusBitmapPtr();
     return TipFromSampleMask(mask.data(), kBrushTipSize, kBrushTipSize);
 }
 
-Bitmap* MakeCharcoalTip() {
+GdiplusBitmapPtr MakeCharcoalTip() {
     float alpha[kBrushTipSize * kBrushTipSize];
     const int cx = kBrushTipSize / 2;
     const int cy = kBrushTipSize / 2;
@@ -69,7 +68,7 @@ Bitmap* MakeCharcoalTip() {
     return TipFromFloatAlpha(alpha, kBrushTipSize);
 }
 
-Bitmap* MakeConceptTip() {
+GdiplusBitmapPtr MakeConceptTip() {
     float alpha[kBrushTipSize * kBrushTipSize];
     const int cx = kBrushTipSize / 2;
     const int cy = kBrushTipSize / 2;
@@ -84,7 +83,7 @@ Bitmap* MakeConceptTip() {
     return TipFromFloatAlpha(alpha, kBrushTipSize);
 }
 
-Bitmap* MakePencilTip() {
+GdiplusBitmapPtr MakePencilTip() {
     float alpha[kBrushTipSize * kBrushTipSize];
     const int cx = kBrushTipSize / 2;
     const int cy = kBrushTipSize / 2;
@@ -99,18 +98,15 @@ Bitmap* MakePencilTip() {
     return TipFromFloatAlpha(alpha, kBrushTipSize);
 }
 
-Bitmap* NormalizeImportedTip(Bitmap* source) {
-    if (!source) return nullptr;
+GdiplusBitmapPtr NormalizeImportedTip(Bitmap* source) {
+    if (!source) return GdiplusBitmapPtr();
     const int w = static_cast<int>(source->GetWidth());
     const int h = static_cast<int>(source->GetHeight());
-    if (w < 1 || h < 1) return nullptr;
+    if (w < 1 || h < 1) return GdiplusBitmapPtr();
 
-    Bitmap* out = new Bitmap(kBrushTipSize, kBrushTipSize, PixelFormat32bppARGB);
-    if (!out || out->GetLastStatus() != Ok) {
-        delete out;
-        return nullptr;
-    }
-    Graphics g(out);
+    GdiplusBitmapPtr out = MakeBitmap(kBrushTipSize, kBrushTipSize, PixelFormat32bppARGB);
+    if (!out) return GdiplusBitmapPtr();
+    Graphics g(out.get());
     g.Clear(Color(0, 0, 0, 0));
     g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
     g.DrawImage(source, Rect(0, 0, kBrushTipSize, kBrushTipSize));
@@ -118,8 +114,7 @@ Bitmap* NormalizeImportedTip(Bitmap* source) {
     BitmapData data = {};
     Rect lock(0, 0, kBrushTipSize, kBrushTipSize);
     if (out->LockBits(&lock, ImageLockModeRead | ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
-        delete out;
-        return nullptr;
+        return GdiplusBitmapPtr();
     }
     auto* px = static_cast<BYTE*>(data.Scan0);
     for (int y = 0; y < kBrushTipSize; ++y) {
@@ -142,18 +137,14 @@ Bitmap* NormalizeImportedTip(Bitmap* source) {
     return out;
 }
 
-Bitmap* TipFromSampleMask(const std::uint8_t* mask, int width, int height) {
-    if (!mask || width < 1 || height < 1) return nullptr;
-    Bitmap* bmp = new Bitmap(kBrushTipSize, kBrushTipSize, PixelFormat32bppARGB);
-    if (!bmp || bmp->GetLastStatus() != Ok) {
-        delete bmp;
-        return nullptr;
-    }
+GdiplusBitmapPtr TipFromSampleMask(const std::uint8_t* mask, int width, int height) {
+    if (!mask || width < 1 || height < 1) return GdiplusBitmapPtr();
+    GdiplusBitmapPtr bmp = MakeBitmap(kBrushTipSize, kBrushTipSize, PixelFormat32bppARGB);
+    if (!bmp) return GdiplusBitmapPtr();
     BitmapData data = {};
     Rect lock(0, 0, kBrushTipSize, kBrushTipSize);
     if (bmp->LockBits(&lock, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) {
-        delete bmp;
-        return nullptr;
+        return GdiplusBitmapPtr();
     }
     auto* px = static_cast<BYTE*>(data.Scan0);
     for (int y = 0; y < kBrushTipSize; ++y) {

@@ -38,6 +38,7 @@
 #include <dwmapi.h>
 #include <cstdio>
 #include <cmath>
+#include <memory>
 
 using namespace Gdiplus;
 
@@ -396,13 +397,26 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         else if ((HWND)lParam == hwndLayerOpacity) {
             if (suppressLayerNotify) break;
-            const int opacity = static_cast<int>(SendMessage(hwndLayerOpacity, TBM_GETPOS, 0, 0));
-            gLayers.SetActiveOpacity(opacity);
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
+            const WORD scrollCode = LOWORD(wParam);
+            // Capture once at drag start; commit a single undo step on ENDSCROLL.
+            static std::unique_ptr<LayerStack> layerOpacityBefore;
+            if (scrollCode == SB_THUMBTRACK || scrollCode == SB_THUMBPOSITION) {
+                if (!layerOpacityBefore) {
+                    layerOpacityBefore = LayerHistory::Capture(gLayers);
+                }
+                const int opacity = static_cast<int>(SendMessage(hwndLayerOpacity, TBM_GETPOS, 0, 0));
+                gLayers.SetActiveOpacity(opacity);
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            } else if (scrollCode == SB_ENDSCROLL) {
+                if (layerOpacityBefore) {
+                    gHistory.Commit(std::move(layerOpacityBefore));
+                    layerOpacityBefore.reset();
+                }
+            }
         }
         break;
     }
