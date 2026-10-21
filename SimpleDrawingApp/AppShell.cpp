@@ -102,11 +102,9 @@ void UpdateWindowTitle(HWND hwnd) {
     wchar_t nameBuf[MAX_PATH] = L"Untitled";
     const wchar_t* name = nameBuf;
     if (gDocumentPath[0]) {
-        wchar_t pathW[MAX_PATH] = {};
-        MultiByteToWideChar(CP_ACP, 0, gDocumentPath, -1, pathW, MAX_PATH);
-        const wchar_t* slash = wcsrchr(pathW, L'\\');
-        if (!slash) slash = wcsrchr(pathW, L'/');
-        const wchar_t* base = slash ? (slash + 1) : pathW;
+        const wchar_t* slash = wcsrchr(gDocumentPath, L'\\');
+        if (!slash) slash = wcsrchr(gDocumentPath, L'/');
+        const wchar_t* base = slash ? (slash + 1) : gDocumentPath;
         wcsncpy_s(nameBuf, base, _TRUNCATE);
     }
 

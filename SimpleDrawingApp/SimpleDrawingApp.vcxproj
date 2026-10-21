@@ -213,6 +213,8 @@
     <ClCompile Include="EventBus.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />
+    <ClCompile Include="AppDocState.cpp" />
+    <ClCompile Include="AppUiState.cpp" />
     <ClCompile Include="AppState.cpp" />
     <ClCompile Include="AtelierFonts.cpp" />
     <ClCompile Include="AtelierControls.cpp" />

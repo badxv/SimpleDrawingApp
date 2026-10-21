@@ -182,6 +182,12 @@
     <ClCompile Include="EventBus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AppDocState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppUiState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="AppState.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

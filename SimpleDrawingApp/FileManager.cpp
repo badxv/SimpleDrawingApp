@@ -2,44 +2,39 @@
 #include <gdiplus.h>
 #include <string>
 #include <cstring>
-#include <cctype>
+#include <cwctype>
 
 #pragma comment(lib, "Gdiplus.lib")
 
 using namespace Gdiplus;
 
-// Helper: convert const char* to wstring
-static std::wstring StringToWString(const char* s) {
-    int len = MultiByteToWideChar(CP_ACP, 0, s, -1, nullptr, 0);
-    if (len <= 0) return std::wstring();
-    std::wstring ws(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_ACP, 0, s, -1, &ws[0], len);
-    ws.resize(static_cast<size_t>(len - 1)); // Remove null terminator
-    return ws;
-}
+namespace {
 
-static std::string GetFileExtension(const char* filename) {
-    std::string file(filename);
-    size_t pos = file.find_last_of('.');
-    if (pos == std::string::npos) return "";
-    std::string ext = file.substr(pos + 1);
-    for (auto& c : ext) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+std::wstring GetFileExtensionW(const wchar_t* filename) {
+    if (!filename) return L"";
+    const wchar_t* dot = wcsrchr(filename, L'.');
+    if (!dot || !dot[1]) return L"";
+    std::wstring ext(dot + 1);
+    for (wchar_t& c : ext) {
+        c = static_cast<wchar_t>(towlower(c));
+    }
     return ext;
 }
 
-static bool GetEncoderClsid(const char* filename, CLSID* clsid) {
-    std::string ext = GetFileExtension(filename);
-    if (ext == "jpg" || ext == "jpeg") {
+bool GetEncoderClsidW(const wchar_t* filename, CLSID* clsid) {
+    const std::wstring ext = GetFileExtensionW(filename);
+    if (ext == L"jpg" || ext == L"jpeg") {
         return CLSIDFromString(L"{557CF401-1A04-11D3-9A73-0000F81EF32E}", clsid) == S_OK;
     }
-    if (ext == "png") {
+    if (ext == L"png") {
         return CLSIDFromString(L"{557CF406-1A04-11D3-9A73-0000F81EF32E}", clsid) == S_OK;
     }
-    // bmp or unknown -> BMP
     return CLSIDFromString(L"{557CF400-1A04-11D3-9A73-0000F81EF32E}", clsid) == S_OK;
 }
 
-bool SaveBitmapToFile(HWND hwnd, const char* filename) {
+} // namespace
+
+bool SaveBitmapToFile(HWND hwnd, const wchar_t* filename) {
     if (!hwnd || !filename) return false;
 
     RECT rc = {};
@@ -69,8 +64,8 @@ bool SaveBitmapToFile(HWND hwnd, const char* filename) {
         // Bitmap(HBITMAP) does not take ownership — HBITMAP must outlive Bitmap.
         Bitmap bitmap(hbmMem, nullptr);
         CLSID clsid = {};
-        if (GetEncoderClsid(filename, &clsid)) {
-            result = (bitmap.Save(StringToWString(filename).c_str(), &clsid, nullptr) == Ok);
+        if (GetEncoderClsidW(filename, &clsid)) {
+            result = (bitmap.Save(filename, &clsid, nullptr) == Ok);
         }
     }
 
@@ -81,14 +76,14 @@ bool SaveBitmapToFile(HWND hwnd, const char* filename) {
     return result;
 }
 
-bool SaveCanvasToFile(Bitmap* bitmap, const char* filename) {
+bool SaveCanvasToFile(Bitmap* bitmap, const wchar_t* filename) {
     if (!bitmap || !filename) return false;
 
     CLSID clsid;
-    if (!GetEncoderClsid(filename, &clsid)) return false;
+    if (!GetEncoderClsidW(filename, &clsid)) return false;
 
-    const std::string ext = GetFileExtension(filename);
-    if (ext == "jpg" || ext == "jpeg") {
+    const std::wstring ext = GetFileExtensionW(filename);
+    if (ext == L"jpg" || ext == L"jpeg") {
         EncoderParameters params = {};
         params.Count = 1;
         params.Parameter[0].Guid = EncoderQuality;
@@ -96,17 +91,16 @@ bool SaveCanvasToFile(Bitmap* bitmap, const char* filename) {
         params.Parameter[0].NumberOfValues = 1;
         ULONG quality = 92;
         params.Parameter[0].Value = &quality;
-        return (bitmap->Save(StringToWString(filename).c_str(), &clsid, &params) == Ok);
+        return (bitmap->Save(filename, &clsid, &params) == Ok);
     }
 
-    return (bitmap->Save(StringToWString(filename).c_str(), &clsid, NULL) == Ok);
+    return (bitmap->Save(filename, &clsid, nullptr) == Ok);
 }
 
-bool LoadImageFromFile(const char* filename, Bitmap*& bitmap, Graphics*& graphics) {
-    if (!filename) return false;
+bool LoadImageFromFile(const wchar_t* filename, Bitmap*& bitmap, Graphics*& graphics) {
+    if (!filename || !filename[0]) return false;
 
-    std::wstring wfile = StringToWString(filename);
-    Bitmap* loaded = Gdiplus::Bitmap::FromFile(wfile.c_str(), FALSE);
+    Bitmap* loaded = Gdiplus::Bitmap::FromFile(filename, FALSE);
 
     if (!loaded || loaded->GetLastStatus() != Ok) {
         delete loaded;

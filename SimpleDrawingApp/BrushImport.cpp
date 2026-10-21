@@ -16,16 +16,6 @@ using namespace Gdiplus;
 
 namespace {
 
-std::wstring PathToWide(const char* path) {
-    if (!path || !path[0]) return std::wstring();
-    int len = MultiByteToWideChar(CP_ACP, 0, path, -1, nullptr, 0);
-    if (len <= 0) return std::wstring();
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_ACP, 0, path, -1, &out[0], len);
-    if (!out.empty() && out.back() == L'\0') out.pop_back();
-    return out;
-}
-
 struct AbrImportPickerState {
     const std::vector<AbrBrush>* samples = nullptr;
     std::vector<int> selected;
@@ -117,14 +107,14 @@ bool PromptAbrBrushSelection(HWND owner, const std::vector<AbrBrush>& samples, s
 
 } // namespace
 
-bool ImportBrushTipFromFile(HWND owner, const char* path) {
+bool ImportBrushTipFromFile(HWND owner, const wchar_t* path) {
     if (!path || !path[0]) return false;
     if (!BrushPresetsCanAddCustom()) {
         MessageBoxA(owner, "Custom brush limit reached.", "Import Brush", MB_OK | MB_ICONINFORMATION);
         return false;
     }
 
-    Bitmap loaded(PathToWide(path).c_str());
+    Bitmap loaded(path);
     if (loaded.GetLastStatus() != Ok) return false;
     Bitmap* tip = NormalizeImportedTip(&loaded);
     if (!tip) return false;
@@ -141,16 +131,16 @@ bool ImportBrushTipFromFile(HWND owner, const char* path) {
 }
 
 bool PromptImportBrushTip(HWND owner) {
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
+    wchar_t filePath[MAX_PATH] = L"";
+    OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = owner;
-    ofn.lpstrFilter = "Brush Tip Images\0*.png;*.bmp;*.jpg;*.jpeg\0";
+    ofn.lpstrFilter = L"Brush Tip Images\0*.png;*.bmp;*.jpg;*.jpeg\0";
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     if (gLastBrowseDir[0]) ofn.lpstrInitialDir = gLastBrowseDir;
-    if (!GetOpenFileNameA(&ofn)) return false;
+    if (!GetOpenFileNameW(&ofn)) return false;
     if (!ImportBrushTipFromFile(owner, filePath)) {
         MessageBoxA(owner, "Could not load brush tip image.", "Import Brush", MB_OK | MB_ICONERROR);
         return false;
@@ -158,7 +148,7 @@ bool PromptImportBrushTip(HWND owner) {
     return true;
 }
 
-bool ImportAbrBrushesFromFile(HWND owner, const char* path) {
+bool ImportAbrBrushesFromFile(HWND owner, const wchar_t* path) {
     if (!path || !path[0]) return false;
     std::vector<AbrBrush> samples;
     std::string error;
@@ -211,15 +201,15 @@ bool ImportAbrBrushesFromFile(HWND owner, const char* path) {
 }
 
 bool PromptImportAbrBrushes(HWND owner) {
-    char filePath[MAX_PATH] = "";
-    OPENFILENAMEA ofn = {};
+    wchar_t filePath[MAX_PATH] = L"";
+    OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = owner;
-    ofn.lpstrFilter = "Photoshop Brushes\0*.abr\0";
+    ofn.lpstrFilter = L"Photoshop Brushes\0*.abr\0";
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     if (gLastBrowseDir[0]) ofn.lpstrInitialDir = gLastBrowseDir;
-    if (!GetOpenFileNameA(&ofn)) return false;
+    if (!GetOpenFileNameW(&ofn)) return false;
     return ImportAbrBrushesFromFile(owner, filePath);
 }

@@ -13,4 +13,4 @@ struct AbrBrush {
 };
 
 // Parses Photoshop .abr sampled and computed brushes (v1/v2 and v6/v10).
-bool LoadAbrBrushes(const char* path, std::vector<AbrBrush>& out, std::string& error);
+bool LoadAbrBrushes(const wchar_t* path, std::vector<AbrBrush>& out, std::string& error);
