@@ -303,16 +303,13 @@ void SetBrushHardness(int hardness) {
 }
 
 void LoadBrushSettings() {
-    char iniPath[MAX_PATH] = {};
-    GetFeaturesIniPath(iniPath, MAX_PATH);
-    if (!iniPath[0]) return;
-    const int idx = GetPrivateProfileIntA("Features", "ActiveBrush", 0, iniPath);
+    const int idx = FeaturesIniReadInt("ActiveBrush", 0);
     if (idx >= 0 && idx < static_cast<int>(gPresets.size())) {
         gActiveBrush = idx;
     }
-    brushFlow = GetPrivateProfileIntA("Features", "BrushFlow", 100, iniPath);
-    brushHardness = GetPrivateProfileIntA("Features", "BrushHardness", 100, iniPath);
-    penPressureEnabled = GetPrivateProfileIntA("Features", "PenPressure", 1, iniPath) != 0;
+    brushFlow = FeaturesIniReadInt("BrushFlow", 100);
+    brushHardness = FeaturesIniReadInt("BrushHardness", 100);
+    penPressureEnabled = FeaturesIniReadInt("PenPressure", 1) != 0;
     if (brushFlow < 1) brushFlow = 1;
     if (brushFlow > 100) brushFlow = 100;
     if (brushHardness < 1) brushHardness = 1;
@@ -320,17 +317,14 @@ void LoadBrushSettings() {
 }
 
 void SaveBrushSettings() {
-    char iniPath[MAX_PATH] = {};
-    GetFeaturesIniPath(iniPath, MAX_PATH);
-    if (!iniPath[0]) return;
     char buf[16];
     sprintf_s(buf, "%d", gActiveBrush);
-    WritePrivateProfileStringA("Features", "ActiveBrush", buf, iniPath);
+    FeaturesIniWrite("ActiveBrush", buf);
     sprintf_s(buf, "%d", brushFlow);
-    WritePrivateProfileStringA("Features", "BrushFlow", buf, iniPath);
+    FeaturesIniWrite("BrushFlow", buf);
     sprintf_s(buf, "%d", brushHardness);
-    WritePrivateProfileStringA("Features", "BrushHardness", buf, iniPath);
-    WritePrivateProfileStringA("Features", "PenPressure", penPressureEnabled ? "1" : "0", iniPath);
+    FeaturesIniWrite("BrushHardness", buf);
+    FeaturesIniWrite("PenPressure", penPressureEnabled ? "1" : "0");
 }
 
 void SyncBrushMenuItems() {

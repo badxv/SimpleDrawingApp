@@ -3,13 +3,15 @@
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
+#include <memory>
 #include <string>
 #include <vector>
+#include "AtelierRaii.h"
 
 struct Layer {
     std::string name;
-    Gdiplus::Bitmap* bitmap = nullptr;
-    Gdiplus::Graphics* graphics = nullptr;
+    Atelier::GdiplusBitmapPtr bitmap;
+    Atelier::GdiplusGraphicsPtr graphics;
     bool visible = true;
     int opacity = 100; // 1-100
     bool isBackground = false;
@@ -79,8 +81,7 @@ private:
     int active_ = 0;
     std::vector<Layer> layers_;
 
-    static void FreeLayer(Layer& layer);
     static void Configure(Gdiplus::Graphics* g);
     static Layer CreateLayer(int w, int h, const char* name, bool background, COLORREF bg);
-    static Gdiplus::Bitmap* CloneBitmap(Gdiplus::Bitmap* source);
+    static Atelier::GdiplusBitmapPtr CloneBitmap(Gdiplus::Bitmap* source);
 };

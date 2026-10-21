@@ -86,36 +86,28 @@ void LoadFeatureFlags() {
     gGridSpacing = kDefaultGridSpacing;
     penWidth = kDefaultPenWidth;
 
-    char iniPath[MAX_PATH] = {};
-    GetFeaturesIniPath(iniPath, MAX_PATH);
-    if (!iniPath[0]) return;
-
     for (const FeatureMeta& f : kFeatures) {
         const int def = f.defaultOn ? 1 : 0;
-        const int val = GetPrivateProfileIntA("Features", f.iniKey, def, iniPath);
-        gFlags[static_cast<int>(f.id)] = (val != 0);
+        gFlags[static_cast<int>(f.id)] = (FeaturesIniReadInt(f.iniKey, def) != 0);
     }
     gGridSpacing = NormalizeGridSpacing(
-        GetPrivateProfileIntA("Features", "GridSpacing", kDefaultGridSpacing, iniPath));
+        FeaturesIniReadInt("GridSpacing", kDefaultGridSpacing));
     penWidth = ClampPenWidth(
-        GetPrivateProfileIntA("Features", "PenWidth", kDefaultPenWidth, iniPath));
+        FeaturesIniReadInt("PenWidth", kDefaultPenWidth));
 }
 
 void SaveFeatureFlags() {
-    char iniPath[MAX_PATH] = {};
-    GetFeaturesIniPath(iniPath, MAX_PATH);
-    if (!iniPath[0]) return;
-
     for (const FeatureMeta& f : kFeatures) {
-        const char* val = IsFeatureEnabled(f.id) ? "1" : "0";
-        WritePrivateProfileStringA("Features", f.iniKey, val, iniPath);
+        FeaturesIniWrite(f.iniKey, IsFeatureEnabled(f.id) ? "1" : "0");
     }
     char spacingBuf[16];
     sprintf_s(spacingBuf, "%d", NormalizeGridSpacing(gGridSpacing));
-    WritePrivateProfileStringA("Features", "GridSpacing", spacingBuf, iniPath);
+    FeaturesIniWrite("GridSpacing", spacingBuf);
     char widthBuf[16];
     sprintf_s(widthBuf, "%d", ClampPenWidth(penWidth));
-    WritePrivateProfileStringA("Features", "PenWidth", widthBuf, iniPath);
+    FeaturesIniWrite("PenWidth", widthBuf);
+    // Keep brush prefs in the same flush so exit/save is one channel.
+    SaveBrushSettings();
 }
 
 int NormalizeGridSpacing(int spacing) {

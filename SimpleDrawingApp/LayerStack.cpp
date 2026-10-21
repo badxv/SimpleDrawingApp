@@ -5,6 +5,21 @@
 #include <utility>
 
 using namespace Gdiplus;
+using Atelier::GdiplusBitmapPtr;
+using Atelier::GdiplusGraphicsPtr;
+
+namespace {
+
+struct OwnedSurface {
+    GdiplusBitmapPtr bmp;
+    GdiplusGraphicsPtr g;
+};
+
+void FreeOwned(std::vector<OwnedSurface>& next) {
+    next.clear();
+}
+
+} // namespace
 
 void LayerStack::Configure(Graphics* g) {
     if (!g) return;
@@ -12,19 +27,11 @@ void LayerStack::Configure(Graphics* g) {
     g->SetCompositingMode(CompositingModeSourceOver);
 }
 
-void LayerStack::FreeLayer(Layer& layer) {
-    delete layer.graphics;
-    delete layer.bitmap;
-    layer.graphics = nullptr;
-    layer.bitmap = nullptr;
-}
-
-Bitmap* LayerStack::CloneBitmap(Bitmap* source) {
-    if (!source) return nullptr;
-    Bitmap* copy = source->Clone(0, 0, source->GetWidth(), source->GetHeight(), PixelFormat32bppARGB);
+GdiplusBitmapPtr LayerStack::CloneBitmap(Bitmap* source) {
+    if (!source) return GdiplusBitmapPtr();
+    GdiplusBitmapPtr copy(source->Clone(0, 0, source->GetWidth(), source->GetHeight(), PixelFormat32bppARGB));
     if (!copy || copy->GetLastStatus() != Ok) {
-        delete copy;
-        return nullptr;
+        return GdiplusBitmapPtr();
     }
     return copy;
 }
@@ -35,25 +42,19 @@ Layer LayerStack::CreateLayer(int w, int h, const char* name, bool background, C
     layer.isBackground = background;
     layer.visible = true;
     layer.opacity = 100;
-    layer.bitmap = new Bitmap(w, h, PixelFormat32bppARGB);
-    if (!layer.bitmap || layer.bitmap->GetLastStatus() != Ok) {
-        delete layer.bitmap;
-        layer.bitmap = nullptr;
+    layer.bitmap = Atelier::MakeBitmap(w, h, PixelFormat32bppARGB);
+    if (!layer.bitmap) {
         return layer;
     }
-    layer.graphics = Graphics::FromImage(layer.bitmap);
-    if (!layer.graphics || layer.graphics->GetLastStatus() != Ok) {
-        delete layer.graphics;
-        delete layer.bitmap;
-        layer.graphics = nullptr;
-        layer.bitmap = nullptr;
+    layer.graphics = Atelier::MakeGraphics(layer.bitmap.get());
+    if (!layer.graphics) {
+        layer.bitmap.reset();
         return layer;
     }
-    Configure(layer.graphics);
+    Configure(layer.graphics.get());
     if (background) {
         layer.graphics->Clear(GdiplusFromColor(bg));
-    }
-    else {
+    } else {
         layer.graphics->Clear(Color(0, 0, 0, 0));
     }
     return layer;
@@ -64,9 +65,6 @@ LayerStack::~LayerStack() {
 }
 
 void LayerStack::Destroy() {
-    for (Layer& layer : layers_) {
-        FreeLayer(layer);
-    }
     layers_.clear();
     width_ = 0;
     height_ = 0;
@@ -80,20 +78,17 @@ void LayerStack::Reset(int width, int height, COLORREF background) {
 
     Layer bg = CreateLayer(width, height, "Background", true, background);
     if (!bg.bitmap || !bg.graphics) {
-        FreeLayer(bg);
         return; // leave empty so EnsureCanvas can retry
     }
     Layer content = CreateLayer(width, height, "Layer 1", false, RGB(0, 0, 0));
     if (!content.bitmap || !content.graphics) {
-        FreeLayer(content);
-        FreeLayer(bg);
         return;
     }
 
     width_ = width;
     height_ = height;
-    layers_.push_back(bg);
-    layers_.push_back(content);
+    layers_.push_back(std::move(bg));
+    layers_.push_back(std::move(content));
     active_ = 1;
 }
 
@@ -106,55 +101,36 @@ bool LayerStack::Resize(int width, int height, COLORREF backgroundPad) {
         return true;
     }
 
-    struct NextLayer {
-        Bitmap* bmp = nullptr;
-        Graphics* g = nullptr;
-    };
-    std::vector<NextLayer> next;
+    std::vector<OwnedSurface> next;
     next.reserve(layers_.size());
 
-    auto freeNext = [&]() {
-        for (NextLayer& n : next) {
-            delete n.g;
-            delete n.bmp;
-            n.g = nullptr;
-            n.bmp = nullptr;
-        }
-        next.clear();
-    };
-
     for (Layer& layer : layers_) {
-        NextLayer n;
-        n.bmp = new Bitmap(width, height, PixelFormat32bppARGB);
-        if (!n.bmp || n.bmp->GetLastStatus() != Ok) {
-            delete n.bmp;
-            freeNext();
+        OwnedSurface n;
+        n.bmp = Atelier::MakeBitmap(width, height, PixelFormat32bppARGB);
+        if (!n.bmp) {
+            FreeOwned(next);
             return false;
         }
-        n.g = Graphics::FromImage(n.bmp);
-        if (!n.g || n.g->GetLastStatus() != Ok) {
-            delete n.g;
-            delete n.bmp;
-            freeNext();
+        n.g = Atelier::MakeGraphics(n.bmp.get());
+        if (!n.g) {
+            FreeOwned(next);
             return false;
         }
-        Configure(n.g);
+        Configure(n.g.get());
         if (layer.isBackground) {
             n.g->Clear(GdiplusFromColor(backgroundPad));
-        }
-        else {
+        } else {
             n.g->Clear(Color(0, 0, 0, 0));
         }
         if (layer.bitmap) {
-            n.g->DrawImage(layer.bitmap, 0, 0);
+            n.g->DrawImage(layer.bitmap.get(), 0, 0);
         }
-        next.push_back(n);
+        next.push_back(std::move(n));
     }
 
     for (size_t i = 0; i < layers_.size(); ++i) {
-        FreeLayer(layers_[i]);
-        layers_[i].bitmap = next[i].bmp;
-        layers_[i].graphics = next[i].g;
+        layers_[i].bitmap = std::move(next[i].bmp);
+        layers_[i].graphics = std::move(next[i].g);
     }
     width_ = width;
     height_ = height;
@@ -170,23 +146,20 @@ bool LayerStack::ReplaceWithImage(Bitmap* image) {
     // Build the replacement stack first so failure keeps the live document.
     Layer bg = CreateLayer(w, h, "Background", true, RGB(255, 255, 255));
     if (!bg.bitmap || !bg.graphics) {
-        FreeLayer(bg);
         return false;
     }
     bg.graphics->DrawImage(image, 0, 0);
 
     Layer content = CreateLayer(w, h, "Layer 1", false, RGB(0, 0, 0));
     if (!content.bitmap || !content.graphics) {
-        FreeLayer(content);
-        FreeLayer(bg);
         return false;
     }
 
     Destroy();
     width_ = w;
     height_ = h;
-    layers_.push_back(bg);
-    layers_.push_back(content);
+    layers_.push_back(std::move(bg));
+    layers_.push_back(std::move(content));
     active_ = 1;
     return true;
 }
@@ -210,34 +183,27 @@ enum class GeomTransform {
 };
 
 bool TransformLayerBitmap(Bitmap* src, int outW, int outH, GeomTransform kind,
-    bool isBackground, Bitmap*& outBmp, Graphics*& outG) {
-    outBmp = nullptr;
-    outG = nullptr;
+    bool isBackground, OwnedSurface& out) {
+    out.bmp.reset();
+    out.g.reset();
     if (!src || outW < 1 || outH < 1) return false;
 
-    outBmp = new Bitmap(outW, outH, PixelFormat32bppARGB);
-    if (!outBmp || outBmp->GetLastStatus() != Ok) {
-        delete outBmp;
-        outBmp = nullptr;
+    out.bmp = Atelier::MakeBitmap(outW, outH, PixelFormat32bppARGB);
+    if (!out.bmp) return false;
+    out.g = Atelier::MakeGraphics(out.bmp.get());
+    if (!out.g) {
+        out.bmp.reset();
         return false;
     }
-    outG = Graphics::FromImage(outBmp);
-    if (!outG || outG->GetLastStatus() != Ok) {
-        delete outG;
-        delete outBmp;
-        outG = nullptr;
-        outBmp = nullptr;
-        return false;
-    }
-    outG->SetSmoothingMode(SmoothingModeNone);
-    outG->SetInterpolationMode(InterpolationModeNearestNeighbor);
-    outG->SetPixelOffsetMode(PixelOffsetModeHalf);
-    outG->SetCompositingMode(CompositingModeSourceCopy);
+    out.g->SetSmoothingMode(SmoothingModeNone);
+    out.g->SetInterpolationMode(InterpolationModeNearestNeighbor);
+    out.g->SetPixelOffsetMode(PixelOffsetModeHalf);
+    out.g->SetCompositingMode(CompositingModeSourceCopy);
 
     if (isBackground) {
-        outG->Clear(Color(255, 255, 255, 255));
+        out.g->Clear(Color(255, 255, 255, 255));
     } else {
-        outG->Clear(Color(0, 0, 0, 0));
+        out.g->Clear(Color(0, 0, 0, 0));
     }
 
     const int srcW = static_cast<int>(src->GetWidth());
@@ -245,128 +211,72 @@ bool TransformLayerBitmap(Bitmap* src, int outW, int outH, GeomTransform kind,
 
     switch (kind) {
     case GeomTransform::FlipH:
-        outG->TranslateTransform(static_cast<REAL>(outW), 0.0f);
-        outG->ScaleTransform(-1.0f, 1.0f);
+        out.g->TranslateTransform(static_cast<REAL>(outW), 0.0f);
+        out.g->ScaleTransform(-1.0f, 1.0f);
         break;
     case GeomTransform::FlipV:
-        outG->TranslateTransform(0.0f, static_cast<REAL>(outH));
-        outG->ScaleTransform(1.0f, -1.0f);
+        out.g->TranslateTransform(0.0f, static_cast<REAL>(outH));
+        out.g->ScaleTransform(1.0f, -1.0f);
         break;
     case GeomTransform::Rotate90Cw:
-        outG->TranslateTransform(static_cast<REAL>(outW), 0.0f);
-        outG->RotateTransform(90.0f);
+        out.g->TranslateTransform(static_cast<REAL>(outW), 0.0f);
+        out.g->RotateTransform(90.0f);
         break;
     case GeomTransform::Rotate90Ccw:
-        outG->TranslateTransform(0.0f, static_cast<REAL>(outH));
-        outG->RotateTransform(-90.0f);
+        out.g->TranslateTransform(0.0f, static_cast<REAL>(outH));
+        out.g->RotateTransform(-90.0f);
         break;
     }
-    outG->DrawImage(src, 0, 0, srcW, srcH);
-    outG->ResetTransform();
-    outG->SetCompositingMode(CompositingModeSourceOver);
-    outG->SetSmoothingMode(SmoothingModeAntiAlias);
+    out.g->DrawImage(src, 0, 0, srcW, srcH);
+    out.g->ResetTransform();
+    out.g->SetCompositingMode(CompositingModeSourceOver);
+    out.g->SetSmoothingMode(SmoothingModeAntiAlias);
+    return true;
+}
+
+bool ApplyGeomTransform(std::vector<Layer>& layers, int width, int height, GeomTransform kind,
+    int* outW, int* outH) {
+    if (layers.empty() || width < 1 || height < 1) return false;
+    const int newW = (kind == GeomTransform::Rotate90Cw || kind == GeomTransform::Rotate90Ccw)
+        ? height : width;
+    const int newH = (kind == GeomTransform::Rotate90Cw || kind == GeomTransform::Rotate90Ccw)
+        ? width : height;
+
+    std::vector<OwnedSurface> next;
+    next.reserve(layers.size());
+    for (Layer& layer : layers) {
+        OwnedSurface n;
+        if (!layer.bitmap
+            || !TransformLayerBitmap(layer.bitmap.get(), newW, newH, kind, layer.isBackground, n)) {
+            FreeOwned(next);
+            return false;
+        }
+        next.push_back(std::move(n));
+    }
+
+    for (size_t i = 0; i < layers.size(); ++i) {
+        layers[i].bitmap = std::move(next[i].bmp);
+        layers[i].graphics = std::move(next[i].g);
+    }
+    if (outW) *outW = newW;
+    if (outH) *outH = newH;
     return true;
 }
 
 } // namespace
 
 bool LayerStack::FlipHorizontal() {
-    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
-
-    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
-    std::vector<NextLayer> next;
-    next.reserve(layers_.size());
-    auto freeNext = [&]() {
-        for (NextLayer& n : next) {
-            delete n.g;
-            delete n.bmp;
-        }
-        next.clear();
-    };
-
-    for (Layer& layer : layers_) {
-        NextLayer n;
-        if (!layer.bitmap
-            || !TransformLayerBitmap(layer.bitmap, width_, height_, GeomTransform::FlipH,
-                layer.isBackground, n.bmp, n.g)) {
-            freeNext();
-            return false;
-        }
-        next.push_back(n);
-    }
-
-    for (size_t i = 0; i < layers_.size(); ++i) {
-        FreeLayer(layers_[i]);
-        layers_[i].bitmap = next[i].bmp;
-        layers_[i].graphics = next[i].g;
-    }
-    return true;
+    return ApplyGeomTransform(layers_, width_, height_, GeomTransform::FlipH, nullptr, nullptr);
 }
 
 bool LayerStack::FlipVertical() {
-    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
-
-    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
-    std::vector<NextLayer> next;
-    next.reserve(layers_.size());
-    auto freeNext = [&]() {
-        for (NextLayer& n : next) {
-            delete n.g;
-            delete n.bmp;
-        }
-        next.clear();
-    };
-
-    for (Layer& layer : layers_) {
-        NextLayer n;
-        if (!layer.bitmap
-            || !TransformLayerBitmap(layer.bitmap, width_, height_, GeomTransform::FlipV,
-                layer.isBackground, n.bmp, n.g)) {
-            freeNext();
-            return false;
-        }
-        next.push_back(n);
-    }
-
-    for (size_t i = 0; i < layers_.size(); ++i) {
-        FreeLayer(layers_[i]);
-        layers_[i].bitmap = next[i].bmp;
-        layers_[i].graphics = next[i].g;
-    }
-    return true;
+    return ApplyGeomTransform(layers_, width_, height_, GeomTransform::FlipV, nullptr, nullptr);
 }
 
 bool LayerStack::Rotate90Clockwise() {
-    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
-    const int newW = height_;
-    const int newH = width_;
-
-    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
-    std::vector<NextLayer> next;
-    next.reserve(layers_.size());
-    auto freeNext = [&]() {
-        for (NextLayer& n : next) {
-            delete n.g;
-            delete n.bmp;
-        }
-        next.clear();
-    };
-
-    for (Layer& layer : layers_) {
-        NextLayer n;
-        if (!layer.bitmap
-            || !TransformLayerBitmap(layer.bitmap, newW, newH, GeomTransform::Rotate90Cw,
-                layer.isBackground, n.bmp, n.g)) {
-            freeNext();
-            return false;
-        }
-        next.push_back(n);
-    }
-
-    for (size_t i = 0; i < layers_.size(); ++i) {
-        FreeLayer(layers_[i]);
-        layers_[i].bitmap = next[i].bmp;
-        layers_[i].graphics = next[i].g;
+    int newW = 0, newH = 0;
+    if (!ApplyGeomTransform(layers_, width_, height_, GeomTransform::Rotate90Cw, &newW, &newH)) {
+        return false;
     }
     width_ = newW;
     height_ = newH;
@@ -374,36 +284,9 @@ bool LayerStack::Rotate90Clockwise() {
 }
 
 bool LayerStack::Rotate90CounterClockwise() {
-    if (layers_.empty() || width_ < 1 || height_ < 1) return false;
-    const int newW = height_;
-    const int newH = width_;
-
-    struct NextLayer { Bitmap* bmp = nullptr; Graphics* g = nullptr; };
-    std::vector<NextLayer> next;
-    next.reserve(layers_.size());
-    auto freeNext = [&]() {
-        for (NextLayer& n : next) {
-            delete n.g;
-            delete n.bmp;
-        }
-        next.clear();
-    };
-
-    for (Layer& layer : layers_) {
-        NextLayer n;
-        if (!layer.bitmap
-            || !TransformLayerBitmap(layer.bitmap, newW, newH, GeomTransform::Rotate90Ccw,
-                layer.isBackground, n.bmp, n.g)) {
-            freeNext();
-            return false;
-        }
-        next.push_back(n);
-    }
-
-    for (size_t i = 0; i < layers_.size(); ++i) {
-        FreeLayer(layers_[i]);
-        layers_[i].bitmap = next[i].bmp;
-        layers_[i].graphics = next[i].g;
+    int newW = 0, newH = 0;
+    if (!ApplyGeomTransform(layers_, width_, height_, GeomTransform::Rotate90Ccw, &newW, &newH)) {
+        return false;
     }
     width_ = newW;
     height_ = newH;
@@ -435,12 +318,12 @@ const Layer* LayerStack::At(int index) const {
 
 Bitmap* LayerStack::ActiveBitmap() {
     Layer* layer = ActiveLayer();
-    return layer ? layer->bitmap : nullptr;
+    return layer ? layer->bitmap.get() : nullptr;
 }
 
 Graphics* LayerStack::ActiveGraphics() {
     Layer* layer = ActiveLayer();
-    return layer ? layer->graphics : nullptr;
+    return layer ? layer->graphics.get() : nullptr;
 }
 
 bool LayerStack::AddLayer() {
@@ -449,10 +332,9 @@ bool LayerStack::AddLayer() {
     sprintf_s(name, "Layer %d", Count());
     Layer layer = CreateLayer(width_, height_, name, false, RGB(0, 0, 0));
     if (!layer.bitmap || !layer.graphics) {
-        FreeLayer(layer);
         return false;
     }
-    layers_.push_back(layer);
+    layers_.push_back(std::move(layer));
     active_ = Count() - 1;
     return true;
 }
@@ -462,7 +344,7 @@ bool LayerStack::DuplicateActiveLayer() {
     const Layer* src = ActiveLayer();
     if (!src || !src->bitmap) return false;
 
-    Bitmap* bmpCopy = CloneBitmap(src->bitmap);
+    GdiplusBitmapPtr bmpCopy = CloneBitmap(src->bitmap.get());
     if (!bmpCopy) return false;
 
     Layer dup;
@@ -470,17 +352,15 @@ bool LayerStack::DuplicateActiveLayer() {
     dup.visible = src->visible;
     dup.opacity = src->opacity;
     dup.isBackground = false;
-    dup.bitmap = bmpCopy;
-    dup.graphics = Graphics::FromImage(dup.bitmap);
-    if (!dup.graphics || dup.graphics->GetLastStatus() != Ok) {
-        delete dup.graphics;
-        delete dup.bitmap;
+    dup.bitmap = std::move(bmpCopy);
+    dup.graphics = Atelier::MakeGraphics(dup.bitmap.get());
+    if (!dup.graphics) {
         return false;
     }
-    Configure(dup.graphics);
+    Configure(dup.graphics.get());
 
     const size_t insertAt = static_cast<size_t>(active_) + 1;
-    layers_.insert(layers_.begin() + static_cast<ptrdiff_t>(insertAt), dup);
+    layers_.insert(layers_.begin() + static_cast<ptrdiff_t>(insertAt), std::move(dup));
     active_ = static_cast<int>(insertAt);
     return true;
 }
@@ -494,21 +374,19 @@ bool LayerStack::MergeActiveDown() {
     Layer& lower = layers_[lowerIdx];
     if (!upper.bitmap || !lower.bitmap) return false;
 
-    Bitmap* mergedBmp = CloneBitmap(lower.bitmap);
+    GdiplusBitmapPtr mergedBmp = CloneBitmap(lower.bitmap.get());
     if (!mergedBmp) return false;
-    Graphics* mergedG = Graphics::FromImage(mergedBmp);
-    if (!mergedG || mergedG->GetLastStatus() != Ok) {
-        delete mergedG;
-        delete mergedBmp;
+    GdiplusGraphicsPtr mergedG = Atelier::MakeGraphics(mergedBmp.get());
+    if (!mergedG) {
         return false;
     }
-    Configure(mergedG);
+    Configure(mergedG.get());
 
     if (upper.visible && upper.bitmap) {
         int opacity = upper.opacity;
         if (opacity > 100) opacity = 100;
         if (opacity >= 100) {
-            mergedG->DrawImage(upper.bitmap, 0, 0);
+            mergedG->DrawImage(upper.bitmap.get(), 0, 0);
         } else if (opacity >= 1) {
             const REAL alpha = static_cast<REAL>(opacity) / 100.0f;
             ColorMatrix matrix = {
@@ -522,16 +400,13 @@ bool LayerStack::MergeActiveDown() {
             attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
             const int w = static_cast<int>(upper.bitmap->GetWidth());
             const int h = static_cast<int>(upper.bitmap->GetHeight());
-            mergedG->DrawImage(upper.bitmap, Rect(0, 0, w, h), 0, 0, w, h, UnitPixel, &attrs);
+            mergedG->DrawImage(upper.bitmap.get(), Rect(0, 0, w, h), 0, 0, w, h, UnitPixel, &attrs);
         }
     }
 
-    delete lower.graphics;
-    delete lower.bitmap;
-    lower.bitmap = mergedBmp;
-    lower.graphics = mergedG;
+    lower.bitmap = std::move(mergedBmp);
+    lower.graphics = std::move(mergedG);
 
-    FreeLayer(upper);
     layers_.erase(layers_.begin() + static_cast<ptrdiff_t>(upperIdx));
     --active_;
     return true;
@@ -543,7 +418,6 @@ bool LayerStack::DeleteActiveLayer() {
     if (layers_[static_cast<size_t>(active_)].isBackground) {
         return false;
     }
-    FreeLayer(layers_[static_cast<size_t>(active_)]);
     layers_.erase(layers_.begin() + active_);
     if (active_ >= Count()) {
         active_ = Count() - 1;
@@ -618,8 +492,7 @@ void LayerStack::ClearAllContent(COLORREF background) {
         if (!layer.graphics) continue;
         if (layer.isBackground) {
             layer.graphics->Clear(GdiplusFromColor(background));
-        }
-        else {
+        } else {
             layer.graphics->Clear(Color(0, 0, 0, 0));
         }
     }
@@ -634,7 +507,7 @@ void LayerStack::CompositeTo(Graphics* dest) const {
         if (opacity > 100) opacity = 100;
 
         if (opacity >= 100) {
-            dest->DrawImage(layer.bitmap, 0, 0);
+            dest->DrawImage(layer.bitmap.get(), 0, 0);
             continue;
         }
 
@@ -650,7 +523,7 @@ void LayerStack::CompositeTo(Graphics* dest) const {
         attrs.SetColorMatrix(&matrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
         const int w = static_cast<int>(layer.bitmap->GetWidth());
         const int h = static_cast<int>(layer.bitmap->GetHeight());
-        dest->DrawImage(layer.bitmap, Rect(0, 0, w, h), 0, 0, w, h, UnitPixel, &attrs);
+        dest->DrawImage(layer.bitmap.get(), Rect(0, 0, w, h), 0, 0, w, h, UnitPixel, &attrs);
     }
 }
 
@@ -682,20 +555,18 @@ LayerStack* LayerStack::Clone() const {
         dst.visible = src.visible;
         dst.opacity = src.opacity;
         dst.isBackground = src.isBackground;
-        dst.bitmap = CloneBitmap(src.bitmap);
+        dst.bitmap = CloneBitmap(src.bitmap.get());
         if (!dst.bitmap) {
             delete copy;
             return nullptr;
         }
-        dst.graphics = Graphics::FromImage(dst.bitmap);
-        if (!dst.graphics || dst.graphics->GetLastStatus() != Ok) {
-            delete dst.graphics;
-            delete dst.bitmap;
+        dst.graphics = Atelier::MakeGraphics(dst.bitmap.get());
+        if (!dst.graphics) {
             delete copy;
             return nullptr;
         }
-        Configure(dst.graphics);
-        copy->layers_.push_back(dst);
+        Configure(dst.graphics.get());
+        copy->layers_.push_back(std::move(dst));
     }
     return copy;
 }

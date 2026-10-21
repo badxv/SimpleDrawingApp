@@ -274,7 +274,6 @@ void DeleteSelection(HWND hwnd) {
     }
     MarkDirty(hwnd);
     InvalidateCanvas();
-    UpdateStatusBar(hwnd);
     PublishSelectionChanged(hwnd);
 }
 
@@ -322,7 +321,6 @@ void PasteSelection(HWND hwnd) {
     gSel.h = h;
     MarkDirty(hwnd);
     InvalidateCanvas();
-    UpdateStatusBar(hwnd);
     PublishSelectionChanged(hwnd);
 }
 
@@ -336,7 +334,6 @@ void SelectAll(HWND hwnd) {
     gSel.w = docWidth;
     gSel.h = docHeight;
     InvalidateCanvas();
-    UpdateStatusBar(hwnd);
     PublishSelectionChanged(hwnd);
 }
 

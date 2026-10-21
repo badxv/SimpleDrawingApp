@@ -189,9 +189,8 @@ void SetActiveTool(DrawTool tool) {
         EventPayload payload{};
         payload.type = AtelierEvent::ActiveToolChanged;
         payload.tool = tool;
+        payload.hwnd = hwndToolButtons[0] ? GetAncestor(hwndToolButtons[0], GA_ROOT) : nullptr;
         AppEventBus().Publish(payload);
-        HWND mainWnd = hwndToolButtons[0] ? GetAncestor(hwndToolButtons[0], GA_ROOT) : nullptr;
-        if (mainWnd) UpdateStatusBar(mainWnd);
     }
 }
 bool IsTypingInEdit() {
