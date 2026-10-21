@@ -16,6 +16,15 @@ using namespace Gdiplus;
 
 namespace {
 
+std::wstring Utf8ToWide(const char* utf8) {
+    if (!utf8 || !utf8[0]) return std::wstring();
+    const int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+    if (len <= 1) return std::wstring();
+    std::wstring out(static_cast<size_t>(len - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, out.data(), len);
+    return out;
+}
+
 struct AbrImportPickerState {
     const std::vector<AbrBrush>* samples = nullptr;
     std::vector<int> selected;
@@ -71,7 +80,7 @@ INT_PTR CALLBACK AbrImportDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM
                 }
                 const int count = static_cast<int>(SendMessageA(list, LB_GETSELCOUNT, 0, 0));
                 if (count <= 0) {
-                    MessageBoxA(hDlg, "Select at least one brush.", "Import ABR", MB_OK | MB_ICONWARNING);
+                    MessageBoxW(hDlg, L"Select at least one brush.", L"Import ABR", MB_OK | MB_ICONWARNING);
                     return TRUE;
                 }
                 state->selected.resize(static_cast<size_t>(count));
@@ -110,7 +119,7 @@ bool PromptAbrBrushSelection(HWND owner, const std::vector<AbrBrush>& samples, s
 bool ImportBrushTipFromFile(HWND owner, const wchar_t* path) {
     if (!path || !path[0]) return false;
     if (!BrushPresetsCanAddCustom()) {
-        MessageBoxA(owner, "Custom brush limit reached.", "Import Brush", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(owner, L"Custom brush limit reached.", L"Import Brush", MB_OK | MB_ICONINFORMATION);
         return false;
     }
 
@@ -142,7 +151,7 @@ bool PromptImportBrushTip(HWND owner) {
     if (gLastBrowseDir[0]) ofn.lpstrInitialDir = gLastBrowseDir;
     if (!GetOpenFileNameW(&ofn)) return false;
     if (!ImportBrushTipFromFile(owner, filePath)) {
-        MessageBoxA(owner, "Could not load brush tip image.", "Import Brush", MB_OK | MB_ICONERROR);
+        MessageBoxW(owner, L"Could not load brush tip image.", L"Import Brush", MB_OK | MB_ICONERROR);
         return false;
     }
     return true;
@@ -154,7 +163,7 @@ bool ImportAbrBrushesFromFile(HWND owner, const wchar_t* path) {
     std::string error;
     if (!LoadAbrBrushes(path, samples, error)) {
         if (owner && !error.empty()) {
-            MessageBoxA(owner, error.c_str(), "Import ABR", MB_OK | MB_ICONERROR);
+            MessageBoxW(owner, Utf8ToWide(error.c_str()).c_str(), L"Import ABR", MB_OK | MB_ICONERROR);
         }
         return false;
     }
@@ -186,7 +195,7 @@ bool ImportAbrBrushesFromFile(HWND owner, const wchar_t* path) {
     }
 
     if (imported <= 0) {
-        MessageBoxA(owner, "No brushes could be imported from this ABR file.", "Import ABR", MB_OK | MB_ICONERROR);
+        MessageBoxW(owner, L"No brushes could be imported from this ABR file.", L"Import ABR", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -194,9 +203,10 @@ bool ImportAbrBrushesFromFile(HWND owner, const wchar_t* path) {
     BrushPresetsSaveSettings();
     BrushPresetsSyncMenu();
 
-    char msg[128];
-    sprintf_s(msg, "Imported %d brush(es). Active: %s", imported, BrushPresetsActiveName());
-    MessageBoxA(owner, msg, "Import ABR", MB_OK | MB_ICONINFORMATION);
+    wchar_t msg[160];
+    swprintf_s(msg, L"Imported %d brush(es). Active: %s",
+        imported, Utf8ToWide(BrushPresetsActiveName()).c_str());
+    MessageBoxW(owner, msg, L"Import ABR", MB_OK | MB_ICONINFORMATION);
     return true;
 }
 
