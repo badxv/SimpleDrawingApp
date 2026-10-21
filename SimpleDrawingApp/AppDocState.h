@@ -36,11 +36,24 @@ extern bool isDrawing;
 extern bool suppressEditNotify;
 extern bool suppressLayerNotify;
 
+// Bootstrap / dialog draft size when the layer stack is empty. Prefer DocWidth()/
+// DocHeight() for reads so viewport/selection always match the live stack.
 extern int docWidth;
 extern int docHeight;
 extern int scrollX;
 extern int scrollY;
 extern float zoomFactor;
+
+inline int DocWidth() {
+    return (gLayers.Count() > 0 && gLayers.Width() > 0)
+        ? gLayers.Width()
+        : (docWidth > 0 ? docWidth : DEFAULT_DOC_WIDTH);
+}
+inline int DocHeight() {
+    return (gLayers.Count() > 0 && gLayers.Height() > 0)
+        ? gLayers.Height()
+        : (docHeight > 0 ? docHeight : DEFAULT_DOC_HEIGHT);
+}
 
 extern SelectionState gSel;
 extern Atelier::GdiplusBitmapPtr gClipboardBmp;

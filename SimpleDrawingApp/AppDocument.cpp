@@ -4,6 +4,7 @@
 #include "AppFeatureFlags.h"
 #include "SimpleDrawingApp.h"
 #include "FileManager.h"
+#include "AtelierRaii.h"
 #include "Resource.h"
 #include "AppPaths.h"
 #include <commdlg.h>
@@ -219,17 +220,13 @@ bool OpenDocumentFromPath(HWND hwnd, const wchar_t* filePath) {
     isDrawing = false;
     ClearSelection(false);
 
-    Bitmap* loaded = nullptr;
-    Graphics* loadedG = nullptr;
-    if (!LoadImageFromFile(filePath, loaded, loadedG)) {
+    Atelier::GdiplusBitmapPtr loaded = LoadImageFromFile(filePath);
+    if (!loaded) {
         return false;
     }
-    delete loadedG;
-    if (!gLayers.ReplaceWithImage(loaded)) {
-        delete loaded;
+    if (!gLayers.ReplaceWithImage(loaded.get())) {
         return false;
     }
-    delete loaded;
     SyncDocSizeFromBitmap();
     scrollX = 0;
     scrollY = 0;
@@ -253,12 +250,12 @@ bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bo
 
     EnsureCanvas(hwnd);
 
-    if (newWidth == docWidth && newHeight == docHeight) {
+    if (newWidth == DocWidth() && newHeight == DocHeight()) {
         return true;
     }
 
     if (warnOnShrink && IsFeatureEnabled(AppFeature::WarnCanvasShrink)
-        && (newWidth < docWidth || newHeight < docHeight)) {
+        && (newWidth < DocWidth() || newHeight < DocHeight())) {
         const int result = MessageBoxA(
             hwnd,
             "Shrinking the canvas will crop content outside the new size. Continue?",
@@ -423,9 +420,9 @@ INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
     switch (message) {
     case WM_INITDIALOG: {
         char buf[32];
-        sprintf_s(buf, "%d", docWidth);
+        sprintf_s(buf, "%d", DocWidth());
         SetDlgItemTextA(hDlg, IDC_CANVAS_WIDTH, buf);
-        sprintf_s(buf, "%d", docHeight);
+        sprintf_s(buf, "%d", DocHeight());
         SetDlgItemTextA(hDlg, IDC_CANVAS_HEIGHT, buf);
 
         HWND list = GetDlgItem(hDlg, IDC_CANVAS_PRESET);
@@ -489,8 +486,8 @@ INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
 }
 
 void ResizeCanvas(HWND hwnd) {
-    gCanvasDlgWidth = docWidth;
-    gCanvasDlgHeight = docHeight;
+    gCanvasDlgWidth = DocWidth();
+    gCanvasDlgHeight = DocHeight();
     if (DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_CANVAS_SIZE), hwnd, CanvasSizeDlgProc) == IDOK) {
         ResizeDocument(hwnd, gCanvasDlgWidth, gCanvasDlgHeight, true, true);
     }
@@ -855,7 +852,7 @@ void NewDocument(HWND hwnd) {
     isDrawing = false;
     ClearSelection(false);
     // Keep current document size; reset to Background + Layer 1 (active).
-    gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
+    gLayers.Reset(DocWidth(), DocHeight(), gTheme.canvasBg);
     gHistory.Clear();
     SetDocumentPath(nullptr);
     InvalidateComposite();

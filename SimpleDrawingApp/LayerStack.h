@@ -69,9 +69,9 @@ public:
     bool ReplaceWithImage(Gdiplus::Bitmap* image);
 
     void CompositeTo(Gdiplus::Graphics* dest) const;
-    Gdiplus::Bitmap* CreateComposite() const;
+    Atelier::GdiplusBitmapPtr CreateComposite() const;
 
-    LayerStack* Clone() const;
+    std::unique_ptr<LayerStack> Clone() const;
     // Steal layers from other (other becomes empty).
     void TakeFrom(LayerStack* other);
 

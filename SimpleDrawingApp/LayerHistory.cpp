@@ -32,7 +32,7 @@ void LayerHistory::RememberDepthFor(const LayerStack& stack) {
 }
 
 std::unique_ptr<LayerStack> LayerHistory::Capture(const LayerStack& stack) {
-    return std::unique_ptr<LayerStack>(stack.Clone());
+    return stack.Clone();
 }
 
 void LayerHistory::Commit(std::unique_ptr<LayerStack> snapshot) {
@@ -61,7 +61,7 @@ bool LayerHistory::Undo(LayerStack& stack) {
     RememberDepthFor(stack);
 
     // Must be able to park the current stack on redo before mutating undo.
-    std::unique_ptr<LayerStack> current(stack.Clone());
+    std::unique_ptr<LayerStack> current = stack.Clone();
     if (!current) return false;
 
     std::unique_ptr<LayerStack> previous = std::move(undoStack_.back());
@@ -79,7 +79,7 @@ bool LayerHistory::Redo(LayerStack& stack) {
 
     RememberDepthFor(stack);
 
-    std::unique_ptr<LayerStack> current(stack.Clone());
+    std::unique_ptr<LayerStack> current = stack.Clone();
     if (!current) return false;
 
     std::unique_ptr<LayerStack> next = std::move(redoStack_.back());
