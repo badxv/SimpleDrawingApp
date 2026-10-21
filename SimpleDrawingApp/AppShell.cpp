@@ -127,17 +127,17 @@ void UpdateStatusBar(HWND hwnd) {
     if (const Layer* layer = gLayers.ActiveLayer()) {
         if (gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
             sprintf_s(part1, "%s | %dx%d %d%% | %d, %d",
-                layer->name.c_str(), docWidth, docHeight, zoomPct,
+                layer->name.c_str(), DocWidth(), DocHeight(), zoomPct,
                 gStatusHoverDocX, gStatusHoverDocY);
         } else {
             sprintf_s(part1, "%s | %dx%d %d%%",
-                layer->name.c_str(), docWidth, docHeight, zoomPct);
+                layer->name.c_str(), DocWidth(), DocHeight(), zoomPct);
         }
     } else if (gStatusHoverDocX >= 0 && gStatusHoverDocY >= 0) {
         sprintf_s(part1, "%dx%d %d%% | %d, %d",
-            docWidth, docHeight, zoomPct, gStatusHoverDocX, gStatusHoverDocY);
+            DocWidth(), DocHeight(), zoomPct, gStatusHoverDocX, gStatusHoverDocY);
     } else {
-        sprintf_s(part1, "%dx%d %d%%", docWidth, docHeight, zoomPct);
+        sprintf_s(part1, "%dx%d %d%%", DocWidth(), DocHeight(), zoomPct);
     }
 
     sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");

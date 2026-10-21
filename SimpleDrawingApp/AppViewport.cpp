@@ -27,14 +27,14 @@ static bool ViewportToDocument(int localX, int localY, int& docX, int& docY) {
     if (zoomFactor <= 0.0f) return false;
     docX = static_cast<int>(std::floor((localX + scrollX) / zoomFactor));
     docY = static_cast<int>(std::floor((localY + scrollY) / zoomFactor));
-    if (docX < 0 || docY < 0 || docX >= docWidth || docY >= docHeight) {
+    if (docX < 0 || docY < 0 || docX >= DocWidth() || docY >= DocHeight()) {
         return false;
     }
     MaybeSnapDocumentPoint(docX, docY);
     if (docX < 0) docX = 0;
     if (docY < 0) docY = 0;
-    if (docX >= docWidth) docX = docWidth - 1;
-    if (docY >= docHeight) docY = docHeight - 1;
+    if (docX >= DocWidth()) docX = DocWidth() - 1;
+    if (docY >= DocHeight()) docY = DocHeight() - 1;
     return true;
 }
 
@@ -51,27 +51,27 @@ static void ViewportToDocumentUnclamped(int localX, int localY, int& docX, int& 
 
 static void DrawCanvasGrid(Graphics* g) {
     if (!g || !IsFeatureEnabled(AppFeature::CanvasGrid)) return;
-    if (docWidth < 1 || docHeight < 1 || zoomFactor <= 0.0f) return;
+    if (DocWidth() < 1 || DocHeight() < 1 || zoomFactor <= 0.0f) return;
     const int spacing = (gGridSpacing > 0) ? gGridSpacing : kDefaultGridSpacing;
     if (spacing < 1) return;
 
     const REAL z = zoomFactor;
-    const REAL docW = static_cast<REAL>(docWidth) * z;
-    const REAL docH = static_cast<REAL>(docHeight) * z;
+    const REAL docW = static_cast<REAL>(DocWidth()) * z;
+    const REAL docH = static_cast<REAL>(DocHeight()) * z;
 
     Pen minor(Color(55, 90, 110, 130), 1.0f);
     Pen major(Color(90, 70, 90, 110), 1.0f);
     minor.SetDashStyle(DashStyleSolid);
     major.SetDashStyle(DashStyleSolid);
 
-    for (int x = 0; x <= docWidth; x += spacing) {
-        const bool isMajor = (x % (spacing * GRID_MAJOR_EVERY) == 0) || x == docWidth;
+    for (int x = 0; x <= DocWidth(); x += spacing) {
+        const bool isMajor = (x % (spacing * GRID_MAJOR_EVERY) == 0) || x == DocWidth();
         Pen& pen = isMajor ? major : minor;
         const REAL sx = static_cast<REAL>(x) * z;
         g->DrawLine(&pen, sx, 0.0f, sx, docH);
     }
-    for (int y = 0; y <= docHeight; y += spacing) {
-        const bool isMajor = (y % (spacing * GRID_MAJOR_EVERY) == 0) || y == docHeight;
+    for (int y = 0; y <= DocHeight(); y += spacing) {
+        const bool isMajor = (y % (spacing * GRID_MAJOR_EVERY) == 0) || y == DocHeight();
         Pen& pen = isMajor ? major : minor;
         const REAL sy = static_cast<REAL>(y) * z;
         g->DrawLine(&pen, 0.0f, sy, docW, sy);
@@ -121,7 +121,7 @@ static void ViewportUpdateHover(HWND hwnd, HWND parent, int localX, int localY) 
     tme.hwndTrack = hwnd;
     TrackMouseEvent(&tme);
 
-    if (docX >= 0 && docY >= 0 && docX < docWidth && docY < docHeight) {
+    if (docX >= 0 && docY >= 0 && docX < DocWidth() && docY < DocHeight()) {
         if (gStatusHoverDocX != docX || gStatusHoverDocY != docY) {
             gStatusHoverDocX = docX;
             gStatusHoverDocY = docY;

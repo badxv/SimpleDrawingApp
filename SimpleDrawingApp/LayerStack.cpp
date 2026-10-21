@@ -166,11 +166,9 @@ bool LayerStack::ReplaceWithImage(Bitmap* image) {
 
 bool LayerStack::FlattenVisible() {
     if (Count() < 2) return false;
-    Bitmap* flat = CreateComposite();
+    GdiplusBitmapPtr flat = CreateComposite();
     if (!flat) return false;
-    const bool ok = ReplaceWithImage(flat);
-    delete flat;
-    return ok;
+    return ReplaceWithImage(flat.get());
 }
 
 namespace {
@@ -527,14 +525,11 @@ void LayerStack::CompositeTo(Graphics* dest) const {
     }
 }
 
-Bitmap* LayerStack::CreateComposite() const {
-    if (width_ < 1 || height_ < 1) return nullptr;
-    Bitmap* out = new Bitmap(width_, height_, PixelFormat32bppARGB);
-    if (!out || out->GetLastStatus() != Ok) {
-        delete out;
-        return nullptr;
-    }
-    Graphics g(out);
+GdiplusBitmapPtr LayerStack::CreateComposite() const {
+    if (width_ < 1 || height_ < 1) return GdiplusBitmapPtr();
+    GdiplusBitmapPtr out = Atelier::MakeBitmap(width_, height_, PixelFormat32bppARGB);
+    if (!out) return GdiplusBitmapPtr();
+    Graphics g(out.get());
     // Transparent clear: the pinned Background layer (or workspace chrome) provides
     // the visible white. Content layers stay PNG-like with real alpha.
     g.Clear(Color(0, 0, 0, 0));
@@ -543,8 +538,8 @@ Bitmap* LayerStack::CreateComposite() const {
     return out;
 }
 
-LayerStack* LayerStack::Clone() const {
-    LayerStack* copy = new LayerStack();
+std::unique_ptr<LayerStack> LayerStack::Clone() const {
+    auto copy = std::make_unique<LayerStack>();
     copy->width_ = width_;
     copy->height_ = height_;
     copy->active_ = active_;
@@ -557,12 +552,10 @@ LayerStack* LayerStack::Clone() const {
         dst.isBackground = src.isBackground;
         dst.bitmap = CloneBitmap(src.bitmap.get());
         if (!dst.bitmap) {
-            delete copy;
             return nullptr;
         }
         dst.graphics = Atelier::MakeGraphics(dst.bitmap.get());
         if (!dst.graphics) {
-            delete copy;
             return nullptr;
         }
         Configure(dst.graphics.get());

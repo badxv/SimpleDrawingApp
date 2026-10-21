@@ -50,8 +50,8 @@ void NormalizeSelRect(int x0, int y0, int x1, int y1, int& x, int& y, int& w, in
     int bottom = (y0 > y1) ? y0 : y1;
     if (left < 0) left = 0;
     if (top < 0) top = 0;
-    if (right > docWidth) right = docWidth;
-    if (bottom > docHeight) bottom = docHeight;
+    if (right > DocWidth()) right = DocWidth();
+    if (bottom > DocHeight()) bottom = DocHeight();
     x = left;
     y = top;
     w = right - left;
@@ -331,8 +331,8 @@ void SelectAll(HWND hwnd) {
     gSel.hasMarquee = true;
     gSel.x = 0;
     gSel.y = 0;
-    gSel.w = docWidth;
-    gSel.h = docHeight;
+    gSel.w = DocWidth();
+    gSel.h = DocHeight();
     InvalidateCanvas();
     PublishSelectionChanged(hwnd);
 }

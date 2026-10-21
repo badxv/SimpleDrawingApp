@@ -14,7 +14,7 @@ void SyncDocSizeFromBitmap() {
 
 void EnsureCanvas(HWND hwnd) {
     if (gLayers.Count() > 0) return;
-    gLayers.Reset(docWidth, docHeight, gTheme.canvasBg);
+    gLayers.Reset(DocWidth(), DocHeight(), gTheme.canvasBg);
     InvalidateComposite();
     (void)hwnd;
 }
@@ -32,12 +32,12 @@ Bitmap* GetCompositeBitmap() {
     if (!compositeDirty && compositeCache) {
         return compositeCache.get();
     }
-    Bitmap* next = gLayers.CreateComposite();
+    Atelier::GdiplusBitmapPtr next = gLayers.CreateComposite();
     if (!next) {
         compositeDirty = true;
         return compositeCache.get();
     }
-    compositeCache.reset(next);
+    compositeCache = std::move(next);
     compositeDirty = false;
     return compositeCache.get();
 }
@@ -49,8 +49,8 @@ void UpdateScrollBars() {
     GetClientRect(hwndViewport, &rc);
     const int clientW = rc.right - rc.left;
     const int clientH = rc.bottom - rc.top;
-    const int contentW = MaxInt(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
-    const int contentH = MaxInt(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
+    const int contentW = MaxInt(1, static_cast<int>(std::lround(DocWidth() * zoomFactor)));
+    const int contentH = MaxInt(1, static_cast<int>(std::lround(DocHeight() * zoomFactor)));
 
     int availW = clientW;
     int availH = clientH;
@@ -108,11 +108,11 @@ void InvalidateCanvas() {
 }
 
 int ScaledContentWidth() {
-    return MaxInt(1, static_cast<int>(std::lround(docWidth * zoomFactor)));
+    return MaxInt(1, static_cast<int>(std::lround(DocWidth() * zoomFactor)));
 }
 
 int ScaledContentHeight() {
-    return MaxInt(1, static_cast<int>(std::lround(docHeight * zoomFactor)));
+    return MaxInt(1, static_cast<int>(std::lround(DocHeight() * zoomFactor)));
 }
 
 void SetZoomAtViewportPoint(HWND hwnd, float newZoom, int localX, int localY) {
@@ -161,13 +161,13 @@ void ZoomToActual(HWND hwnd) {
 }
 
 void ZoomToFit(HWND hwnd) {
-    if (!hwndViewport || docWidth < 1 || docHeight < 1) return;
+    if (!hwndViewport || DocWidth() < 1 || DocHeight() < 1) return;
     RECT rc = {};
     GetClientRect(hwndViewport, &rc);
     const int viewW = MaxInt(1, static_cast<int>(rc.right - rc.left));
     const int viewH = MaxInt(1, static_cast<int>(rc.bottom - rc.top));
-    const float zx = static_cast<float>(viewW) / static_cast<float>(docWidth);
-    const float zy = static_cast<float>(viewH) / static_cast<float>(docHeight);
+    const float zx = static_cast<float>(viewW) / static_cast<float>(DocWidth());
+    const float zy = static_cast<float>(viewH) / static_cast<float>(DocHeight());
     float z = (zx < zy) ? zx : zy;
     if (z < ZOOM_MIN) z = ZOOM_MIN;
     if (z > ZOOM_MAX) z = ZOOM_MAX;

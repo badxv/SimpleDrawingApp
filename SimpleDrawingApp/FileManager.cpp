@@ -97,26 +97,12 @@ bool SaveCanvasToFile(Bitmap* bitmap, const wchar_t* filename) {
     return (bitmap->Save(filename, &clsid, nullptr) == Ok);
 }
 
-bool LoadImageFromFile(const wchar_t* filename, Bitmap*& bitmap, Graphics*& graphics) {
-    if (!filename || !filename[0]) return false;
+Atelier::GdiplusBitmapPtr LoadImageFromFile(const wchar_t* filename) {
+    if (!filename || !filename[0]) return Atelier::GdiplusBitmapPtr();
 
-    Bitmap* loaded = Gdiplus::Bitmap::FromFile(filename, FALSE);
-
+    Atelier::GdiplusBitmapPtr loaded(Gdiplus::Bitmap::FromFile(filename, FALSE));
     if (!loaded || loaded->GetLastStatus() != Ok) {
-        delete loaded;
-        return false;
+        return Atelier::GdiplusBitmapPtr();
     }
-
-    Graphics* loadedGraphics = Graphics::FromImage(loaded);
-    if (!loadedGraphics || loadedGraphics->GetLastStatus() != Ok) {
-        delete loadedGraphics;
-        delete loaded;
-        return false;
-    }
-
-    delete graphics;
-    delete bitmap;
-    bitmap = loaded;
-    graphics = loadedGraphics;
-    return true;
+    return loaded;
 }
