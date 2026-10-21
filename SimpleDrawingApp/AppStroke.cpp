@@ -322,7 +322,7 @@ Gdiplus::Bitmap* CreateErasePreviewComposite(Bitmap* eraseMask) {
     for (int i = 0; i < gLayers.Count(); ++i) {
         const Layer* layer = gLayers.At(i);
         if (!layer || !layer->visible) continue;
-        Bitmap* bmp = (i == active && erasedActive) ? erasedActive : layer->bitmap;
+        Bitmap* bmp = (i == active && erasedActive) ? erasedActive : layer->bitmap.get();
         if (!bmp) continue;
 
         int opacity = layer->opacity;

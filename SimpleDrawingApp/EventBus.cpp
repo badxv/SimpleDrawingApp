@@ -51,22 +51,59 @@ void PublishLayerListChanged(HWND hwnd) {
     AppEventBus().Publish(payload);
 }
 
+namespace {
+
+HWND ResolveMainHwnd(HWND hwnd) {
+    if (hwnd && IsWindow(hwnd)) return hwnd;
+    if (hwndViewport && IsWindow(hwndViewport)) {
+        return GetAncestor(hwndViewport, GA_ROOT);
+    }
+    if (hwndToolButtons[0] && IsWindow(hwndToolButtons[0])) {
+        return GetAncestor(hwndToolButtons[0], GA_ROOT);
+    }
+    if (hwndLayerList && IsWindow(hwndLayerList)) {
+        return GetAncestor(hwndLayerList, GA_ROOT);
+    }
+    return nullptr;
+}
+
+} // namespace
+
 void InitAppEventHandlers() {
     if (gHandlersInstalled) return;
     gHandlersInstalled = true;
 
     AppEventBus().Subscribe(AtelierEvent::DocumentDirtyChanged, [](const EventPayload& e) {
-        if (!e.hwnd) return;
-        UpdateWindowTitle(e.hwnd);
-        UpdateStatusBar(e.hwnd);
+        HWND hwnd = ResolveMainHwnd(e.hwnd);
+        if (!hwnd) return;
+        UpdateWindowTitle(hwnd);
+        UpdateStatusBar(hwnd);
     });
 
     AppEventBus().Subscribe(AtelierEvent::ChromeRebuildRequested, [](const EventPayload& e) {
         if (hwndBrand) {
             InvalidateRect(hwndBrand, NULL, FALSE);
         }
-        if (e.hwnd) {
-            InvalidateRect(e.hwnd, NULL, FALSE);
+        if (HWND hwnd = ResolveMainHwnd(e.hwnd)) {
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+    });
+
+    AppEventBus().Subscribe(AtelierEvent::ActiveToolChanged, [](const EventPayload& e) {
+        if (HWND hwnd = ResolveMainHwnd(e.hwnd)) {
+            UpdateStatusBar(hwnd);
+        }
+    });
+
+    AppEventBus().Subscribe(AtelierEvent::LayerListChanged, [](const EventPayload& e) {
+        if (HWND hwnd = ResolveMainHwnd(e.hwnd)) {
+            UpdateStatusBar(hwnd);
+        }
+    });
+
+    AppEventBus().Subscribe(AtelierEvent::SelectionChanged, [](const EventPayload& e) {
+        if (HWND hwnd = ResolveMainHwnd(e.hwnd)) {
+            UpdateStatusBar(hwnd);
         }
     });
 }

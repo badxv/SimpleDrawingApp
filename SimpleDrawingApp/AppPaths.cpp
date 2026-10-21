@@ -20,3 +20,19 @@ void GetFeaturesIniPath(char* path, size_t pathChars) {
     }
     strcat_s(path, pathChars, "features.ini");
 }
+
+bool FeaturesIniWrite(const char* key, const char* value) {
+    if (!key || !key[0]) return false;
+    char iniPath[MAX_PATH] = {};
+    GetFeaturesIniPath(iniPath, MAX_PATH);
+    if (!iniPath[0]) return false;
+    return WritePrivateProfileStringA("Features", key, value ? value : "", iniPath) != 0;
+}
+
+int FeaturesIniReadInt(const char* key, int defaultValue) {
+    if (!key || !key[0]) return defaultValue;
+    char iniPath[MAX_PATH] = {};
+    GetFeaturesIniPath(iniPath, MAX_PATH);
+    if (!iniPath[0]) return defaultValue;
+    return GetPrivateProfileIntA("Features", key, defaultValue, iniPath);
+}
