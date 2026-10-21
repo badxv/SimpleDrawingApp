@@ -143,10 +143,15 @@ Bitmap* BitmapFromWinClipboard() {
     HANDLE handle = GetClipboardData(CF_BITMAP);
     Bitmap* out = nullptr;
     if (handle) {
-        out = new Bitmap(static_cast<HBITMAP>(handle), nullptr);
-        if (out && out->GetLastStatus() != Ok) {
-            delete out;
-            out = nullptr;
+        // Wrap only long enough to clone; clipboard owns the HBITMAP and it
+        // must not be used after CloseClipboard.
+        Bitmap wrap(static_cast<HBITMAP>(handle), nullptr);
+        if (wrap.GetLastStatus() == Ok) {
+            out = wrap.Clone(0, 0, wrap.GetWidth(), wrap.GetHeight(), PixelFormat32bppARGB);
+            if (out && out->GetLastStatus() != Ok) {
+                delete out;
+                out = nullptr;
+            }
         }
     }
     CloseClipboard();

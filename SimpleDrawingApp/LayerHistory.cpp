@@ -6,16 +6,12 @@ void LayerHistory::Clear() {
     maxDepth_ = kMaxDepth;
 }
 
-void LayerHistory::FreeStack(std::deque<LayerStack*>& stack) {
-    for (LayerStack* snap : stack) {
-        delete snap;
-    }
+void LayerHistory::FreeStack(std::deque<std::unique_ptr<LayerStack>>& stack) {
     stack.clear();
 }
 
-void LayerHistory::TrimFront(std::deque<LayerStack*>& stack, size_t maxDepth) {
+void LayerHistory::TrimFront(std::deque<std::unique_ptr<LayerStack>>& stack, size_t maxDepth) {
     while (stack.size() > maxDepth) {
-        delete stack.front();
         stack.pop_front();
     }
 }
@@ -35,15 +31,20 @@ void LayerHistory::RememberDepthFor(const LayerStack& stack) {
     if (maxDepth_ > kMaxDepth) maxDepth_ = kMaxDepth;
 }
 
-void LayerHistory::Push(const LayerStack& stack) {
-    RememberDepthFor(stack);
+std::unique_ptr<LayerStack> LayerHistory::Capture(const LayerStack& stack) {
+    return std::unique_ptr<LayerStack>(stack.Clone());
+}
 
-    LayerStack* snapshot = stack.Clone();
+void LayerHistory::Commit(std::unique_ptr<LayerStack> snapshot) {
     if (!snapshot) return;
-
-    undoStack_.push_back(snapshot);
+    RememberDepthFor(*snapshot);
+    undoStack_.push_back(std::move(snapshot));
     TrimFront(undoStack_, maxDepth_);
     FreeStack(redoStack_);
+}
+
+void LayerHistory::Push(const LayerStack& stack) {
+    Commit(Capture(stack));
 }
 
 bool LayerHistory::CanUndo() const {
@@ -59,17 +60,17 @@ bool LayerHistory::Undo(LayerStack& stack) {
 
     RememberDepthFor(stack);
 
-    LayerStack* current = stack.Clone();
-    LayerStack* previous = undoStack_.back();
+    // Must be able to park the current stack on redo before mutating undo.
+    std::unique_ptr<LayerStack> current(stack.Clone());
+    if (!current) return false;
+
+    std::unique_ptr<LayerStack> previous = std::move(undoStack_.back());
     undoStack_.pop_back();
 
-    stack.TakeFrom(previous);
-    delete previous;
+    stack.TakeFrom(previous.get());
 
-    if (current) {
-        redoStack_.push_back(current);
-        TrimFront(redoStack_, maxDepth_);
-    }
+    redoStack_.push_back(std::move(current));
+    TrimFront(redoStack_, maxDepth_);
     return true;
 }
 
@@ -78,16 +79,15 @@ bool LayerHistory::Redo(LayerStack& stack) {
 
     RememberDepthFor(stack);
 
-    LayerStack* current = stack.Clone();
-    LayerStack* next = redoStack_.back();
+    std::unique_ptr<LayerStack> current(stack.Clone());
+    if (!current) return false;
+
+    std::unique_ptr<LayerStack> next = std::move(redoStack_.back());
     redoStack_.pop_back();
 
-    stack.TakeFrom(next);
-    delete next;
+    stack.TakeFrom(next.get());
 
-    if (current) {
-        undoStack_.push_back(current);
-        TrimFront(undoStack_, maxDepth_);
-    }
+    undoStack_.push_back(std::move(current));
+    TrimFront(undoStack_, maxDepth_);
     return true;
 }
