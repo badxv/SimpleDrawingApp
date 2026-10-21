@@ -44,8 +44,9 @@ bool TryRenameActiveLayer(HWND hwnd) {
     if (!cur || !LayerStack::NormalizeLayerName(name, normalized) || normalized == cur->name) {
         return false;
     }
-    gHistory.Push(gLayers);
+    auto before = LayerHistory::Capture(gLayers);
     if (!gLayers.RenameActive(name)) return false;
+    gHistory.Commit(std::move(before));
     RefreshLayerList();
     MarkDirty(hwnd);
     UpdateStatusBar(hwnd);
@@ -222,55 +223,70 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     }
     case IDC_LAYER_ADD:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.AddLayer()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.AddLayer()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
         }
         return true;
     case IDC_LAYER_DEL:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.DeleteActiveLayer()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.DeleteActiveLayer()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
         }
         return true;
     case IDC_LAYER_DUP:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.DuplicateActiveLayer()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.DuplicateActiveLayer()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
         }
         return true;
     case IDC_LAYER_UP:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.MoveActiveUp()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.MoveActiveUp()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+            }
         }
         return true;
     case IDC_LAYER_DOWN:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.MoveActiveDown()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.MoveActiveDown()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+            }
         }
         return true;
     case IDC_LAYER_VISIBLE:
@@ -528,24 +544,30 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
         return true;
     case IDM_DUPLICATE_LAYER:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.DuplicateActiveLayer()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.DuplicateActiveLayer()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
         }
         return true;
     case IDM_MERGE_DOWN:
         ClearSelection(true);
-        gHistory.Push(gLayers);
-        if (gLayers.MergeActiveDown()) {
-            InvalidateComposite();
-            RefreshLayerList();
-            MarkDirty(hwnd);
-            InvalidateCanvas();
-            UpdateStatusBar(hwnd);
+        {
+            auto before = LayerHistory::Capture(gLayers);
+            if (gLayers.MergeActiveDown()) {
+                gHistory.Commit(std::move(before));
+                InvalidateComposite();
+                RefreshLayerList();
+                MarkDirty(hwnd);
+                InvalidateCanvas();
+                UpdateStatusBar(hwnd);
+            }
         }
         return true;
     case IDM_ABOUT:

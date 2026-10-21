@@ -313,13 +313,17 @@ bool ResizeDocument(HWND hwnd, int newWidth, int newHeight, bool pushHistory, bo
     DestroyStrokeLayer();
     ClearSelection(false);
 
+    std::unique_ptr<LayerStack> before;
     if (pushHistory) {
-        gHistory.Push(gLayers);
+        before = LayerHistory::Capture(gLayers);
     }
 
     if (!gLayers.Resize(newWidth, newHeight, gTheme.canvasBg)) {
         MessageBoxA(hwnd, "Could not resize the canvas (out of memory).", "Canvas Size", MB_OK | MB_ICONERROR);
         return false;
+    }
+    if (before) {
+        gHistory.Commit(std::move(before));
     }
     docWidth = newWidth;
     docHeight = newHeight;
@@ -359,10 +363,11 @@ void FlattenLayers(HWND hwnd) {
     DestroyStrokeLayer();
     ClearSelection(false);
 
-    gHistory.Push(gLayers);
+    auto before = LayerHistory::Capture(gLayers);
     if (!gLayers.FlattenVisible()) {
         return;
     }
+    gHistory.Commit(std::move(before));
 
     InvalidateComposite();
     MarkDirty(hwnd);
@@ -381,7 +386,6 @@ void BeginImageGeometryEdit(HWND hwnd) {
     }
     DestroyStrokeLayer();
     ClearSelection(false);
-    gHistory.Push(gLayers);
 }
 
 void EndImageGeometryEdit(HWND hwnd, bool sizeChanged) {
@@ -398,30 +402,37 @@ void EndImageGeometryEdit(HWND hwnd, bool sizeChanged) {
     UpdateStatusBar(hwnd);
 }
 
+bool CommitGeometryIf(HWND hwnd, bool ok, std::unique_ptr<LayerStack> before, bool sizeChanged) {
+    if (!ok) return false;
+    gHistory.Commit(std::move(before));
+    EndImageGeometryEdit(hwnd, sizeChanged);
+    return true;
+}
+
 } // namespace
 
 void FlipDocumentHorizontal(HWND hwnd) {
     BeginImageGeometryEdit(hwnd);
-    if (!gLayers.FlipHorizontal()) return;
-    EndImageGeometryEdit(hwnd, false);
+    auto before = LayerHistory::Capture(gLayers);
+    CommitGeometryIf(hwnd, gLayers.FlipHorizontal(), std::move(before), false);
 }
 
 void FlipDocumentVertical(HWND hwnd) {
     BeginImageGeometryEdit(hwnd);
-    if (!gLayers.FlipVertical()) return;
-    EndImageGeometryEdit(hwnd, false);
+    auto before = LayerHistory::Capture(gLayers);
+    CommitGeometryIf(hwnd, gLayers.FlipVertical(), std::move(before), false);
 }
 
 void RotateDocument90Cw(HWND hwnd) {
     BeginImageGeometryEdit(hwnd);
-    if (!gLayers.Rotate90Clockwise()) return;
-    EndImageGeometryEdit(hwnd, true);
+    auto before = LayerHistory::Capture(gLayers);
+    CommitGeometryIf(hwnd, gLayers.Rotate90Clockwise(), std::move(before), true);
 }
 
 void RotateDocument90Ccw(HWND hwnd) {
     BeginImageGeometryEdit(hwnd);
-    if (!gLayers.Rotate90CounterClockwise()) return;
-    EndImageGeometryEdit(hwnd, true);
+    auto before = LayerHistory::Capture(gLayers);
+    CommitGeometryIf(hwnd, gLayers.Rotate90CounterClockwise(), std::move(before), true);
 }
 
 void SyncPresetSelection(HWND hDlg) {
@@ -632,54 +643,54 @@ void PrintDocument(HWND hwnd) {
     pd.hwndOwner = hwnd;
     pd.Flags = PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS;
     if (!PrintDlgA(&pd)) {
-        return; // cancelled or no printers
+        return; // cancelled or no printers — no allocations to free
     }
 
+    // PrintDlg may allocate these even when hDC is null; always free on exit.
     HDC hdc = pd.hDC;
+    bool ok = false;
     if (!hdc) {
         MessageBoxA(hwnd, "Failed to open printer.", "Print", MB_OK | MB_ICONERROR);
-        return;
-    }
+    } else {
+        DOCINFOA di = {};
+        di.cbSize = sizeof(di);
+        di.lpszDocName = "Simple Drawing App";
 
-    DOCINFOA di = {};
-    di.cbSize = sizeof(di);
-    di.lpszDocName = "Simple Drawing App";
+        if (StartDocA(hdc, &di) > 0) {
+            if (StartPage(hdc) > 0) {
+                const int pageW = GetDeviceCaps(hdc, HORZRES);
+                const int pageH = GetDeviceCaps(hdc, VERTRES);
+                const int imgW = flat->GetWidth();
+                const int imgH = flat->GetHeight();
 
-    bool ok = false;
-    if (StartDocA(hdc, &di) > 0) {
-        if (StartPage(hdc) > 0) {
-            const int pageW = GetDeviceCaps(hdc, HORZRES);
-            const int pageH = GetDeviceCaps(hdc, VERTRES);
-            const int imgW = flat->GetWidth();
-            const int imgH = flat->GetHeight();
+                // Fit image on page, preserve aspect ratio, center.
+                float scale = 1.0f;
+                if (imgW > 0 && imgH > 0 && pageW > 0 && pageH > 0) {
+                    const float sx = static_cast<float>(pageW) / static_cast<float>(imgW);
+                    const float sy = static_cast<float>(pageH) / static_cast<float>(imgH);
+                    scale = (sx < sy) ? sx : sy;
+                }
+                const int destW = static_cast<int>(imgW * scale);
+                const int destH = static_cast<int>(imgH * scale);
+                const int destX = (pageW - destW) / 2;
+                const int destY = (pageH - destH) / 2;
 
-            // Fit image on page, preserve aspect ratio, center.
-            float scale = 1.0f;
-            if (imgW > 0 && imgH > 0 && pageW > 0 && pageH > 0) {
-                const float sx = static_cast<float>(pageW) / static_cast<float>(imgW);
-                const float sy = static_cast<float>(pageH) / static_cast<float>(imgH);
-                scale = (sx < sy) ? sx : sy;
+                Graphics printer(hdc);
+                printer.SetPageUnit(UnitPixel);
+                printer.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+                printer.DrawImage(flat, destX, destY, destW, destH);
+                EndPage(hdc);
+                ok = true;
             }
-            const int destW = static_cast<int>(imgW * scale);
-            const int destH = static_cast<int>(imgH * scale);
-            const int destX = (pageW - destW) / 2;
-            const int destY = (pageH - destH) / 2;
-
-            Graphics printer(hdc);
-            printer.SetPageUnit(UnitPixel);
-            printer.SetInterpolationMode(InterpolationModeHighQualityBicubic);
-            printer.DrawImage(flat, destX, destY, destW, destH);
-            EndPage(hdc);
-            ok = true;
+            EndDoc(hdc);
         }
-        EndDoc(hdc);
+        DeleteDC(hdc);
     }
 
-    DeleteDC(hdc);
     if (pd.hDevMode) GlobalFree(pd.hDevMode);
     if (pd.hDevNames) GlobalFree(pd.hDevNames);
 
-    if (!ok) {
+    if (!ok && hdc) {
         MessageBoxA(hwnd, "Print job failed to start.", "Print", MB_OK | MB_ICONERROR);
     }
 }

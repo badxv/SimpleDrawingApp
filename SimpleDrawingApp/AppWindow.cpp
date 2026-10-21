@@ -544,7 +544,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DestroyWindow(hwndPaletteFloat);
         }
         hwndPaletteFloat = nullptr;
-        gAppMenu = nullptr;
+        if (gAppMenu) {
+            DestroyMenu(gAppMenu);
+            gAppMenu = nullptr;
+        }
         hwndBrand = nullptr;
         hwndCaptionMin = nullptr;
         hwndCaptionMax = nullptr;

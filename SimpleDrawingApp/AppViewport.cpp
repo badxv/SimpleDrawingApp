@@ -13,6 +13,7 @@
 #include <windowsx.h>
 #include <gdiplus.h>
 #include <cmath>
+#include <memory>
 
 using namespace Gdiplus;
 
@@ -172,8 +173,9 @@ static void ViewportOnCanvasDown(HWND hwnd, HWND parent, int localX, int localY,
     ClearSelection(true);
 
     if (currentTool == DrawTool::Fill) {
-        gHistory.Push(gLayers);
+        auto before = LayerHistory::Capture(gLayers);
         if (FloodFillCanvas(gLayers.ActiveBitmap(), docX, docY, penColor, OpacityToAlpha())) {
+            gHistory.Commit(std::move(before));
             InvalidateComposite();
             NoteDrawnColors();
             MarkDirty(parent);
@@ -445,10 +447,9 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                     && layer && !layer->isBackground;
 
                 if (erasePreview) {
-                    Bitmap* preview = CreateErasePreviewComposite(strokeLayer.get());
+                    std::unique_ptr<Bitmap> preview(CreateErasePreviewComposite(strokeLayer.get()));
                     if (preview) {
-                        g.DrawImage(preview, dest);
-                        delete preview;
+                        g.DrawImage(preview.get(), dest);
                     } else if (flat) {
                         g.DrawImage(flat, dest);
                     }

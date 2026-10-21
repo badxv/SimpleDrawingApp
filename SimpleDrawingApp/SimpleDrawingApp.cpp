@@ -28,6 +28,13 @@ using namespace Gdiplus;
 
 namespace {
 ULONG_PTR gdiplusToken = 0;
+
+void ShutdownBeforeGdiplus() {
+    ShutdownBrushEngine();
+    AtelierArtwork_Shutdown();
+    AtelierFonts_Shutdown();
+    GdiplusShutdown(gdiplusToken);
+}
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
@@ -42,47 +49,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     AtelierArtwork_Init();
     AtelierControls_SetTheme(&gTheme);
     if (!AtelierControls_Register()) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
     AtelierPalette_SetTheme(&gTheme);
     if (!AtelierPalette_Register()) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
 
     if (!RegisterViewportClass(hInstance)) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
     if (!RegisterBrandClass(hInstance)) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
     if (!RegisterCaptionBtnClass(hInstance)) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
     if (!RegisterShapeFlyoutClass(hInstance)) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
     if (!RegisterPaletteFloatClass(hInstance)) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
 
@@ -97,9 +90,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     wc.style = CS_DBLCLKS;
 
     if (!RegisterClassA(&wc)) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
 
@@ -109,9 +100,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
-        AtelierArtwork_Shutdown();
-        AtelierFonts_Shutdown();
-        GdiplusShutdown(gdiplusToken);
+        ShutdownBeforeGdiplus();
         return 0;
     }
 
@@ -149,9 +138,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         DispatchMessage(&msg);
     }
 
-    AtelierArtwork_Shutdown();
-    AtelierFonts_Shutdown();
     SaveFeatureFlags();
-    GdiplusShutdown(gdiplusToken);
+    ShutdownBeforeGdiplus();
     return static_cast<int>(msg.wParam);
 }
