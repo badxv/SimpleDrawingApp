@@ -5,10 +5,11 @@
 
 std::string NarrowPathSegment(const wchar_t* wide) {
     if (!wide || !wide[0]) return {};
-    const int len = WideCharToMultiByte(CP_ACP, 0, wide, -1, nullptr, 0, nullptr, nullptr);
+    // UTF-8 so imported brush names keep non-ASCII path segments.
+    const int len = WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
     if (len <= 1) return {};
     std::string out(static_cast<size_t>(len - 1), '\0');
-    WideCharToMultiByte(CP_ACP, 0, wide, -1, out.data(), len, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, wide, -1, out.data(), len, nullptr, nullptr);
     return out;
 }
 

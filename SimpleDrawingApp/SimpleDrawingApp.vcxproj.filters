@@ -197,6 +197,9 @@
     <ClCompile Include="AppSelection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AppSession.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="AppDocument.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

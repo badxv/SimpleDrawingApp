@@ -211,6 +211,7 @@
     <ClCompile Include="AppCommands.cpp" />
     <ClCompile Include="AppWindow.cpp" />
     <ClCompile Include="EventBus.cpp" />
+    <ClCompile Include="AppSession.cpp" />
     <ClCompile Include="AppDocument.cpp" />
     <ClCompile Include="AppSelection.cpp" />
     <ClCompile Include="AppDocState.cpp" />
