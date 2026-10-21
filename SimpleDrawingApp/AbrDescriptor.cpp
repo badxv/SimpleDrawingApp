@@ -1,4 +1,5 @@
 #include "AbrDescriptor.h"
+#include "AbrCommon.h"
 #include "AbrComputed.h"
 
 #include <cmath>
@@ -85,14 +86,7 @@ public:
         if (length == 0) return true;
         std::vector<std::uint8_t> raw(static_cast<size_t>(length) * 2);
         if (!readBytes(raw.data(), raw.size())) return false;
-        out.reserve(static_cast<size_t>(length));
-        for (std::int32_t i = 0; i < length; ++i) {
-            const wchar_t ch = static_cast<wchar_t>(raw[static_cast<size_t>(i) * 2]
-                | (raw[static_cast<size_t>(i) * 2 + 1] << 8));
-            if (ch == 0) break;
-            if (ch < 128) out.push_back(static_cast<char>(ch));
-            else out.push_back('?');
-        }
+        out = DecodeUcs2ToUtf8(raw.data(), static_cast<size_t>(length));
         const size_t pad = (4 - (raw.size() % 4)) % 4;
         return skip(pad);
     }

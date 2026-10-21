@@ -3,13 +3,13 @@
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
-#include <memory>
+#include "AtelierRaii.h"
 #include <string>
 #include <vector>
 
 struct BrushPreset {
     std::string name;
-    std::unique_ptr<Gdiplus::Bitmap> tip;
+    Atelier::GdiplusBitmapPtr tip;
     float spacing = 0.2f;      // fraction of pen width between stamps
     int defaultSize = 8;
     bool builtin = true;

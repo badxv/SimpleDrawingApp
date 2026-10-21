@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
+#include "AtelierRaii.h"
 
 void DestroyStrokeLayer();
 void BeginStrokeLayer();
@@ -12,5 +13,5 @@ void DrawStrokeLayerWithOpacity(Gdiplus::Graphics* dest, int destX, int destY);
 void RedrawShapePreview(int endX, int endY, bool shiftConstrained);
 void RefreshShapePreviewIfDrawing();
 void CommitStrokeLayer();
-Gdiplus::Bitmap* CreateErasePreviewComposite(Gdiplus::Bitmap* eraseMask);
+Atelier::GdiplusBitmapPtr CreateErasePreviewComposite(Gdiplus::Bitmap* eraseMask);
 void NoteDrawnColors();

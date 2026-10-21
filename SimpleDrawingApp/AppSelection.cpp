@@ -8,6 +8,7 @@
 #include "AtelierEvents.h"
 #include <windowsx.h>
 #include <cmath>
+#include <utility>
 
 using namespace Gdiplus;
 using Atelier::MakeBitmap;
@@ -64,14 +65,14 @@ bool SelectionHitTest(int docX, int docY) {
         && docX < gSel.x + gSel.w && docY < gSel.y + gSel.h;
 }
 
-Bitmap* CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
-    if (!src || w < 1 || h < 1) return nullptr;
+Atelier::GdiplusBitmapPtr CloneBitmapRect(Bitmap* src, int x, int y, int w, int h) {
+    if (!src || w < 1 || h < 1) return Atelier::GdiplusBitmapPtr();
     Atelier::GdiplusBitmapPtr owned = MakeBitmap(w, h, PixelFormat32bppARGB);
-    if (!owned) return nullptr;
+    if (!owned) return Atelier::GdiplusBitmapPtr();
     Graphics g(owned.get());
     g.Clear(Color(0, 0, 0, 0));
     g.DrawImage(src, Rect(0, 0, w, h), x, y, w, h, UnitPixel);
-    return owned.release();
+    return owned;
 }
 
 void LiftSelection() {
@@ -81,7 +82,7 @@ void LiftSelection() {
     if (gSel.w < 1 || gSel.h < 1) return;
 
     DestroySelFloat();
-    gSel.floatBmp.reset(CloneBitmapRect(ab, gSel.x, gSel.y, gSel.w, gSel.h));
+    gSel.floatBmp = CloneBitmapRect(ab, gSel.x, gSel.y, gSel.w, gSel.h);
     if (!gSel.floatBmp) return;
 
     const Layer* layer = gLayers.ActiveLayer();
@@ -106,16 +107,16 @@ void StampFloatingSelection() {
     InvalidateComposite();
 }
 
-Bitmap* CaptureSelectionPixels() {
-    if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return nullptr;
+Atelier::GdiplusBitmapPtr CaptureSelectionPixels() {
+    if (!gSel.hasMarquee || gSel.w < 1 || gSel.h < 1) return Atelier::GdiplusBitmapPtr();
     if (gSel.isFloating && gSel.floatBmp) {
         return CloneBitmapRect(gSel.floatBmp.get(), 0, 0, gSel.w, gSel.h);
     }
     return CloneBitmapRect(gLayers.ActiveBitmap(), gSel.x, gSel.y, gSel.w, gSel.h);
 }
 
-void SetInternalClipboard(Bitmap* bmp) {
-    gClipboardBmp.reset(bmp);
+void SetInternalClipboard(Atelier::GdiplusBitmapPtr bmp) {
+    gClipboardBmp = std::move(bmp);
 }
 
 bool CopyBitmapToWinClipboard(Bitmap* bmp) {
@@ -238,10 +239,10 @@ void DrawSelectionOverlay(Graphics* g) {
 }
 
 void CopySelection(HWND hwnd) {
-    Bitmap* shot = CaptureSelectionPixels();
+    Atelier::GdiplusBitmapPtr shot = CaptureSelectionPixels();
     if (!shot) return;
-    CopyBitmapToWinClipboard(shot);
-    SetInternalClipboard(shot); // takes ownership
+    CopyBitmapToWinClipboard(shot.get());
+    SetInternalClipboard(std::move(shot));
     (void)hwnd;
 }
 
@@ -285,23 +286,23 @@ void CutSelection(HWND hwnd) {
 
 void PasteSelection(HWND hwnd) {
     EnsureCanvas(hwnd);
-    Bitmap* src = nullptr;
+    Atelier::GdiplusBitmapPtr owned;
     if (gClipboardBmp) {
-        src = CloneBitmapRect(
+        owned = CloneBitmapRect(
             gClipboardBmp.get(), 0, 0,
             static_cast<int>(gClipboardBmp->GetWidth()),
             static_cast<int>(gClipboardBmp->GetHeight()));
     }
-    if (!src) {
-        src = BitmapFromWinClipboard();
+    if (!owned) {
+        owned.reset(BitmapFromWinClipboard());
     }
-    if (!src) return;
+    if (!owned) return;
 
     ClearSelection(true);
     SetActiveTool(DrawTool::Select);
 
-    const int w = static_cast<int>(src->GetWidth());
-    const int h = static_cast<int>(src->GetHeight());
+    const int w = static_cast<int>(owned->GetWidth());
+    const int h = static_cast<int>(owned->GetHeight());
     int pasteX = 0;
     int pasteY = 0;
     if (IsFeatureEnabled(AppFeature::PasteAtViewOrigin)) {
@@ -314,7 +315,7 @@ void PasteSelection(HWND hwnd) {
     gHistory.Push(gLayers);
     gSel.hasMarquee = true;
     gSel.isFloating = true;
-    gSel.floatBmp.reset(src);
+    gSel.floatBmp = std::move(owned);
     gSel.x = pasteX;
     gSel.y = pasteY;
     gSel.w = w;
