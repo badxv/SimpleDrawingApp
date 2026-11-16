@@ -309,7 +309,7 @@ INT_PTR CALLBACK CanvasSizeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
 void ResizeCanvas(HWND hwnd) {
     gCanvasDlgWidth = DocWidth();
     gCanvasDlgHeight = DocHeight();
-    if (DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_CANVAS_SIZE), hwnd, CanvasSizeDlgProc) == IDOK) {
+    if (DialogBoxW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_CANVAS_SIZE), hwnd, CanvasSizeDlgProc) == IDOK) {
         ResizeDocument(hwnd, gCanvasDlgWidth, gCanvasDlgHeight, true, true);
     }
 }
@@ -591,6 +591,8 @@ void UndoDocument(HWND hwnd) {
     EnsureCanvas(hwnd);
     DestroyStrokeLayer();
     isDrawing = false;
+    // Drop float without stamping: history snapshots are layer-only.
+    // Move/lift Push is pre-lift; paste Push is pre-float — both restore correctly.
     ClearSelection(false);
     if (gHistory.Undo(gLayers)) {
         SyncDocSizeFromBitmap();

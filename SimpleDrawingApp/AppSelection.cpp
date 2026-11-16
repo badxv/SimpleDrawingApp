@@ -139,19 +139,18 @@ bool CopyBitmapToWinClipboard(Bitmap* bmp) {
     return true;
 }
 
-Bitmap* BitmapFromWinClipboard() {
-    if (!OpenClipboard(nullptr)) return nullptr;
+Atelier::GdiplusBitmapPtr BitmapFromWinClipboard() {
+    if (!OpenClipboard(nullptr)) return Atelier::GdiplusBitmapPtr();
     HANDLE handle = GetClipboardData(CF_BITMAP);
-    Bitmap* out = nullptr;
+    Atelier::GdiplusBitmapPtr out;
     if (handle) {
         // Wrap only long enough to clone; clipboard owns the HBITMAP and it
         // must not be used after CloseClipboard.
         Bitmap wrap(static_cast<HBITMAP>(handle), nullptr);
         if (wrap.GetLastStatus() == Ok) {
-            out = wrap.Clone(0, 0, wrap.GetWidth(), wrap.GetHeight(), PixelFormat32bppARGB);
+            out.reset(wrap.Clone(0, 0, wrap.GetWidth(), wrap.GetHeight(), PixelFormat32bppARGB));
             if (out && out->GetLastStatus() != Ok) {
-                delete out;
-                out = nullptr;
+                out.reset();
             }
         }
     }
@@ -249,30 +248,31 @@ void CopySelection(HWND hwnd) {
 void DeleteSelection(HWND hwnd) {
     if (!gSel.hasMarquee) return;
     EnsureCanvas(hwnd);
-    gHistory.Push(gLayers);
+
+    // Floating pixels live only in floatBmp. Stamp them onto the layer
+    // before Push so undo restores the deleted content (history does not
+    // track selection float state).
     if (gSel.isFloating) {
-        DestroySelFloat();
-        gSel.hasMarquee = false;
-        gSel.w = gSel.h = 0;
+        StampFloatingSelection();
     }
-    else {
-        Graphics* ag = gLayers.ActiveGraphics();
-        if (ag) {
-            const Layer* layer = gLayers.ActiveLayer();
-            if (layer && layer->isBackground) {
-                SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
-                ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
-            } else {
-                ag->SetCompositingMode(CompositingModeSourceCopy);
-                SolidBrush brush(Color(0, 0, 0, 0));
-                ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
-                ag->SetCompositingMode(CompositingModeSourceOver);
-            }
+
+    gHistory.Push(gLayers);
+    Graphics* ag = gLayers.ActiveGraphics();
+    if (ag && gSel.w >= 1 && gSel.h >= 1) {
+        const Layer* layer = gLayers.ActiveLayer();
+        if (layer && layer->isBackground) {
+            SolidBrush brush(GdiplusFromColor(gTheme.canvasBg));
+            ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+        } else {
+            ag->SetCompositingMode(CompositingModeSourceCopy);
+            SolidBrush brush(Color(0, 0, 0, 0));
+            ag->FillRectangle(&brush, gSel.x, gSel.y, gSel.w, gSel.h);
+            ag->SetCompositingMode(CompositingModeSourceOver);
         }
-        gSel.hasMarquee = false;
-        gSel.w = gSel.h = 0;
         InvalidateComposite();
     }
+    gSel.hasMarquee = false;
+    gSel.w = gSel.h = 0;
     MarkDirty(hwnd);
     InvalidateCanvas();
     PublishSelectionChanged(hwnd);
@@ -294,7 +294,7 @@ void PasteSelection(HWND hwnd) {
             static_cast<int>(gClipboardBmp->GetHeight()));
     }
     if (!owned) {
-        owned.reset(BitmapFromWinClipboard());
+        owned = BitmapFromWinClipboard();
     }
     if (!owned) return;
 
