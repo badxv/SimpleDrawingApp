@@ -108,7 +108,7 @@ LRESULT CALLBACK BrandProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_NCHITTEST:
         return HTTRANSPARENT;
     }
-    return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }
 
 void PaintChromeInto(Graphics& g, int width, int height, const ChromeLayout& chrome) {
@@ -292,14 +292,14 @@ void DrawToolbarBackground(HDC hdc, HWND hwnd, const RECT& client) {
 }
 
 bool RegisterBrandClass(HINSTANCE hInstance) {
-    WNDCLASSA wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = BrandProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = "SimpleDrawingAppBrand";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = NULL;
+    wc.lpszClassName = L"SimpleDrawingAppBrand";
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
     wc.style = 0;
-    return RegisterClassA(&wc) != 0;
+    return RegisterClassW(&wc) != 0;
 }
 
 void InvalidateBrandMark() {

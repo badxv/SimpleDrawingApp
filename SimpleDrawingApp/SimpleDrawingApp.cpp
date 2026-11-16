@@ -79,25 +79,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 0;
     }
 
-    WNDCLASSA wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = kAppMainWindowClassName;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = NULL; // painted manually
-    wc.lpszMenuName = MAKEINTRESOURCEA(IDC_SIMPLEDRAWINGAPP);
-    wc.hIcon = LoadIconA(hInstance, MAKEINTRESOURCEA(IDI_SIMPLEDRAWINGAPP));
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr; // painted manually
+    wc.lpszMenuName = MAKEINTRESOURCEW(IDC_SIMPLEDRAWINGAPP);
+    wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_SIMPLEDRAWINGAPP));
     wc.style = CS_DBLCLKS;
 
-    if (!RegisterClassA(&wc)) {
+    if (!RegisterClassW(&wc)) {
         ShutdownBeforeGdiplus();
         return 0;
     }
 
-    HWND hwnd = CreateWindowExA(0, kAppMainWindowClassName, "Simple Drawing App",
+    HWND hwnd = CreateWindowExW(0, kAppMainWindowClassName, L"Simple Drawing App",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, 1280, 760,
-        NULL, NULL, hInstance, NULL);
+        nullptr, nullptr, hInstance, nullptr);
 
     if (!hwnd) {
         ShutdownBeforeGdiplus();
@@ -110,7 +110,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     DrawMenuBar(hwnd);
     SyncFeatureFlagMenuItems();
 
-    gAccel = LoadAcceleratorsA(hInstance, MAKEINTRESOURCEA(IDC_SIMPLEDRAWINGAPP));
+    gAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(IDC_SIMPLEDRAWINGAPP));
 
     InitAppEventHandlers();
 
@@ -131,7 +131,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         const bool ctrlOrAlt = (GetKeyState(VK_CONTROL) & 0x8000) != 0
             || (GetKeyState(VK_MENU) & 0x8000) != 0;
         const bool tryAccel = !typing || ctrlOrAlt;
-        if (tryAccel && TranslateAcceleratorA(hwnd, gAccel, &msg)) {
+        if (tryAccel && TranslateAcceleratorW(hwnd, gAccel, &msg)) {
             continue;
         }
         TranslateMessage(&msg);

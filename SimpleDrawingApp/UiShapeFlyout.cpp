@@ -104,18 +104,18 @@ LRESULT CALLBACK ShapeFlyoutProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     default:
         break;
     }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 void EnsureShapeFlyout(HWND owner) {
     if (hwndShapeFlyout && IsWindow(hwndShapeFlyout)) return;
-    hwndShapeFlyout = CreateWindowExA(
+    hwndShapeFlyout = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-        "SimpleDrawingAppShapeFlyout",
-        "",
+        L"SimpleDrawingAppShapeFlyout",
+        L"",
         WS_POPUP | WS_CLIPCHILDREN,
         0, 0, 156, 128,
-        owner, NULL, GetModuleHandle(NULL), NULL);
+        owner, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!hwndShapeFlyout) return;
 
     const int ids[6] = {
@@ -148,14 +148,14 @@ void EnsureShapeFlyout(HWND owner) {
 }  // namespace
 
 bool RegisterShapeFlyoutClass(HINSTANCE hInstance) {
-    WNDCLASSA wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = ShapeFlyoutProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = "SimpleDrawingAppShapeFlyout";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = NULL;
+    wc.lpszClassName = L"SimpleDrawingAppShapeFlyout";
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
     wc.style = CS_DROPSHADOW;
-    return RegisterClassA(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+    return RegisterClassW(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
 }
 
 void OpenShapeFlyout(HWND parent) {

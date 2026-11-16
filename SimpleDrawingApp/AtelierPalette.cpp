@@ -15,7 +15,7 @@
 
 namespace {
 
-const char kClassName[] = "AtelierColorPalette";
+const wchar_t kClassName[] = L"AtelierColorPalette";
 constexpr int kRecentMax = 8;
 constexpr int kFavMax = 8;
 
@@ -683,7 +683,7 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     default:
         break;
     }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 } // namespace
@@ -691,13 +691,13 @@ LRESULT CALLBACK PaletteProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
 bool AtelierPalette_Register() {
     static bool done = false;
     if (done) return true;
-    WNDCLASSA wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = PaletteProc;
-    wc.hInstance = GetModuleHandle(NULL);
+    wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = kClassName;
-    wc.hCursor = LoadCursor(NULL, IDC_HAND);
+    wc.hCursor = LoadCursor(nullptr, IDC_HAND);
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
-    if (!RegisterClassA(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         return false;
     }
     done = true;
@@ -709,11 +709,11 @@ void AtelierPalette_SetTheme(const AppTheme* theme) {
 }
 
 HWND AtelierPalette_Create(HWND parent, int x, int y, int w, int h) {
-    return CreateWindowExA(
-        0, kClassName, "",
+    return CreateWindowExW(
+        0, kClassName, L"",
         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
         x, y, w, h,
-        parent, (HMENU)(INT_PTR)ID_PALETTE, GetModuleHandle(NULL), NULL);
+        parent, (HMENU)(INT_PTR)ID_PALETTE, GetModuleHandleW(nullptr), nullptr);
 }
 
 int AtelierPalette_IdealHeight(int width) {
