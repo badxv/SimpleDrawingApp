@@ -9,9 +9,11 @@
 #include <commctrl.h>
 
 void CreateAppToolbar(HWND hwnd) {
+    // Tooltips stay on the A class; tip strings are ASCII and TOOLINFOA is fine
+    // alongside W-created buttons.
     hwndTooltip = CreateWindowExA(0, TOOLTIPS_CLASSA, NULL,
         WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
-        0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+        0, 0, 0, 0, hwnd, NULL, GetModuleHandleW(nullptr), NULL);
     if (hwndTooltip) {
         SendMessageA(hwndTooltip, TTM_SETMAXTIPWIDTH, 0, 240);
     }
@@ -43,43 +45,43 @@ void CreateAppToolbar(HWND hwnd) {
     hwndToggleRail = CreateIconButton(hwnd, IDC_TOGGLE_RAIL, "Hide tools\r\nShortcut: Tab", false);
     hwndToggleLayers = CreateIconButton(hwnd, IDC_TOGGLE_LAYERS, "Hide layers\r\nShortcut: F9", false);
 
-    static const char* kMenuLabels[6] = { "File", "Edit", "Image", "View", "Tools", "Help" };
+    static const wchar_t* kMenuLabels[6] = { L"File", L"Edit", L"Image", L"View", L"Tools", L"Help" };
     static const int kMenuIds[6] = {
         IDC_MENU_FILE, IDC_MENU_EDIT, IDC_MENU_IMAGE,
         IDC_MENU_VIEW, IDC_MENU_TOOLS, IDC_MENU_HELP
     };
     for (int i = 0; i < 6; ++i) {
-        hwndMenuButtons[i] = CreateWindowA("BUTTON", kMenuLabels[i],
+        hwndMenuButtons[i] = CreateWindowW(L"BUTTON", kMenuLabels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
             0, 0, MENU_BTN_W, 22,
-            hwnd, (HMENU)(INT_PTR)kMenuIds[i], GetModuleHandle(NULL), NULL);
+            hwnd, (HMENU)(INT_PTR)kMenuIds[i], GetModuleHandleW(nullptr), nullptr);
         ApplyUiFont(hwndMenuButtons[i]);
     }
 
-    hwndSizeLabel = CreateWindowA("STATIC", "Size", WS_CHILD | WS_VISIBLE,
-        0, 0, 34, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    hwndSizeLabel = CreateWindowW(L"STATIC", L"Size", WS_CHILD | WS_VISIBLE,
+        0, 0, 34, 18, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
     ApplyUiFont(hwndSizeLabel);
 
     hwndSlider = AtelierSlider_Create(hwnd, 0, 0, 150, 28, NULL);
     SendMessage(hwndSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 50));
     SendMessage(hwndSlider, TBM_SETPOS, TRUE, penWidth);
 
-    hwndPenWidthBox = CreateWindowExA(0, "EDIT", "",
+    hwndPenWidthBox = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER,
-        0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_WIDTH_EDIT, GetModuleHandle(NULL), NULL);
+        0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_WIDTH_EDIT, GetModuleHandleW(nullptr), nullptr);
     ApplyUiFont(hwndPenWidthBox);
 
-    hwndOpacityLabel = CreateWindowA("STATIC", "Opacity", WS_CHILD | WS_VISIBLE,
-        0, 0, 54, 18, hwnd, NULL, GetModuleHandle(NULL), NULL);
+    hwndOpacityLabel = CreateWindowW(L"STATIC", L"Opacity", WS_CHILD | WS_VISIBLE,
+        0, 0, 54, 18, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
     ApplyUiFont(hwndOpacityLabel);
 
     hwndOpacitySlider = AtelierSlider_Create(hwnd, 0, 0, 150, 28, NULL);
     SendMessage(hwndOpacitySlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 100));
     SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, penOpacity);
 
-    hwndOpacityBox = CreateWindowExA(0, "EDIT", "",
+    hwndOpacityBox = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER,
-        0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_OPACITY_EDIT, GetModuleHandle(NULL), NULL);
+        0, 0, 40, 22, hwnd, (HMENU)(INT_PTR)IDC_OPACITY_EDIT, GetModuleHandleW(nullptr), nullptr);
     ApplyUiFont(hwndOpacityBox);
 
     SetActiveTool(DrawTool::Pen);
@@ -94,14 +96,14 @@ void CreateLayerPanel(HWND hwnd) {
     hwndLayerDown = CreateIconButton(hwnd, IDC_LAYER_DOWN, "Move layer down", false);
     hwndLayerDup = CreateIconButton(hwnd, IDC_LAYER_DUP, "Duplicate layer", false);
 
-    hwndLayerVisible = CreateWindowA("BUTTON", "Visible",
+    hwndLayerVisible = CreateWindowW(L"BUTTON", L"Visible",
         WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
-        0, 0, 100, 22, hwnd, (HMENU)(INT_PTR)IDC_LAYER_VISIBLE, GetModuleHandle(NULL), NULL);
+        0, 0, 100, 22, hwnd, (HMENU)(INT_PTR)IDC_LAYER_VISIBLE, GetModuleHandleW(nullptr), nullptr);
     ApplyUiFont(hwndLayerVisible);
 
-    hwndLayerList = CreateWindowExA(0, "LISTBOX", "",
+    hwndLayerList = CreateWindowExW(0, L"LISTBOX", L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
-        0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)IDC_LAYER_LIST, GetModuleHandle(NULL), NULL);
+        0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)IDC_LAYER_LIST, GetModuleHandleW(nullptr), nullptr);
     ApplyUiFont(hwndLayerList);
 
     hwndLayerOpacity = AtelierSlider_Create(hwnd, 0, 0, 100, 28, (HMENU)(INT_PTR)IDC_LAYER_OPACITY);
