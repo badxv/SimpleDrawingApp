@@ -13,6 +13,15 @@ std::string NarrowPathSegment(const wchar_t* wide) {
     return out;
 }
 
+std::wstring Utf8ToWide(const char* utf8) {
+    if (!utf8 || !utf8[0]) return {};
+    const int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+    if (len <= 1) return {};
+    std::wstring out(static_cast<size_t>(len - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, out.data(), len);
+    return out;
+}
+
 std::string DecodeUcs2ToUtf8(const std::uint8_t* raw, std::size_t charCount) {
     if (!raw || charCount == 0) return {};
     std::wstring wide;

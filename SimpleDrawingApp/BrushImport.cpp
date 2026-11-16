@@ -16,15 +16,6 @@ using namespace Gdiplus;
 
 namespace {
 
-std::wstring Utf8ToWide(const char* utf8) {
-    if (!utf8 || !utf8[0]) return std::wstring();
-    const int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
-    if (len <= 1) return std::wstring();
-    std::wstring out(static_cast<size_t>(len - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, out.data(), len);
-    return out;
-}
-
 struct AbrImportPickerState {
     const std::vector<AbrBrush>* samples = nullptr;
     std::vector<int> selected;
@@ -50,7 +41,8 @@ INT_PTR CALLBACK AbrImportDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM
         for (const AbrBrush& sample : samples) {
             char line[128];
             snprintf(line, sizeof(line), "%s (%dx%d)", sample.name.c_str(), sample.width, sample.height);
-            SendMessageA(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line));
+            const std::wstring wide = Utf8ToWide(line);
+            SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide.c_str()));
         }
         AbrListSelectAll(list, static_cast<int>(samples.size()), true);
         return TRUE;
@@ -106,7 +98,7 @@ bool PromptAbrBrushSelection(HWND owner, const std::vector<AbrBrush>& samples, s
     }
     AbrImportPickerState state = {};
     state.samples = &samples;
-    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_ABR_IMPORT), owner,
+    if (DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_ABR_IMPORT), owner,
             AbrImportDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
         return false;
     }

@@ -124,7 +124,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         CreateAppToolbar(hwnd);
         CreateLayerPanel(hwnd);
 
-        hwndStatus = CreateStatusWindowA(WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, "", hwnd, 1);
+        hwndStatus = CreateStatusWindowW(WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, L"", hwnd, 1);
         ApplyUiFont(hwndStatus);
         LayoutStatusParts(hwnd);
 

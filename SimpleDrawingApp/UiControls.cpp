@@ -5,16 +5,16 @@
 
 void ApplyUiFont(HWND control) {
     if (gUiFont && control) {
-        SendMessageA(control, WM_SETFONT, (WPARAM)gUiFont, TRUE);
+        SendMessageW(control, WM_SETFONT, (WPARAM)gUiFont, TRUE);
     }
 }
 
 HWND CreateIconButton(HWND parent, int id, const char* tooltip, bool pushLike) {
     const DWORD style = WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_OWNERDRAW |
         (pushLike ? (BS_PUSHLIKE | BS_CHECKBOX) : BS_PUSHBUTTON);
-    HWND btn = CreateWindowA("BUTTON", "", style,
+    HWND btn = CreateWindowW(L"BUTTON", L"", style,
         0, 0, ICON_BTN, ICON_BTN,
-        parent, (HMENU)(INT_PTR)id, GetModuleHandle(NULL), NULL);
+        parent, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
     if (hwndTooltip && btn && tooltip && tooltip[0]) {
         TOOLINFOA ti = {};
         ti.cbSize = sizeof(ti);

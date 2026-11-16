@@ -2,6 +2,7 @@
 #include "AppState.h"
 #include "AppMetrics.h"
 #include "AppFeatureFlags.h"
+#include "AbrCommon.h"
 #include "BrushEngine.h"
 #include "EventBus.h"
 #include "AtelierEvents.h"
@@ -10,6 +11,7 @@
 #include <commctrl.h>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -66,10 +68,10 @@ void BuildStatusTip(char* out, size_t outChars) {
 
 void UpdatePenWidthDisplay() {
     if (!hwndPenWidthBox) return;
-    char buf[16];
-    sprintf_s(buf, "%d", penWidth);
+    wchar_t buf[16];
+    swprintf_s(buf, L"%d", penWidth);
     suppressEditNotify = true;
-    SetWindowTextA(hwndPenWidthBox, buf);
+    SetWindowTextW(hwndPenWidthBox, buf);
     suppressEditNotify = false;
 }
 
@@ -92,10 +94,10 @@ void ApplyPenWidth(HWND hwnd, int width) {
 
 void UpdateOpacityDisplay() {
     if (!hwndOpacityBox) return;
-    char buf[16];
-    sprintf_s(buf, "%d", penOpacity);
+    wchar_t buf[16];
+    swprintf_s(buf, L"%d", penOpacity);
     suppressEditNotify = true;
-    SetWindowTextA(hwndOpacityBox, buf);
+    SetWindowTextW(hwndOpacityBox, buf);
     suppressEditNotify = false;
 }
 void UpdateWindowTitle(HWND hwnd) {
@@ -142,9 +144,12 @@ void UpdateStatusBar(HWND hwnd) {
 
     sprintf_s(part2, "W:%d  Op:%d%%  %s", penWidth, penOpacity, documentDirty ? "Modified" : "Saved");
 
-    SendMessageA(hwndStatus, SB_SETTEXTA, 0, (LPARAM)part0);
-    SendMessageA(hwndStatus, SB_SETTEXTA, 1, (LPARAM)part1);
-    SendMessageA(hwndStatus, SB_SETTEXTA, 2, (LPARAM)part2);
+    const std::wstring w0 = Utf8ToWide(part0);
+    const std::wstring w1 = Utf8ToWide(part1);
+    const std::wstring w2 = Utf8ToWide(part2);
+    SendMessageW(hwndStatus, SB_SETTEXTW, 0, (LPARAM)w0.c_str());
+    SendMessageW(hwndStatus, SB_SETTEXTW, 1, (LPARAM)w1.c_str());
+    SendMessageW(hwndStatus, SB_SETTEXTW, 2, (LPARAM)w2.c_str());
     (void)hwnd;
 }
 
@@ -201,7 +206,7 @@ bool IsTypingInEdit() {
 void RefreshLayerList() {
     if (!hwndLayerList) return;
     suppressLayerNotify = true;
-    SendMessageA(hwndLayerList, LB_RESETCONTENT, 0, 0);
+    SendMessageW(hwndLayerList, LB_RESETCONTENT, 0, 0);
 
     // Show topmost layer first in the list.
     for (int i = gLayers.Count() - 1; i >= 0; --i) {
@@ -212,16 +217,18 @@ void RefreshLayerList() {
             layer->visible ? "" : "[H] ",
             layer->name.c_str(),
             layer->opacity);
-        const int idx = static_cast<int>(SendMessageA(hwndLayerList, LB_ADDSTRING, 0, (LPARAM)label));
-        SendMessageA(hwndLayerList, LB_SETITEMDATA, idx, i);
+        const std::wstring wide = Utf8ToWide(label);
+        const int idx = static_cast<int>(SendMessageW(hwndLayerList, LB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(wide.c_str())));
+        SendMessageW(hwndLayerList, LB_SETITEMDATA, idx, i);
     }
 
     // Select the row that matches active layer.
-    const int count = static_cast<int>(SendMessageA(hwndLayerList, LB_GETCOUNT, 0, 0));
+    const int count = static_cast<int>(SendMessageW(hwndLayerList, LB_GETCOUNT, 0, 0));
     for (int row = 0; row < count; ++row) {
-        const int layerIndex = static_cast<int>(SendMessageA(hwndLayerList, LB_GETITEMDATA, row, 0));
+        const int layerIndex = static_cast<int>(SendMessageW(hwndLayerList, LB_GETITEMDATA, row, 0));
         if (layerIndex == gLayers.ActiveIndex()) {
-            SendMessageA(hwndLayerList, LB_SETCURSEL, row, 0);
+            SendMessageW(hwndLayerList, LB_SETCURSEL, row, 0);
             break;
         }
     }
@@ -229,7 +236,7 @@ void RefreshLayerList() {
     if (hwndLayerVisible) {
         const Layer* active = gLayers.ActiveLayer();
         const bool visible = active ? active->visible : true;
-        SendMessageA(hwndLayerVisible, BM_SETCHECK, visible ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendMessageW(hwndLayerVisible, BM_SETCHECK, visible ? BST_CHECKED : BST_UNCHECKED, 0);
     }
     if (hwndLayerOpacity) {
         const Layer* active = gLayers.ActiveLayer();

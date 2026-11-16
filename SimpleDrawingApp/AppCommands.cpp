@@ -74,9 +74,9 @@ void PopupAppMenu(HWND hwnd, int menuIndex, HWND anchorBtn) {
 bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
     if (cmdId == IDC_WIDTH_EDIT && notifyCode == EN_CHANGE) {
         if (suppressEditNotify) return true;
-        char buf[16];
-        GetWindowTextA(hwndPenWidthBox, buf, sizeof(buf));
-        int val = atoi(buf);
+        wchar_t buf[16] = {};
+        GetWindowTextW(hwndPenWidthBox, buf, static_cast<int>(sizeof(buf) / sizeof(buf[0])));
+        int val = _wtoi(buf);
         if (val >= 1 && val <= 50) {
             penWidth = val;
             SendMessage(hwndSlider, TBM_SETPOS, TRUE, val);
@@ -87,9 +87,9 @@ bool HandleAppCommand(HWND hwnd, int cmdId, int notifyCode) {
 
     if (cmdId == IDC_OPACITY_EDIT && notifyCode == EN_CHANGE) {
         if (suppressEditNotify) return true;
-        char buf[16];
-        GetWindowTextA(hwndOpacityBox, buf, sizeof(buf));
-        int val = atoi(buf);
+        wchar_t buf[16] = {};
+        GetWindowTextW(hwndOpacityBox, buf, static_cast<int>(sizeof(buf) / sizeof(buf[0])));
+        int val = _wtoi(buf);
         if (val >= 1 && val <= 100) {
             penOpacity = val;
             SendMessage(hwndOpacitySlider, TBM_SETPOS, TRUE, val);

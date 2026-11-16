@@ -1,10 +1,12 @@
 #include "BrushGallery.h"
 #include "BrushEngine.h"
+#include "AbrCommon.h"
 #include "Resource.h"
 
 #include <gdiplus.h>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 using namespace Gdiplus;
 
@@ -67,7 +69,7 @@ void UpdatePreviewPane(HWND hDlg, BrushGalleryState* state) {
             preset->spacing * 100.0f,
             preset->defaultSize);
     }
-    SetDlgItemTextA(hDlg, IDC_BRUSH_GALLERY_INFO, details);
+    SetDlgItemTextW(hDlg, IDC_BRUSH_GALLERY_INFO, Utf8ToWide(details).c_str());
 }
 
 static LRESULT CALLBACK PreviewPaneProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -85,7 +87,7 @@ static LRESULT CALLBACK PreviewPaneProc(HWND hwnd, UINT message, WPARAM wParam, 
         EndPaint(hwnd, &ps);
         return 0;
     }
-    return DefWindowProcA(hwnd, message, wParam, lParam);
+    return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
 static INT_PTR CALLBACK BrushGalleryDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -106,13 +108,14 @@ static INT_PTR CALLBACK BrushGalleryDlgProc(HWND hDlg, UINT message, WPARAM wPar
             for (int i = 0; i < count; ++i) {
                 const BrushPreset* preset = GetBrushPreset(i);
                 if (!preset) continue;
-                const int idx = static_cast<int>(SendMessageA(list, LB_ADDSTRING, 0,
-                    reinterpret_cast<LPARAM>(preset->name.c_str())));
+                const std::wstring wideName = Utf8ToWide(preset->name.c_str());
+                const int idx = static_cast<int>(SendMessageW(list, LB_ADDSTRING, 0,
+                    reinterpret_cast<LPARAM>(wideName.c_str())));
                 if (idx >= 0) {
-                    SendMessageA(list, LB_SETITEMDATA, idx, static_cast<LPARAM>(i));
+                    SendMessageW(list, LB_SETITEMDATA, idx, static_cast<LPARAM>(i));
                 }
             }
-            SendMessageA(list, LB_SETCURSEL, state->selected, 0);
+            SendMessageW(list, LB_SETCURSEL, state->selected, 0);
         }
 
         state->previewHwnd = GetDlgItem(hDlg, IDC_BRUSH_PREVIEW);
@@ -164,11 +167,12 @@ static INT_PTR CALLBACK BrushGalleryDlgProc(HWND hDlg, UINT message, WPARAM wPar
             snprintf(label, sizeof(label), "%s%s", preset->name.c_str(),
                 preset->builtin ? "" : "  (custom)");
         }
+        const std::wstring wideLabel = Utf8ToWide(label);
         SetBkMode(dis->hDC, TRANSPARENT);
         SetTextColor(dis->hDC, RGB(230, 232, 238));
         RECT textRc = dis->rcItem;
         textRc.left = thumbRc.right + 10;
-        DrawTextA(dis->hDC, label, -1, &textRc, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        DrawTextW(dis->hDC, wideLabel.c_str(), -1, &textRc, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         if (dis->itemState & ODS_FOCUS) {
             DrawFocusRect(dis->hDC, &dis->rcItem);
@@ -208,7 +212,7 @@ bool ShowBrushGalleryDialog(HWND owner) {
     BrushGalleryState state = {};
     state.selected = previous;
 
-    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_BRUSH_GALLERY), owner,
+    if (DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_BRUSH_GALLERY), owner,
             BrushGalleryDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
         return false;
     }
