@@ -128,11 +128,11 @@ static INT_PTR CALLBACK LayerRenameDlgProc(HWND hDlg, UINT message, WPARAM wPara
 } // namespace
 
 void ShowAboutDialog(HWND owner) {
-    DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_ABOUTBOX), owner, AboutDlgProc);
+    DialogBoxW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_ABOUTBOX), owner, AboutDlgProc);
 }
 
 void ShowShortcutsDialog(HWND owner) {
-    DialogBoxA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_SHORTCUTS), owner, ShortcutsDlgProc);
+    DialogBoxW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_SHORTCUTS), owner, ShortcutsDlgProc);
 }
 
 bool PromptLayerRename(HWND owner, char* outName, size_t outChars) {
@@ -140,7 +140,7 @@ bool PromptLayerRename(HWND owner, char* outName, size_t outChars) {
     outName[0] = '\0';
 
     LayerRenameState state = {};
-    if (DialogBoxParamA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDD_LAYER_RENAME), owner,
+    if (DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_LAYER_RENAME), owner,
             LayerRenameDlgProc, reinterpret_cast<LPARAM>(&state)) != IDOK) {
         return false;
     }
