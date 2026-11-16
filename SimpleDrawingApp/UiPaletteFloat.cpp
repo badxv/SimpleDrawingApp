@@ -107,7 +107,7 @@ LRESULT CALLBACK PaletteFloatProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         LayoutFloatPaletteContents();
         return 0;
     case WM_NCHITTEST: {
-        LRESULT hit = DefWindowProcA(hwnd, msg, wParam, lParam);
+        LRESULT hit = DefWindowProcW(hwnd, msg, wParam, lParam);
         if (hit == HTCLIENT) {
             POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             ScreenToClient(hwnd, &pt);
@@ -124,33 +124,33 @@ LRESULT CALLBACK PaletteFloatProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     default:
         break;
     }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 void EnsurePaletteFloatHost(HWND owner) {
     if (hwndPaletteFloat && IsWindow(hwndPaletteFloat)) return;
     const int w = TOOL_RAIL_WIDTH;
     const int h = PaletteFloatHeight(w);
-    hwndPaletteFloat = CreateWindowExA(
+    hwndPaletteFloat = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-        "AtelierPaletteFloat",
-        "Color",
+        L"AtelierPaletteFloat",
+        L"Color",
         WS_POPUP | WS_CLIPCHILDREN | WS_BORDER,
         gPaletteFloatPos.x, gPaletteFloatPos.y, w, h,
-        owner, NULL, GetModuleHandle(NULL), NULL);
+        owner, nullptr, GetModuleHandleW(nullptr), nullptr);
 }
 
 }  // namespace
 
 bool RegisterPaletteFloatClass(HINSTANCE hInstance) {
-    WNDCLASSA wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = PaletteFloatProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = "AtelierPaletteFloat";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = NULL;
+    wc.lpszClassName = L"AtelierPaletteFloat";
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
     wc.style = CS_DROPSHADOW;
-    return RegisterClassA(&wc) != 0;
+    return RegisterClassW(&wc) != 0;
 }
 
 void DockPaletteInstruments(HWND mainHwnd) {

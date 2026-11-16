@@ -498,15 +498,15 @@ static LRESULT CALLBACK ViewportProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     }
     }
 
-    return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }
 bool RegisterViewportClass(HINSTANCE hInstance) {
-    WNDCLASSA vc = {};
+    WNDCLASSW vc = {};
     vc.lpfnWndProc = ViewportProc;
     vc.hInstance = hInstance;
     vc.lpszClassName = kAppViewportClassName;
-    vc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    vc.hbrBackground = NULL;
+    vc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    vc.hbrBackground = nullptr;
     vc.style = CS_DBLCLKS;
-    return RegisterClassA(&vc) != 0;
+    return RegisterClassW(&vc) != 0;
 }

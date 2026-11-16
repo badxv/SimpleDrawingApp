@@ -136,24 +136,24 @@ LRESULT CALLBACK CaptionBtnProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     default:
         break;
     }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 bool RegisterCaptionBtnClass(HINSTANCE hInstance) {
-    WNDCLASSA wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = CaptionBtnProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = "SimpleDrawingAppCaptionBtn";
+    wc.lpszClassName = L"SimpleDrawingAppCaptionBtn";
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
-    return RegisterClassA(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+    return RegisterClassW(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
 }
 
 void CreateCaptionButtons(HWND hwnd) {
     if (IsRunningUnderWine()) return;
-    HINSTANCE inst = GetModuleHandle(nullptr);
+    HINSTANCE inst = GetModuleHandleW(nullptr);
     auto make = [&](int id) -> HWND {
-        return CreateWindowExA(0, "SimpleDrawingAppCaptionBtn", "",
+        return CreateWindowExW(0, L"SimpleDrawingAppCaptionBtn", L"",
             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
             0, 0, CAPTION_BTN_W, CAPTION_BTN_H,
             hwnd, (HMENU)(INT_PTR)id, inst, nullptr);

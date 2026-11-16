@@ -110,16 +110,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         AtelierControls_SetTheme(&gTheme);
         AtelierPalette_SetTheme(&gTheme);
 
-        hwndBrand = CreateWindowExA(
+        hwndBrand = CreateWindowExW(
             0,
-            "SimpleDrawingAppBrand",
-            "",
+            L"SimpleDrawingAppBrand",
+            L"",
             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
             0, 0, BRAND_STRIP_W, TOPBAR_HEIGHT,
             hwnd,
-            NULL,
-            GetModuleHandle(NULL),
-            NULL);
+            nullptr,
+            GetModuleHandleW(nullptr),
+            nullptr);
 
         CreateAppToolbar(hwnd);
         CreateLayerPanel(hwnd);
@@ -128,16 +128,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         ApplyUiFont(hwndStatus);
         LayoutStatusParts(hwnd);
 
-        hwndViewport = CreateWindowExA(
+        hwndViewport = CreateWindowExW(
             0, // no CLIENTEDGE — custom bronze well frame instead
             kAppViewportClassName,
-            "",
+            L"",
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
             TOOL_RAIL_WIDTH + WELL_FRAME, TOPBAR_HEIGHT + WELL_FRAME, 100, 100,
             hwnd,
-            NULL,
-            GetModuleHandle(NULL),
-            NULL);
+            nullptr,
+            GetModuleHandleW(nullptr),
+            nullptr);
         hwndScrollH = AtelierScroll_Create(hwndViewport, false, 0, 0, 40, ATL_SCROLL_THICK);
         hwndScrollV = AtelierScroll_Create(hwndViewport, true, 0, 0, ATL_SCROLL_THICK, 40);
         hwndScrollCorner = AtelierScroll_Create(hwndViewport, false, 0, 0, ATL_SCROLL_THICK, ATL_SCROLL_THICK);
@@ -592,5 +592,5 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
 
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }

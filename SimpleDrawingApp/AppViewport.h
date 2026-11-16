@@ -2,6 +2,6 @@
 
 #include <windows.h>
 
-inline constexpr const char kAppViewportClassName[] = "SimpleDrawingAppViewport";
+inline constexpr const wchar_t kAppViewportClassName[] = L"SimpleDrawingAppViewport";
 
 bool RegisterViewportClass(HINSTANCE hInstance);

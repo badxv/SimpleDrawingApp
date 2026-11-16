@@ -5,8 +5,8 @@
 
 namespace {
 
-const char kSliderClass[] = "AtelierSlider";
-const char kScrollClass[] = "AtelierScroll";
+const wchar_t kSliderClass[] = L"AtelierSlider";
+const wchar_t kScrollClass[] = L"AtelierScroll";
 
 const AppTheme* gTheme = nullptr;
 
@@ -258,7 +258,7 @@ LRESULT CALLBACK SliderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     default:
         break;
     }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 void ThumbMetrics(const ScrollState& s, const RECT& client, int* outThumbLen, int* outThumbPos) {
@@ -458,7 +458,7 @@ LRESULT CALLBACK ScrollProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     default:
         break;
     }
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 } // namespace
@@ -467,23 +467,23 @@ bool AtelierControls_Register() {
     static bool done = false;
     if (done) return true;
 
-    WNDCLASSA sc = {};
+    WNDCLASSW sc = {};
     sc.lpfnWndProc = SliderProc;
-    sc.hInstance = GetModuleHandle(NULL);
+    sc.hInstance = GetModuleHandleW(nullptr);
     sc.lpszClassName = kSliderClass;
-    sc.hCursor = LoadCursor(NULL, IDC_HAND);
+    sc.hCursor = LoadCursor(nullptr, IDC_HAND);
     sc.style = CS_HREDRAW | CS_VREDRAW;
-    if (!RegisterClassA(&sc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    if (!RegisterClassW(&sc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         return false;
     }
 
-    WNDCLASSA bc = {};
+    WNDCLASSW bc = {};
     bc.lpfnWndProc = ScrollProc;
-    bc.hInstance = GetModuleHandle(NULL);
+    bc.hInstance = GetModuleHandleW(nullptr);
     bc.lpszClassName = kScrollClass;
-    bc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    bc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     bc.style = CS_HREDRAW | CS_VREDRAW;
-    if (!RegisterClassA(&bc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    if (!RegisterClassW(&bc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         return false;
     }
 
@@ -496,19 +496,19 @@ void AtelierControls_SetTheme(const AppTheme* theme) {
 }
 
 HWND AtelierSlider_Create(HWND parent, int x, int y, int w, int h, HMENU idOrNull) {
-    return CreateWindowExA(
-        0, kSliderClass, "",
+    return CreateWindowExW(
+        0, kSliderClass, L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP,
         x, y, w, h,
-        parent, idOrNull, GetModuleHandle(NULL), NULL);
+        parent, idOrNull, GetModuleHandleW(nullptr), nullptr);
 }
 
 HWND AtelierScroll_Create(HWND parent, bool vertical, int x, int y, int w, int h) {
-    return CreateWindowExA(
-        0, kScrollClass, "",
+    return CreateWindowExW(
+        0, kScrollClass, L"",
         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
         x, y, w, h,
-        parent, NULL, GetModuleHandle(NULL),
+        parent, nullptr, GetModuleHandleW(nullptr),
         reinterpret_cast<LPVOID>(static_cast<INT_PTR>(vertical ? 1 : 0)));
 }
 
